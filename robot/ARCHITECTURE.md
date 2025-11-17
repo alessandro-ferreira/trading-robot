@@ -74,7 +74,7 @@ robot/
 ├── python-gateway/             # The Python Exchange Gateway service
 │   ├── requirements.txt        # (ccxt, grpcio, etc.)
 │   ├── main.py                 # Starts the Python gRPC server
-│   ├── gen/python/             # Auto-generated Python gRPC code
+│   ├── v1/                     # Auto-generated Python gRPC code
 │   └── exchange/
 │       ├── factory.py          # Logic to select exchange based on config
 │       └── service.py          # Implements the gRPC service

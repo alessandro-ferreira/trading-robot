@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package v1;
 
-option go_package = "github.com/alessandro-ferreira/trading-robot/gen/go/v1;v1";
+option go_package = "trading/robot/go-bot/gen/go/v1;v1";
 
 // ExchangeService defines the gRPC service for interacting with a cryptocurrency exchange.
 service ExchangeService {
