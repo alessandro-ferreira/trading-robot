@@ -1,0 +1,27 @@
+# Master configuration for the Trading Bot
+
+# gRPC server settings
+[grpc]
+go_bot_address = "localhost:50050"         # Not used by go-bot, but for other potential clients
+python_gateway_address = "localhost:50051" # Address for the go-bot to connect to
+
+# Database configuration for the Go bot (using TimescaleDB/PostgreSQL)
+[database]
+host = "localhost"
+port = 5432
+user = "robot_user"
+password = "your_password"
+dbname = "trading_db"
+sslmode = "disable" # Use "require" or "verify-full" in production
+
+# Exchange configuration for the Python gateway
+[exchange]
+name = "mercadobitcoin" # The exchange to use (must be supported by ccxt)
+
+# It's highly recommended to use environment variables for API keys in production
+# For local development, you can place them here.
+# api_key = "YOUR_API_KEY"
+# api_secret = "YOUR_API_SECRET"
+
+# Set to true for sandbox/testnet environments
+sandbox_mode = true

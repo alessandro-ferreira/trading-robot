@@ -1,0 +1,29 @@
+# --- General ---
+# Compiled source
+*.o
+*.so
+
+# Log files
+*.log
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# --- Python ---
+# Virtual environment - Your venv is outside the project, but this is good practice
+venv/
+venv_trading/
+*.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# --- Go ---
+# Go build artifacts
+/robot/go-bot/go-bot
+
+# --- Configuration ---
+# Ignore the actual config file with secrets
+robot/config.toml
