@@ -1,5 +1,14 @@
 # Master configuration for the Trading Bot
 
+# Server settings
+[server]
+shutdown_timeout = "10s" # Time to wait for graceful shutdown before force-quitting.
+
+# Logging configuration
+[log]
+level = "info"    # Log level: "debug", "info", "warn", "error"
+format = "text"   # Log format: "text" or "json"
+
 # gRPC server settings
 [grpc]
 go_bot_address = "localhost:50050"         # Not used by go-bot, but for other potential clients

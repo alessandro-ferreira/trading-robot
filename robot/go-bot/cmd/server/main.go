@@ -2,36 +2,65 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
-	"time"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 
-	pb "trading/robot/go-bot/gen/go/v1" // Import the generated Go code
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-)
-
-const (
-	address = "localhost:50051" // The Python server address
+	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/logger"
 )
 
 func main() {
-	// Set up a connection to the server.
-	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	c := pb.NewExchangeServiceClient(conn)
+	// Define a command-line flag for the config file path.
+	configPath := flag.String("config", "config.toml", "path to the configuration file")
+	flag.Parse()
 
-	// Contact the server and print out its response.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	// Load configuration
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		// If config fails, we can't set up the logger from it, so use a basic log.
+		log.Fatalf("❌ Failed to load configuration: %v", err)
+	}
+
+	// Set up the structured logger *after* loading the config.
+	logger.Setup(cfg.Log)
+
+	slog.Info("Starting Go Trading Bot...")
+
+	slog.Info("Configuration loaded successfully",
+		slog.String("db_host", cfg.Database.Host),
+		slog.String("python_gateway", cfg.GRPC.PythonGatewayAddress),
+	)
+
+	// TODO: Initialize database connection, gRPC client, and start trading strategies.
+
+	// --- Graceful Shutdown ---
+	// Create a channel to listen for OS signals.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	// Block until a signal is received.
+	sig := <-stop
+
+	// Log the received signal.
+	slog.Info("Shutdown signal received", "signal", sig.String())
+
+	// Create a context with a timeout for graceful shutdown.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
-	log.Println("Sending CreateOrder request to Python server...")
-	r, err := c.CreateOrder(ctx, &pb.CreateOrderRequest{Symbol: "BTC/BRL", Type: pb.OrderType_MARKET, Side: pb.OrderSide_BUY, Amount: 0.001})
-	if err != nil {
-		log.Fatalf("could not create order: %v", err)
+	// TODO: Add cleanup logic here.
+	// Example: db.Close(shutdownCtx)
+
+	// Wait for the shutdown context to be done (e.g., timeout).
+	<-shutdownCtx.Done()
+	if err := shutdownCtx.Err(); err == context.DeadlineExceeded {
+		slog.Error("Graceful shutdown timed out. Forcing exit.")
+		os.Exit(1)
 	}
-	log.Printf("✅ Success! Response from server: OrderID=%s, Status=%s", r.GetOrderId(), r.GetStatus())
+
+	slog.Info("Server shutdown complete.")
 }
