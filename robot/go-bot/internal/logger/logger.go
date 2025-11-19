@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -8,9 +9,15 @@ import (
 	"trading/robot/go-bot/internal/config"
 )
 
-// Setup initializes a new structured logger.
-// It reads the configuration to determine the format (text or json) and level.
+// Setup configures the global structured logger to write to os.Stdout.
 func Setup(cfg config.LogConfig) {
+	logger := New(os.Stdout, cfg)
+	slog.SetDefault(logger)
+}
+
+// New creates a new slog.Logger for the given writer and configuration.
+// This is useful for testing where the output can be directed to a buffer.
+func New(w io.Writer, cfg config.LogConfig) *slog.Logger {
 	var level slog.Level
 	switch strings.ToLower(cfg.Level) {
 	case "debug":
@@ -26,7 +33,7 @@ func Setup(cfg config.LogConfig) {
 	}
 
 	opts := &slog.HandlerOptions{
-		AddSource: true, // Include source file and line number
+		AddSource: true, // Enable source file and line number in logs
 		Level:     level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {
@@ -39,14 +46,12 @@ func Setup(cfg config.LogConfig) {
 	var handler slog.Handler
 	switch strings.ToLower(cfg.Format) {
 	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, opts)
+		handler = slog.NewJSONHandler(w, opts)
 	case "text":
 		fallthrough
 	default:
-		handler = slog.NewTextHandler(os.Stdout, opts)
+		handler = slog.NewTextHandler(w, opts)
 	}
 
-	logger := slog.New(handler)
-
-	slog.SetDefault(logger)
+	return slog.New(handler)
 }

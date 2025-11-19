@@ -1,0 +1,17 @@
+services:
+  # Test database for the go-bot
+  test-db:
+    image: timescale/timescaledb:latest-pg14
+    container_name: trading-bot-test-db
+    environment:
+      - POSTGRES_USER=testuser
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_DB=testdb
+    ports:
+      # Exposes the test DB on port 5433 to avoid conflicts with a local dev DB on 5432
+      - "5433:5432"
+    volumes:
+      - test-db-data:/var/lib/postgresql/data
+
+volumes:
+  test-db-data:

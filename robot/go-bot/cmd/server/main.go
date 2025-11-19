@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/logger"
 )
 
@@ -35,7 +36,17 @@ func main() {
 		slog.String("python_gateway", cfg.GRPC.PythonGatewayAddress),
 	)
 
-	// TODO: Initialize database connection, gRPC client, and start trading strategies.
+	// Initialize database connection
+	dbPool, err := database.NewDBPool(context.Background(), cfg.Database)
+	if err != nil {
+		slog.Error("Failed to initialize database connection", "error", err)
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	slog.Info("Database connection pool established")
+
+	// TODO: Initialize gRPC client and start trading strategies.
 
 	// --- Graceful Shutdown ---
 	// Create a channel to listen for OS signals.
@@ -52,8 +63,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
-	// TODO: Add cleanup logic here.
-	// Example: db.Close(shutdownCtx)
+	slog.Info("Closing database connection pool...")
+	dbPool.Close() // pgxpool.Close() is safe to call multiple times.
 
 	// Wait for the shutdown context to be done (e.g., timeout).
 	<-shutdownCtx.Done()
