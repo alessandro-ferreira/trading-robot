@@ -22,12 +22,9 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ExchangeServiceClient interface {
-	// CreateOrder places a new order on the exchange.
-	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error)
-	// StreamTicker streams real-time ticker information for a given symbol.
-	StreamTicker(ctx context.Context, in *StreamTickerRequest, opts ...grpc.CallOption) (ExchangeService_StreamTickerClient, error)
-	// FetchOHLCV fetches historical Open, High, Low, Close, Volume data.
-	FetchOHLCV(ctx context.Context, in *FetchOHLCVRequest, opts ...grpc.CallOption) (*FetchOHLCVResponse, error)
+	// Ping is a simple health check method to verify that the gateway is alive
+	// and can communicate with the exchange.
+	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 }
 
 type exchangeServiceClient struct {
@@ -38,50 +35,9 @@ func NewExchangeServiceClient(cc grpc.ClientConnInterface) ExchangeServiceClient
 	return &exchangeServiceClient{cc}
 }
 
-func (c *exchangeServiceClient) CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*CreateOrderResponse, error) {
-	out := new(CreateOrderResponse)
-	err := c.cc.Invoke(ctx, "/v1.ExchangeService/CreateOrder", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *exchangeServiceClient) StreamTicker(ctx context.Context, in *StreamTickerRequest, opts ...grpc.CallOption) (ExchangeService_StreamTickerClient, error) {
-	stream, err := c.cc.NewStream(ctx, &ExchangeService_ServiceDesc.Streams[0], "/v1.ExchangeService/StreamTicker", opts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &exchangeServiceStreamTickerClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-type ExchangeService_StreamTickerClient interface {
-	Recv() (*Ticker, error)
-	grpc.ClientStream
-}
-
-type exchangeServiceStreamTickerClient struct {
-	grpc.ClientStream
-}
-
-func (x *exchangeServiceStreamTickerClient) Recv() (*Ticker, error) {
-	m := new(Ticker)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
-func (c *exchangeServiceClient) FetchOHLCV(ctx context.Context, in *FetchOHLCVRequest, opts ...grpc.CallOption) (*FetchOHLCVResponse, error) {
-	out := new(FetchOHLCVResponse)
-	err := c.cc.Invoke(ctx, "/v1.ExchangeService/FetchOHLCV", in, out, opts...)
+func (c *exchangeServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
+	out := new(PingResponse)
+	err := c.cc.Invoke(ctx, "/v1.ExchangeService/Ping", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -92,12 +48,9 @@ func (c *exchangeServiceClient) FetchOHLCV(ctx context.Context, in *FetchOHLCVRe
 // All implementations must embed UnimplementedExchangeServiceServer
 // for forward compatibility
 type ExchangeServiceServer interface {
-	// CreateOrder places a new order on the exchange.
-	CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error)
-	// StreamTicker streams real-time ticker information for a given symbol.
-	StreamTicker(*StreamTickerRequest, ExchangeService_StreamTickerServer) error
-	// FetchOHLCV fetches historical Open, High, Low, Close, Volume data.
-	FetchOHLCV(context.Context, *FetchOHLCVRequest) (*FetchOHLCVResponse, error)
+	// Ping is a simple health check method to verify that the gateway is alive
+	// and can communicate with the exchange.
+	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	mustEmbedUnimplementedExchangeServiceServer()
 }
 
@@ -105,14 +58,8 @@ type ExchangeServiceServer interface {
 type UnimplementedExchangeServiceServer struct {
 }
 
-func (UnimplementedExchangeServiceServer) CreateOrder(context.Context, *CreateOrderRequest) (*CreateOrderResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateOrder not implemented")
-}
-func (UnimplementedExchangeServiceServer) StreamTicker(*StreamTickerRequest, ExchangeService_StreamTickerServer) error {
-	return status.Errorf(codes.Unimplemented, "method StreamTicker not implemented")
-}
-func (UnimplementedExchangeServiceServer) FetchOHLCV(context.Context, *FetchOHLCVRequest) (*FetchOHLCVResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FetchOHLCV not implemented")
+func (UnimplementedExchangeServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
 }
 func (UnimplementedExchangeServiceServer) mustEmbedUnimplementedExchangeServiceServer() {}
 
@@ -127,59 +74,20 @@ func RegisterExchangeServiceServer(s grpc.ServiceRegistrar, srv ExchangeServiceS
 	s.RegisterService(&ExchangeService_ServiceDesc, srv)
 }
 
-func _ExchangeService_CreateOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateOrderRequest)
+func _ExchangeService_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PingRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExchangeServiceServer).CreateOrder(ctx, in)
+		return srv.(ExchangeServiceServer).Ping(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/v1.ExchangeService/CreateOrder",
+		FullMethod: "/v1.ExchangeService/Ping",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExchangeServiceServer).CreateOrder(ctx, req.(*CreateOrderRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ExchangeService_StreamTicker_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(StreamTickerRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(ExchangeServiceServer).StreamTicker(m, &exchangeServiceStreamTickerServer{stream})
-}
-
-type ExchangeService_StreamTickerServer interface {
-	Send(*Ticker) error
-	grpc.ServerStream
-}
-
-type exchangeServiceStreamTickerServer struct {
-	grpc.ServerStream
-}
-
-func (x *exchangeServiceStreamTickerServer) Send(m *Ticker) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func _ExchangeService_FetchOHLCV_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FetchOHLCVRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExchangeServiceServer).FetchOHLCV(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/v1.ExchangeService/FetchOHLCV",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExchangeServiceServer).FetchOHLCV(ctx, req.(*FetchOHLCVRequest))
+		return srv.(ExchangeServiceServer).Ping(ctx, req.(*PingRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -192,20 +100,10 @@ var ExchangeService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ExchangeServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateOrder",
-			Handler:    _ExchangeService_CreateOrder_Handler,
-		},
-		{
-			MethodName: "FetchOHLCV",
-			Handler:    _ExchangeService_FetchOHLCV_Handler,
+			MethodName: "Ping",
+			Handler:    _ExchangeService_Ping_Handler,
 		},
 	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "StreamTicker",
-			Handler:       _ExchangeService_StreamTicker_Handler,
-			ServerStreams: true,
-		},
-	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "v1/exchange.proto",
 }

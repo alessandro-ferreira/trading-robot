@@ -1,69 +1,25 @@
+// Defines the gRPC contract for communication between the Go trading bot
+// and the Python exchange gateway.
+
 syntax = "proto3";
 
 package v1;
 
+// The option go_package tells the protoc compiler where to output the generated
+// Go code. The path is relative to the go-bot's module root.
 option go_package = "trading/robot/go-bot/gen/go/v1;v1";
 
 // ExchangeService defines the gRPC service for interacting with a cryptocurrency exchange.
 service ExchangeService {
-  // CreateOrder places a new order on the exchange.
-  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse) {}
-
-  // StreamTicker streams real-time ticker information for a given symbol.
-  rpc StreamTicker(StreamTickerRequest) returns (stream Ticker) {}
-
-  // FetchOHLCV fetches historical Open, High, Low, Close, Volume data.
-  rpc FetchOHLCV(FetchOHLCVRequest) returns (FetchOHLCVResponse) {}
+  // Ping is a simple health check method to verify that the gateway is alive
+  // and can communicate with the exchange.
+  rpc Ping(PingRequest) returns (PingResponse) {}
 }
 
-// --- Message Definitions ---
+// PingRequest is the message sent to the Ping RPC.
+message PingRequest {}
 
-enum OrderType {
-  ORDER_TYPE_UNSPECIFIED = 0;
-  MARKET = 1;
-  LIMIT = 2;
-}
-
-enum OrderSide {
-  ORDER_SIDE_UNSPECIFIED = 0;
-  BUY = 1;
-  SELL = 2;
-}
-
-message CreateOrderRequest {
-  string symbol = 1;      // e.g., "BTC/USDT"
-  OrderType type = 2;
-  OrderSide side = 3;
-  double amount = 4;      // The amount of the currency to buy/sell
-  optional double price = 5; // The price for a LIMIT order
-}
-
-message CreateOrderResponse {
-  string order_id = 1;    // The ID of the order as assigned by the exchange
-  string status = 2;      // e.g., "open", "closed", "canceled"
-  int64 timestamp = 3;    // Unix timestamp of when the order was created
-}
-
-message StreamTickerRequest {
-  string symbol = 1; // e.g., "BTC/USDT"
-}
-
-message Ticker {
-  string symbol = 1;
-  int64 timestamp = 2;   // Unix millisecond timestamp
-  double last = 3;       // Last price
-  double bid = 4;        // Best bid price
-  double ask = 5;        // Best ask price
-}
-
-message FetchOHLCVRequest {
-  string symbol = 1;
-  string timeframe = 2; // e.g., "1m", "5m", "1h"
-  int64 since = 3;      // Unix millisecond timestamp
-  optional int32 limit = 4;
-}
-
-message FetchOHLCVResponse {
-  // Each inner array represents one candle: [timestamp, open, high, low, close, volume]
-  repeated double ohlcv = 1 [packed=true];
+// PingResponse is the message returned from the Ping RPC.
+message PingResponse {
+  string message = 1;
 }

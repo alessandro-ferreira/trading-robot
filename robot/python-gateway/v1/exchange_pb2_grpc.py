@@ -35,20 +35,10 @@ class ExchangeServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.CreateOrder = channel.unary_unary(
-                '/v1.ExchangeService/CreateOrder',
-                request_serializer=v1_dot_exchange__pb2.CreateOrderRequest.SerializeToString,
-                response_deserializer=v1_dot_exchange__pb2.CreateOrderResponse.FromString,
-                _registered_method=True)
-        self.StreamTicker = channel.unary_stream(
-                '/v1.ExchangeService/StreamTicker',
-                request_serializer=v1_dot_exchange__pb2.StreamTickerRequest.SerializeToString,
-                response_deserializer=v1_dot_exchange__pb2.Ticker.FromString,
-                _registered_method=True)
-        self.FetchOHLCV = channel.unary_unary(
-                '/v1.ExchangeService/FetchOHLCV',
-                request_serializer=v1_dot_exchange__pb2.FetchOHLCVRequest.SerializeToString,
-                response_deserializer=v1_dot_exchange__pb2.FetchOHLCVResponse.FromString,
+        self.Ping = channel.unary_unary(
+                '/v1.ExchangeService/Ping',
+                request_serializer=v1_dot_exchange__pb2.PingRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.PingResponse.FromString,
                 _registered_method=True)
 
 
@@ -56,22 +46,9 @@ class ExchangeServiceServicer(object):
     """ExchangeService defines the gRPC service for interacting with a cryptocurrency exchange.
     """
 
-    def CreateOrder(self, request, context):
-        """CreateOrder places a new order on the exchange.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def StreamTicker(self, request, context):
-        """StreamTicker streams real-time ticker information for a given symbol.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def FetchOHLCV(self, request, context):
-        """FetchOHLCV fetches historical Open, High, Low, Close, Volume data.
+    def Ping(self, request, context):
+        """Ping is a simple health check method to verify that the gateway is alive
+        and can communicate with the exchange.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -80,20 +57,10 @@ class ExchangeServiceServicer(object):
 
 def add_ExchangeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'CreateOrder': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateOrder,
-                    request_deserializer=v1_dot_exchange__pb2.CreateOrderRequest.FromString,
-                    response_serializer=v1_dot_exchange__pb2.CreateOrderResponse.SerializeToString,
-            ),
-            'StreamTicker': grpc.unary_stream_rpc_method_handler(
-                    servicer.StreamTicker,
-                    request_deserializer=v1_dot_exchange__pb2.StreamTickerRequest.FromString,
-                    response_serializer=v1_dot_exchange__pb2.Ticker.SerializeToString,
-            ),
-            'FetchOHLCV': grpc.unary_unary_rpc_method_handler(
-                    servicer.FetchOHLCV,
-                    request_deserializer=v1_dot_exchange__pb2.FetchOHLCVRequest.FromString,
-                    response_serializer=v1_dot_exchange__pb2.FetchOHLCVResponse.SerializeToString,
+            'Ping': grpc.unary_unary_rpc_method_handler(
+                    servicer.Ping,
+                    request_deserializer=v1_dot_exchange__pb2.PingRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.PingResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -108,7 +75,7 @@ class ExchangeService(object):
     """
 
     @staticmethod
-    def CreateOrder(request,
+    def Ping(request,
             target,
             options=(),
             channel_credentials=None,
@@ -121,63 +88,9 @@ class ExchangeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/v1.ExchangeService/CreateOrder',
-            v1_dot_exchange__pb2.CreateOrderRequest.SerializeToString,
-            v1_dot_exchange__pb2.CreateOrderResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def StreamTicker(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
-            target,
-            '/v1.ExchangeService/StreamTicker',
-            v1_dot_exchange__pb2.StreamTickerRequest.SerializeToString,
-            v1_dot_exchange__pb2.Ticker.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def FetchOHLCV(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/v1.ExchangeService/FetchOHLCV',
-            v1_dot_exchange__pb2.FetchOHLCVRequest.SerializeToString,
-            v1_dot_exchange__pb2.FetchOHLCVResponse.FromString,
+            '/v1.ExchangeService/Ping',
+            v1_dot_exchange__pb2.PingRequest.SerializeToString,
+            v1_dot_exchange__pb2.PingResponse.FromString,
             options,
             channel_credentials,
             insecure,
