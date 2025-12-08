@@ -8,6 +8,7 @@ shutdown_timeout = "10s" # Time to wait for graceful shutdown before force-quitt
 [log]
 level = "info"    # Log level: "debug", "info", "warn", "error"
 format = "text"   # Log format: "text" or "json"
+source = true     # Enable source file and line number in logs
 
 # gRPC server settings
 [grpc]

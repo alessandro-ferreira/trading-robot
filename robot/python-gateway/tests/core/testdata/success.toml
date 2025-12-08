@@ -1,0 +1,10 @@
+[server]
+shutdown_timeout = "5s"
+
+[grpc]
+python_gateway_address = "localhost:9999"
+
+[log]
+level = "debug"
+format = "json"
+source = true
