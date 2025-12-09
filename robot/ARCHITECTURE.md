@@ -52,32 +52,35 @@ The system is composed of two main microservices communicating via gRPC:
 robot/
 ├── ARCHITECTURE.md             # This file
 ├── .gitignore
-├── config.toml.example         # Master configuration for both services
+├── config.toml.example         # Example configuration for the services
 │
 ├── go-bot/                     # The core Go application
 │   ├── go.mod
+│   ├── Makefile                # Automates common tasks (testing, etc.)
 │   ├── cmd/server/
 │   │   └── main.go             # Initializes and runs the Go components
 │   ├── internal/               # All internal Go packages
-│   │   ├── components/         # (execution, portfolio, risk)
-│   │   ├── config/             # Loads config.toml
-│   │   ├── database/           # Raw SQL logic using pgx
-│   │   │   ├── postgres.go     # Connection logic
-│   │   │   └── queries.go      # SQL query strings
-│   │   └── strategy/
-│   │       ├── signal_generator.go
+│   │   ├── components/
+│   │   │   ├── execution/      # Logic for trade execution via gRPC
+│   │   │   ├── portfolio/      # Portfolio management
+│   │   │   └── risk/           # Risk management
+│   │   ├── config/             # Configuration loading
+│   │   ├── database/           # Database connection and access logic
+│   │   ├── logger/             # Structured logging setup
+│   │   └── strategy/           # Trading strategy logic
 │   │       └── core/           # C++ logic called via cgo
-│   │           ├── strategy_logic.cpp
-│   │           └── cgo_wrapper.cpp
-│   └── gen/go/                 # Auto-generated Go gRPC code
+│   └── gen/go/v1/              # Auto-generated Go gRPC code
 │
 ├── python-gateway/             # The Python Exchange Gateway service
-│   ├── requirements.txt        # (ccxt, grpcio, etc.)
+│   ├── Makefile                # Automates common tasks
+│   ├── requirements.txt        # Python dependencies
 │   ├── main.py                 # Starts the Python gRPC server
-│   ├── v1/                     # Auto-generated Python gRPC code
+│   ├── core/                   # Core application helpers
 │   └── exchange/
 │       ├── factory.py          # Logic to select exchange based on config
 │       └── service.py          # Implements the gRPC service
+│   ├── tests/                  # Service tests
+│   └── v1/                     # Auto-generated Python gRPC code
 │
 └── proto/                      # Shared gRPC definitions
     └── v1/
