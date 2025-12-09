@@ -33,7 +33,7 @@ func New(w io.Writer, cfg config.LogConfig) *slog.Logger {
 	}
 
 	opts := &slog.HandlerOptions{
-		AddSource: true, // Enable source file and line number in logs
+		AddSource: cfg.Source, // Enable source file and line number in logs
 		Level:     level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {

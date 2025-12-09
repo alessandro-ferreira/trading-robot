@@ -24,6 +24,7 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, 30*time.Second, cfg.Server.ShutdownTimeout)
 		assert.Equal(t, "info", cfg.Log.Level)
 		assert.Equal(t, "json", cfg.Log.Format)
+		assert.False(t, cfg.Log.Source)
 		assert.Equal(t, "localhost", cfg.Database.Host)
 		assert.Equal(t, 5432, cfg.Database.Port)
 		assert.Equal(t, "testuser", cfg.Database.User)

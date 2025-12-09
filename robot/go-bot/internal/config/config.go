@@ -26,6 +26,7 @@ type ServerConfig struct {
 type LogConfig struct {
 	Level  string `toml:"level"`
 	Format string `toml:"format"`
+	Source bool   `toml:"source"`
 }
 
 // DatabaseConfig holds the database connection parameters.
@@ -52,15 +53,32 @@ type ExchangeConfig struct {
 	SandboxMode bool   `toml:"sandbox_mode"`
 }
 
+// newWithDefaults creates a Config struct with sensible default values.
+func newWithDefaults() *Config {
+	return &Config{
+		Server: ServerConfig{
+			ShutdownTimeout: 10 * time.Second,
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "text",
+			Source: false, // Disabled by default for performance.
+		},
+		Database: DatabaseConfig{
+			SSLMode: "disable",
+		},
+	}
+}
+
 // Load decodes the given file into a Config struct.
 func Load(path string) (*Config, error) {
-	var cfg Config
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	cfg := newWithDefaults()
+	if _, err := toml.DecodeFile(path, cfg); err != nil {
 		// Check if the file doesn't exist to provide a more helpful error.
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config file not found at %s. Please copy config.toml.example to config.toml and fill it out", path)
+			return nil, fmt.Errorf("config file not found at %s", path)
 		}
 		return nil, fmt.Errorf("failed to decode config file: %w", err)
 	}
-	return &cfg, nil
+	return cfg, nil
 }

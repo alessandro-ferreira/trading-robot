@@ -17,6 +17,7 @@ func TestNew(t *testing.T) {
 		cfg := config.LogConfig{
 			Level:  "info",
 			Format: "json",
+			Source: true,
 		}
 
 		logger := New(&buf, cfg)
@@ -39,6 +40,7 @@ func TestNew(t *testing.T) {
 		cfg := config.LogConfig{
 			Level:  "debug",
 			Format: "text",
+			Source: false,
 		}
 
 		logger := New(&buf, cfg)
@@ -52,6 +54,6 @@ func TestNew(t *testing.T) {
 		assert.Contains(t, output, `msg="test message"`, "Log output should contain the correct message")
 		assert.Contains(t, output, "key=value", "Log output should contain the key-value pair")
 		assert.Contains(t, output, "time=", "Log should contain a time field")
-		assert.Contains(t, output, "source=", "Log should contain a source field")
+		assert.NotContains(t, output, "source=", "Log should contain a source field")
 	})
 }

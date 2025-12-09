@@ -9,24 +9,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDB_Ping(t *testing.T) {
-	mock, err := pgxmock.NewPool()
+// newMockPool creates a new mock pool with ping monitoring enabled.
+func newMockPool(t *testing.T) pgxmock.PgxPoolIface {
+	t.Helper()
+	mock, err := pgxmock.NewPool(pgxmock.MonitorPingsOption(true))
 	require.NoError(t, err)
+	return mock
+}
+
+func TestDB_Ping(t *testing.T) {
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)
 
 	mock.ExpectPing()
 
-	err = db.Ping(context.Background())
+	err := db.Ping(context.Background())
 	require.NoError(t, err)
 
 	require.NoError(t, mock.ExpectationsWereMet(), "there were unfulfilled expectations")
 }
 
 func TestDB_Query(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)
@@ -36,15 +42,14 @@ func TestDB_Query(t *testing.T) {
 		WithArgs(1).
 		WillReturnRows(rows)
 
-	_, err = db.Query(context.Background(), "SELECT id, name FROM users WHERE id = $1", 1)
+	_, err := db.Query(context.Background(), "SELECT id, name FROM users WHERE id = $1", 1)
 	require.NoError(t, err)
 
 	require.NoError(t, mock.ExpectationsWereMet(), "there were unfulfilled expectations")
 }
 
 func TestDB_QueryRow(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)
@@ -55,7 +60,7 @@ func TestDB_QueryRow(t *testing.T) {
 		WillReturnRows(row)
 
 	var name string
-	err = db.QueryRow(context.Background(), "SELECT name FROM users WHERE id = $1", 1).Scan(&name)
+	err := db.QueryRow(context.Background(), "SELECT name FROM users WHERE id = $1", 1).Scan(&name)
 	require.NoError(t, err)
 	require.Equal(t, "test_name", name)
 
@@ -63,8 +68,7 @@ func TestDB_QueryRow(t *testing.T) {
 }
 
 func TestDB_Exec(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)
@@ -73,15 +77,14 @@ func TestDB_Exec(t *testing.T) {
 		WithArgs("test_name").
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
-	_, err = db.Exec(context.Background(), "INSERT INTO users (name) VALUES ($1)", "test_name")
+	_, err := db.Exec(context.Background(), "INSERT INTO users (name) VALUES ($1)", "test_name")
 	require.NoError(t, err)
 
 	require.NoError(t, mock.ExpectationsWereMet(), "there were unfulfilled expectations")
 }
 
 func TestDB_Transaction(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)
@@ -105,8 +108,7 @@ func TestDB_Transaction(t *testing.T) {
 }
 
 func TestDB_TransactionRollback(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)
@@ -130,8 +132,7 @@ func TestDB_TransactionRollback(t *testing.T) {
 }
 
 func TestDB_Close(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	require.NoError(t, err)
+	mock := newMockPool(t)
 	defer mock.Close()
 
 	db := New(mock)

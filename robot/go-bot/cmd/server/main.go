@@ -8,16 +8,27 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/logger"
 )
 
 func main() {
+	// Create a context that is canceled on a SIGINT or SIGTERM signal.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop() // stop() removes the signal handler.
+
 	// Define a command-line flag for the config file path.
-	configPath := flag.String("config", "config.toml", "path to the configuration file")
+	configPath := flag.String("config", "", "path to the configuration file")
 	flag.Parse()
+
+	// Check if the config file was provided.
+	if configPath == nil || *configPath == "" {
+		log.Fatal("❌ Configuration file path must be provided using the -config flag, e.g., -config=config.toml")
+	}
 
 	// Load configuration
 	cfg, err := config.Load(*configPath)
@@ -37,7 +48,7 @@ func main() {
 	)
 
 	// Initialize database connection
-	dbPool, err := database.NewDBPool(context.Background(), cfg.Database)
+	dbPool, err := database.NewDBPool(ctx, cfg.Database)
 	if err != nil {
 		slog.Error("Failed to initialize database connection", "error", err)
 		os.Exit(1)
@@ -46,31 +57,38 @@ func main() {
 
 	slog.Info("Database connection pool established")
 
-	// TODO: Initialize gRPC client and start trading strategies.
+	// Initialize gRPC client for the Python gateway
+	gatewayClient, err := execution.NewGatewayClient(&cfg.GRPC)
+	if err != nil {
+		slog.Error("Failed to connect to python-gateway", "error", err)
+		os.Exit(1)
+	}
+	defer gatewayClient.Close()
+	slog.Info("Successfully connected to python-gateway")
+
+	// Ping the gateway to verify the connection
+	pong, err := gatewayClient.Ping(ctx)
+	if err != nil {
+		slog.Error("Failed to ping python-gateway", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("Received response from python-gateway", "response", pong)
 
 	// --- Graceful Shutdown ---
-	// Create a channel to listen for OS signals.
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	// Block until the context is canceled (i.e., a shutdown signal is received).
+	<-ctx.Done()
 
-	// Block until a signal is received.
-	sig := <-stop
+	slog.Info("Shutdown signal received. Starting graceful shutdown...")
 
-	// Log the received signal.
-	slog.Info("Shutdown signal received", "signal", sig.String())
+	// Perform cleanup operations.
+	slog.Info("Closing client connections and database pool...")
+	gatewayClient.Close()
+	dbPool.Close()
 
-	// Create a context with a timeout for graceful shutdown.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
-	defer cancel()
-
-	slog.Info("Closing database connection pool...")
-	dbPool.Close() // pgxpool.Close() is safe to call multiple times.
-
-	// Wait for the shutdown context to be done (e.g., timeout).
-	<-shutdownCtx.Done()
-	if err := shutdownCtx.Err(); err == context.DeadlineExceeded {
-		slog.Error("Graceful shutdown timed out. Forcing exit.")
-		os.Exit(1)
+	// Wait for a configurable period to allow for any final logs to be processed.
+	if cfg.Server.ShutdownTimeout > 0 {
+		slog.Info("Waiting for shutdown delay", "duration", cfg.Server.ShutdownTimeout)
+		time.Sleep(cfg.Server.ShutdownTimeout)
 	}
 
 	slog.Info("Server shutdown complete.")
