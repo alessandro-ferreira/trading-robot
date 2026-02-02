@@ -14,6 +14,24 @@ service ExchangeService {
   // Ping is a simple health check method to verify that the gateway is alive
   // and can communicate with the exchange.
   rpc Ping(PingRequest) returns (PingResponse) {}
+
+  // GetTicker fetches the current price for a given symbol.
+  rpc GetTicker(GetTickerRequest) returns (TickerResponse) {}
+
+  // GetBalance fetches the account balance.
+  rpc GetBalance(GetBalanceRequest) returns (BalanceResponse) {}
+
+  // CreateOrder places a new order on the exchange.
+  rpc CreateOrder(CreateOrderRequest) returns (OrderResponse) {}
+
+  // CancelOrder cancels an existing order.
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse) {}
+
+  // GetOrder fetches details of a specific order.
+  rpc GetOrder(GetOrderRequest) returns (OrderResponse) {}
+
+  // GetOpenOrders fetches all open orders for a symbol.
+  rpc GetOpenOrders(GetOpenOrdersRequest) returns (OpenOrdersResponse) {}
 }
 
 // PingRequest is the message sent to the Ping RPC.
@@ -22,4 +40,79 @@ message PingRequest {}
 // PingResponse is the message returned from the Ping RPC.
 message PingResponse {
   string message = 1;
+}
+
+// GetTickerRequest is the message sent to the GetTicker RPC.
+message GetTickerRequest {
+  string symbol = 1;
+}
+
+// TickerResponse is the message returned from the GetTicker RPC.
+message TickerResponse {
+  string symbol = 1;
+  double price = 2;
+}
+
+// GetBalanceRequest is the message sent to the GetBalance RPC.
+message GetBalanceRequest {
+  string currency = 1;
+}
+
+// BalanceResponse is the message returned from the GetBalance RPC.
+message BalanceResponse {
+  map<string, double> free = 1;
+  map<string, double> used = 2;
+  map<string, double> total = 3;
+}
+
+// CreateOrderRequest is the message sent to the CreateOrder RPC.
+message CreateOrderRequest {
+  string symbol = 1;
+  string side = 2; // "buy" or "sell"
+  string type = 3; // "limit" or "market"
+  double amount = 4;
+  double price = 5;
+}
+
+// OrderResponse is the message returned from order-related RPCs.
+message OrderResponse {
+  string id = 1;
+  string symbol = 2;
+  string side = 3;
+  string type = 4;
+  double amount = 5;
+  double price = 6;
+  string status = 7;
+  double filled = 8;
+  double remaining = 9;
+  double cost = 10;
+  double average = 11;
+}
+
+// CancelOrderRequest is the message sent to the CancelOrder RPC.
+message CancelOrderRequest {
+  string id = 1;
+  string symbol = 2;
+}
+
+// CancelOrderResponse is the message returned from the CancelOrder RPC.
+message CancelOrderResponse {
+  string id = 1;
+  string status = 2;
+}
+
+// GetOrderRequest is the message sent to the GetOrder RPC.
+message GetOrderRequest {
+  string id = 1;
+  string symbol = 2;
+}
+
+// GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC.
+message GetOpenOrdersRequest {
+  string symbol = 1;
+}
+
+// OpenOrdersResponse is the message returned from the GetOpenOrders RPC.
+message OpenOrdersResponse {
+  repeated OrderResponse orders = 1;
 }

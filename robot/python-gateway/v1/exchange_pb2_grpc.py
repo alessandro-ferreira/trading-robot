@@ -40,6 +40,36 @@ class ExchangeServiceStub(object):
                 request_serializer=v1_dot_exchange__pb2.PingRequest.SerializeToString,
                 response_deserializer=v1_dot_exchange__pb2.PingResponse.FromString,
                 _registered_method=True)
+        self.GetTicker = channel.unary_unary(
+                '/v1.ExchangeService/GetTicker',
+                request_serializer=v1_dot_exchange__pb2.GetTickerRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.TickerResponse.FromString,
+                _registered_method=True)
+        self.GetBalance = channel.unary_unary(
+                '/v1.ExchangeService/GetBalance',
+                request_serializer=v1_dot_exchange__pb2.GetBalanceRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.BalanceResponse.FromString,
+                _registered_method=True)
+        self.CreateOrder = channel.unary_unary(
+                '/v1.ExchangeService/CreateOrder',
+                request_serializer=v1_dot_exchange__pb2.CreateOrderRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OrderResponse.FromString,
+                _registered_method=True)
+        self.CancelOrder = channel.unary_unary(
+                '/v1.ExchangeService/CancelOrder',
+                request_serializer=v1_dot_exchange__pb2.CancelOrderRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.CancelOrderResponse.FromString,
+                _registered_method=True)
+        self.GetOrder = channel.unary_unary(
+                '/v1.ExchangeService/GetOrder',
+                request_serializer=v1_dot_exchange__pb2.GetOrderRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OrderResponse.FromString,
+                _registered_method=True)
+        self.GetOpenOrders = channel.unary_unary(
+                '/v1.ExchangeService/GetOpenOrders',
+                request_serializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
+                _registered_method=True)
 
 
 class ExchangeServiceServicer(object):
@@ -54,6 +84,48 @@ class ExchangeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetTicker(self, request, context):
+        """GetTicker fetches the current price for a given symbol.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetBalance(self, request, context):
+        """GetBalance fetches the account balance.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateOrder(self, request, context):
+        """CreateOrder places a new order on the exchange.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CancelOrder(self, request, context):
+        """CancelOrder cancels an existing order.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetOrder(self, request, context):
+        """GetOrder fetches details of a specific order.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetOpenOrders(self, request, context):
+        """GetOpenOrders fetches all open orders for a symbol.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ExchangeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -61,6 +133,36 @@ def add_ExchangeServiceServicer_to_server(servicer, server):
                     servicer.Ping,
                     request_deserializer=v1_dot_exchange__pb2.PingRequest.FromString,
                     response_serializer=v1_dot_exchange__pb2.PingResponse.SerializeToString,
+            ),
+            'GetTicker': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetTicker,
+                    request_deserializer=v1_dot_exchange__pb2.GetTickerRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.TickerResponse.SerializeToString,
+            ),
+            'GetBalance': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBalance,
+                    request_deserializer=v1_dot_exchange__pb2.GetBalanceRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.BalanceResponse.SerializeToString,
+            ),
+            'CreateOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateOrder,
+                    request_deserializer=v1_dot_exchange__pb2.CreateOrderRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OrderResponse.SerializeToString,
+            ),
+            'CancelOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelOrder,
+                    request_deserializer=v1_dot_exchange__pb2.CancelOrderRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.CancelOrderResponse.SerializeToString,
+            ),
+            'GetOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOrder,
+                    request_deserializer=v1_dot_exchange__pb2.GetOrderRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OrderResponse.SerializeToString,
+            ),
+            'GetOpenOrders': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOpenOrders,
+                    request_deserializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OpenOrdersResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -91,6 +193,168 @@ class ExchangeService(object):
             '/v1.ExchangeService/Ping',
             v1_dot_exchange__pb2.PingRequest.SerializeToString,
             v1_dot_exchange__pb2.PingResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetTicker(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/GetTicker',
+            v1_dot_exchange__pb2.GetTickerRequest.SerializeToString,
+            v1_dot_exchange__pb2.TickerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetBalance(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/GetBalance',
+            v1_dot_exchange__pb2.GetBalanceRequest.SerializeToString,
+            v1_dot_exchange__pb2.BalanceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/CreateOrder',
+            v1_dot_exchange__pb2.CreateOrderRequest.SerializeToString,
+            v1_dot_exchange__pb2.OrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CancelOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/CancelOrder',
+            v1_dot_exchange__pb2.CancelOrderRequest.SerializeToString,
+            v1_dot_exchange__pb2.CancelOrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/GetOrder',
+            v1_dot_exchange__pb2.GetOrderRequest.SerializeToString,
+            v1_dot_exchange__pb2.OrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOpenOrders(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/GetOpenOrders',
+            v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
+            v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
             options,
             channel_credentials,
             insecure,
