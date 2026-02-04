@@ -5,7 +5,7 @@ CONFIG_FILE := ../config.toml
 # Use the modern 'docker compose' command. The -f flag points to the root docker-compose.yml
 COMPOSE_CMD = docker compose -f ../../docker-compose.yml
 
-.PHONY: help test test-integration test-all db-up db-down
+.PHONY: help test test-integration test-all db-up db-down integration-e2e
 
 help:
 	@echo "Usage: make <target>"
@@ -18,10 +18,15 @@ help:
 	@echo "  test-all         Start the test database, run all tests, and then stop the database."
 	@echo "  db-up            Start the test database in the background."
 	@echo "  db-down          Stop and remove the test database."
+	@echo "  integration-e2e  Run end-to-end integration tests (Go <-> Python gRPC, requires Docker)."
 
 run: 
 	@echo "==> Starting Go Trading Bot..."
 	@go run $(MAIN_FILE) --config $(CONFIG_FILE)
+
+proto:
+	@echo "==> Generating protobuf files..."
+	@protoc -I=../proto --go_out=gen/go --go_opt=paths=source_relative --go-grpc_out=gen/go --go-grpc_opt=paths=source_relative ../proto/v1/exchange.proto
 
 test:
 	@echo "==> Running unit tests..."
@@ -43,4 +48,15 @@ db-up:
 
 db-down:
 	@echo "==> Tearing down test database..."
+	@$(COMPOSE_CMD) down
+
+# integration-e2e: Start python-gateway and test-db, run Go integration tests, then stop containers
+integration-e2e:
+	@echo "==> Starting python-gateway and test database for integration tests..."
+	@$(COMPOSE_CMD) up -d python-gateway test-db
+	@echo "==> Waiting for python-gateway to be ready..."
+	@sleep 3
+	@echo "==> Running Go integration tests (gRPC E2E)..."
+	@go test -v -tags=integration ./...
+	@echo "==> Stopping containers..."
 	@$(COMPOSE_CMD) down

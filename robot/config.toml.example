@@ -24,8 +24,12 @@ password = "your_password"
 dbname = "trading_db"
 sslmode = "disable" # Use "require" or "verify-full" in production
 
-# Exchange configuration for the Python gateway
-[exchange]
+# Exchanges configuration for the Python gateway
+[[exchange]]
+name = "dummy"
+sandbox_mode = false
+
+[[exchange]]
 name = "mercadobitcoin" # The exchange to use (must be supported by ccxt)
 
 # It's highly recommended to use environment variables for API keys in production

@@ -198,7 +198,7 @@ func TestGatewayClient_CancelOrder(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		resp, err := client.CancelOrder(context.Background(), "123", "BTC/USDT")
+		resp, err := client.CancelOrder(context.Background(), "123", "BTC/USDT", "binance")
 
 		require.NoError(t, err)
 		assert.Equal(t, "123", resp.Id)
@@ -212,7 +212,7 @@ func TestGatewayClient_CancelOrder(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		_, err := client.CancelOrder(context.Background(), "123", "BTC/USDT")
+		_, err := client.CancelOrder(context.Background(), "123", "BTC/USDT", "binance")
 
 		require.Error(t, err)
 	})
@@ -226,7 +226,7 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		resp, err := client.GetOrder(context.Background(), "123", "BTC/USDT")
+		resp, err := client.GetOrder(context.Background(), "123", "BTC/USDT", "binance")
 
 		require.NoError(t, err)
 		assert.Equal(t, "123", resp.Id)
@@ -240,7 +240,7 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		_, err := client.GetOrder(context.Background(), "123", "BTC/USDT")
+		_, err := client.GetOrder(context.Background(), "123", "BTC/USDT", "binance")
 
 		require.Error(t, err)
 	})
@@ -259,7 +259,7 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		resp, err := client.GetOpenOrders(context.Background(), "BTC/USDT")
+		resp, err := client.GetOpenOrders(context.Background(), "BTC/USDT", "binance")
 
 		require.NoError(t, err)
 		assert.Len(t, resp.Orders, 2)
@@ -272,7 +272,7 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		_, err := client.GetOpenOrders(context.Background(), "BTC/USDT")
+		_, err := client.GetOpenOrders(context.Background(), "BTC/USDT", "binance")
 
 		require.Error(t, err)
 	})
@@ -297,7 +297,7 @@ func TestGatewayClient_GetTicker(t *testing.T) {
 		defer cleanup()
 
 		// Act
-		resp, err := client.GetTicker(context.Background(), "BTC/USDT")
+		resp, err := client.GetTicker(context.Background(), "BTC/USDT", "binance")
 
 		// Assert
 		require.NoError(t, err)
@@ -314,7 +314,7 @@ func TestGatewayClient_GetTicker(t *testing.T) {
 		defer cleanup()
 
 		// Act
-		_, err := client.GetTicker(context.Background(), "BTC/USDT")
+		_, err := client.GetTicker(context.Background(), "BTC/USDT", "binance")
 
 		// Assert
 		require.Error(t, err)
@@ -338,7 +338,7 @@ func TestGatewayClient_GetBalance(t *testing.T) {
 		defer cleanup()
 
 		// Act
-		resp, err := client.GetBalance(context.Background(), "USDT")
+		resp, err := client.GetBalance(context.Background(), "USDT", "binance")
 
 		// Assert
 		require.NoError(t, err)
@@ -353,7 +353,7 @@ func TestGatewayClient_GetBalance(t *testing.T) {
 		client, cleanup := setupTest(t, mockSrv)
 		defer cleanup()
 
-		_, err := client.GetBalance(context.Background(), "USDT")
+		_, err := client.GetBalance(context.Background(), "USDT", "binance")
 
 		require.Error(t, err)
 		st, ok := status.FromError(err)

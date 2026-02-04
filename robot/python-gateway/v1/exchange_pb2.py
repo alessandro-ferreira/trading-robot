@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11v1/exchange.proto\x12\x02v1\"\r\n\x0bPingRequest\"\x1f\n\x0cPingResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\"\"\n\x10GetTickerRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\"/\n\x0eTickerResponse\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05price\x18\x02 \x01(\x01\"%\n\x11GetBalanceRequest\x12\x10\n\x08\x63urrency\x18\x01 \x01(\t\"\xa2\x02\n\x0f\x42\x61lanceResponse\x12+\n\x04\x66ree\x18\x01 \x03(\x0b\x32\x1d.v1.BalanceResponse.FreeEntry\x12+\n\x04used\x18\x02 \x03(\x0b\x32\x1d.v1.BalanceResponse.UsedEntry\x12-\n\x05total\x18\x03 \x03(\x0b\x32\x1e.v1.BalanceResponse.TotalEntry\x1a+\n\tFreeEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x1a+\n\tUsedEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x1a,\n\nTotalEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"_\n\x12\x43reateOrderRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04side\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x0e\n\x06\x61mount\x18\x04 \x01(\x01\x12\r\n\x05price\x18\x05 \x01(\x01\"\xb8\x01\n\rOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0e\n\x06\x61mount\x18\x05 \x01(\x01\x12\r\n\x05price\x18\x06 \x01(\x01\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x0e\n\x06\x66illed\x18\x08 \x01(\x01\x12\x11\n\tremaining\x18\t \x01(\x01\x12\x0c\n\x04\x63ost\x18\n \x01(\x01\x12\x0f\n\x07\x61verage\x18\x0b \x01(\x01\"0\n\x12\x43\x61ncelOrderRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\"1\n\x13\x43\x61ncelOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"-\n\x0fGetOrderRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\"&\n\x14GetOpenOrdersRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\"7\n\x12OpenOrdersResponse\x12!\n\x06orders\x18\x01 \x03(\x0b\x32\x11.v1.OrderResponse2\xac\x03\n\x0f\x45xchangeService\x12+\n\x04Ping\x12\x0f.v1.PingRequest\x1a\x10.v1.PingResponse\"\x00\x12\x37\n\tGetTicker\x12\x14.v1.GetTickerRequest\x1a\x12.v1.TickerResponse\"\x00\x12:\n\nGetBalance\x12\x15.v1.GetBalanceRequest\x1a\x13.v1.BalanceResponse\"\x00\x12:\n\x0b\x43reateOrder\x12\x16.v1.CreateOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12@\n\x0b\x43\x61ncelOrder\x12\x16.v1.CancelOrderRequest\x1a\x17.v1.CancelOrderResponse\"\x00\x12\x34\n\x08GetOrder\x12\x13.v1.GetOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12\x43\n\rGetOpenOrders\x12\x18.v1.GetOpenOrdersRequest\x1a\x16.v1.OpenOrdersResponse\"\x00\x42#Z!trading/robot/go-bot/gen/go/v1;v1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11v1/exchange.proto\x12\x02v1\"\r\n\x0bPingRequest\"\x1f\n\x0cPingResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\"4\n\x10GetTickerRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\"/\n\x0eTickerResponse\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05price\x18\x02 \x01(\x01\"7\n\x11GetBalanceRequest\x12\x10\n\x08\x63urrency\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\"\xa2\x02\n\x0f\x42\x61lanceResponse\x12+\n\x04\x66ree\x18\x01 \x03(\x0b\x32\x1d.v1.BalanceResponse.FreeEntry\x12+\n\x04used\x18\x02 \x03(\x0b\x32\x1d.v1.BalanceResponse.UsedEntry\x12-\n\x05total\x18\x03 \x03(\x0b\x32\x1e.v1.BalanceResponse.TotalEntry\x1a+\n\tFreeEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x1a+\n\tUsedEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x1a,\n\nTotalEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"q\n\x12\x43reateOrderRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04side\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x0e\n\x06\x61mount\x18\x04 \x01(\x01\x12\r\n\x05price\x18\x05 \x01(\x01\x12\x10\n\x08\x65xchange\x18\x06 \x01(\t\"\xb8\x01\n\rOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0e\n\x06\x61mount\x18\x05 \x01(\x01\x12\r\n\x05price\x18\x06 \x01(\x01\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x0e\n\x06\x66illed\x18\x08 \x01(\x01\x12\x11\n\tremaining\x18\t \x01(\x01\x12\x0c\n\x04\x63ost\x18\n \x01(\x01\x12\x0f\n\x07\x61verage\x18\x0b \x01(\x01\"B\n\x12\x43\x61ncelOrderRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x10\n\x08\x65xchange\x18\x03 \x01(\t\"1\n\x13\x43\x61ncelOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"?\n\x0fGetOrderRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x10\n\x08\x65xchange\x18\x03 \x01(\t\"8\n\x14GetOpenOrdersRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x10\n\x08\x65xchange\x18\x02 \x01(\t\"7\n\x12OpenOrdersResponse\x12!\n\x06orders\x18\x01 \x03(\x0b\x32\x11.v1.OrderResponse2\xac\x03\n\x0f\x45xchangeService\x12+\n\x04Ping\x12\x0f.v1.PingRequest\x1a\x10.v1.PingResponse\"\x00\x12\x37\n\tGetTicker\x12\x14.v1.GetTickerRequest\x1a\x12.v1.TickerResponse\"\x00\x12:\n\nGetBalance\x12\x15.v1.GetBalanceRequest\x1a\x13.v1.BalanceResponse\"\x00\x12:\n\x0b\x43reateOrder\x12\x16.v1.CreateOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12@\n\x0b\x43\x61ncelOrder\x12\x16.v1.CancelOrderRequest\x1a\x17.v1.CancelOrderResponse\"\x00\x12\x34\n\x08GetOrder\x12\x13.v1.GetOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12\x43\n\rGetOpenOrders\x12\x18.v1.GetOpenOrdersRequest\x1a\x16.v1.OpenOrdersResponse\"\x00\x42#Z!trading/robot/go-bot/gen/go/v1;v1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -43,33 +43,33 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_PINGRESPONSE']._serialized_start=40
   _globals['_PINGRESPONSE']._serialized_end=71
   _globals['_GETTICKERREQUEST']._serialized_start=73
-  _globals['_GETTICKERREQUEST']._serialized_end=107
-  _globals['_TICKERRESPONSE']._serialized_start=109
-  _globals['_TICKERRESPONSE']._serialized_end=156
-  _globals['_GETBALANCEREQUEST']._serialized_start=158
-  _globals['_GETBALANCEREQUEST']._serialized_end=195
-  _globals['_BALANCERESPONSE']._serialized_start=198
-  _globals['_BALANCERESPONSE']._serialized_end=488
-  _globals['_BALANCERESPONSE_FREEENTRY']._serialized_start=354
-  _globals['_BALANCERESPONSE_FREEENTRY']._serialized_end=397
-  _globals['_BALANCERESPONSE_USEDENTRY']._serialized_start=399
-  _globals['_BALANCERESPONSE_USEDENTRY']._serialized_end=442
-  _globals['_BALANCERESPONSE_TOTALENTRY']._serialized_start=444
-  _globals['_BALANCERESPONSE_TOTALENTRY']._serialized_end=488
-  _globals['_CREATEORDERREQUEST']._serialized_start=490
-  _globals['_CREATEORDERREQUEST']._serialized_end=585
-  _globals['_ORDERRESPONSE']._serialized_start=588
-  _globals['_ORDERRESPONSE']._serialized_end=772
-  _globals['_CANCELORDERREQUEST']._serialized_start=774
-  _globals['_CANCELORDERREQUEST']._serialized_end=822
-  _globals['_CANCELORDERRESPONSE']._serialized_start=824
-  _globals['_CANCELORDERRESPONSE']._serialized_end=873
-  _globals['_GETORDERREQUEST']._serialized_start=875
-  _globals['_GETORDERREQUEST']._serialized_end=920
-  _globals['_GETOPENORDERSREQUEST']._serialized_start=922
-  _globals['_GETOPENORDERSREQUEST']._serialized_end=960
-  _globals['_OPENORDERSRESPONSE']._serialized_start=962
-  _globals['_OPENORDERSRESPONSE']._serialized_end=1017
-  _globals['_EXCHANGESERVICE']._serialized_start=1020
-  _globals['_EXCHANGESERVICE']._serialized_end=1448
+  _globals['_GETTICKERREQUEST']._serialized_end=125
+  _globals['_TICKERRESPONSE']._serialized_start=127
+  _globals['_TICKERRESPONSE']._serialized_end=174
+  _globals['_GETBALANCEREQUEST']._serialized_start=176
+  _globals['_GETBALANCEREQUEST']._serialized_end=231
+  _globals['_BALANCERESPONSE']._serialized_start=234
+  _globals['_BALANCERESPONSE']._serialized_end=524
+  _globals['_BALANCERESPONSE_FREEENTRY']._serialized_start=390
+  _globals['_BALANCERESPONSE_FREEENTRY']._serialized_end=433
+  _globals['_BALANCERESPONSE_USEDENTRY']._serialized_start=435
+  _globals['_BALANCERESPONSE_USEDENTRY']._serialized_end=478
+  _globals['_BALANCERESPONSE_TOTALENTRY']._serialized_start=480
+  _globals['_BALANCERESPONSE_TOTALENTRY']._serialized_end=524
+  _globals['_CREATEORDERREQUEST']._serialized_start=526
+  _globals['_CREATEORDERREQUEST']._serialized_end=639
+  _globals['_ORDERRESPONSE']._serialized_start=642
+  _globals['_ORDERRESPONSE']._serialized_end=826
+  _globals['_CANCELORDERREQUEST']._serialized_start=828
+  _globals['_CANCELORDERREQUEST']._serialized_end=894
+  _globals['_CANCELORDERRESPONSE']._serialized_start=896
+  _globals['_CANCELORDERRESPONSE']._serialized_end=945
+  _globals['_GETORDERREQUEST']._serialized_start=947
+  _globals['_GETORDERREQUEST']._serialized_end=1010
+  _globals['_GETOPENORDERSREQUEST']._serialized_start=1012
+  _globals['_GETOPENORDERSREQUEST']._serialized_end=1068
+  _globals['_OPENORDERSRESPONSE']._serialized_start=1070
+  _globals['_OPENORDERSRESPONSE']._serialized_end=1125
+  _globals['_EXCHANGESERVICE']._serialized_start=1128
+  _globals['_EXCHANGESERVICE']._serialized_end=1556
 # @@protoc_insertion_point(module_scope)

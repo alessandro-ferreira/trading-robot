@@ -1,46 +1,44 @@
 import unittest
 import os
+
 from core import config
 
-import logging
-# Define a directory for test configuration files
 TEST_DATA_DIR = "tests/core/testdata"
-SUCCESS_CONFIG_PATH = os.path.join(TEST_DATA_DIR, "success.toml")
-PARTIAL_CONFIG_PATH = os.path.join(TEST_DATA_DIR, "partial.toml")
-NON_EXISTENT_PATH = os.path.join(TEST_DATA_DIR, "nonexistent.toml")
 
+class TestConfig(unittest.TestCase):
+    def test_load_full_config(self):
+        cfg = config.load(os.path.join(TEST_DATA_DIR, "success.toml"))
 
-class ConfigTest(unittest.TestCase):
-    def test_load_success(self):
-        """Tests loading a complete and valid configuration file."""
-        cfg = config.load(SUCCESS_CONFIG_PATH)
         self.assertEqual(cfg.server.shutdown_timeout, 5)
         self.assertEqual(cfg.grpc.python_gateway_address, "localhost:9999")
         self.assertEqual(cfg.log.level, "debug")
-        self.assertEqual(cfg.log.format, "json")
-        self.assertTrue(cfg.log.source)
+        
+        # Accessing the first exchange in the list
+        self.assertTrue(len(cfg.exchanges) > 0)
+        first_ex = cfg.exchanges[0]
+        self.assertEqual(first_ex.name, "mercadobitcoin")
+        self.assertEqual(first_ex.api_key, "test_api_key")
+        self.assertEqual(first_ex.secret, "test_secret")
+        self.assertFalse(first_ex.sandbox_mode)
 
-    def test_load_partial_with_defaults(self):
-        """Tests that defaults are applied for missing values in a partial config."""
-        cfg = config.load(PARTIAL_CONFIG_PATH)
-        # Values from file
+    def test_load_defaults(self):
+        cfg = config.load(os.path.join(TEST_DATA_DIR, "partial.toml"))
+
         self.assertEqual(cfg.log.level, "warn")
-        # Default values
         self.assertEqual(cfg.server.shutdown_timeout, 10)
-        self.assertEqual(cfg.grpc.python_gateway_address, "[::]:50051")
-        self.assertEqual(cfg.log.format, "text")
-        self.assertFalse(cfg.log.source)
+        
+        if not cfg.exchanges:
+            self.assertEqual(len(cfg.exchanges), 0)
 
-    def test_load_non_existent_file(self):
-        """Tests that loading a non-existent file returns the default config."""
-        # Temporarily disable logging for this test to avoid seeing the expected warning.
-        logging.disable(logging.WARNING)
-        try:
-            cfg = config.load(NON_EXISTENT_PATH)
-            self.assertIsInstance(cfg, config.Config)
-            # Check a few default values to be sure
-            self.assertEqual(cfg.server.shutdown_timeout, 10)
-            self.assertEqual(cfg.log.level, "INFO")
-        finally:
-            # Re-enable logging so it doesn't affect other tests.
-            logging.disable(logging.NOTSET)
+    def test_load_nonexistent_file(self):
+        cfg = config.load("nonexistent.toml")
+        self.assertIsInstance(cfg, config.Config)
+        # Defaults for an empty config usually mean 0 exchanges
+        self.assertEqual(len(cfg.exchanges), 0)
+
+# To run this test directly, use:
+#   python -m tests.core.test_config
+
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

@@ -45,6 +45,7 @@ message PingResponse {
 // GetTickerRequest is the message sent to the GetTicker RPC.
 message GetTickerRequest {
   string symbol = 1;
+  string exchange = 2; // Optional: specify which exchange to query
 }
 
 // TickerResponse is the message returned from the GetTicker RPC.
@@ -56,6 +57,7 @@ message TickerResponse {
 // GetBalanceRequest is the message sent to the GetBalance RPC.
 message GetBalanceRequest {
   string currency = 1;
+  string exchange = 2; // Optional: specify which exchange to query
 }
 
 // BalanceResponse is the message returned from the GetBalance RPC.
@@ -72,6 +74,7 @@ message CreateOrderRequest {
   string type = 3; // "limit" or "market"
   double amount = 4;
   double price = 5;
+  string exchange = 6; // Optional: specify which exchange to use
 }
 
 // OrderResponse is the message returned from order-related RPCs.
@@ -93,6 +96,7 @@ message OrderResponse {
 message CancelOrderRequest {
   string id = 1;
   string symbol = 2;
+  string exchange = 3; // Optional: specify which exchange to use
 }
 
 // CancelOrderResponse is the message returned from the CancelOrder RPC.
@@ -105,11 +109,13 @@ message CancelOrderResponse {
 message GetOrderRequest {
   string id = 1;
   string symbol = 2;
+  string exchange = 3; // Optional: specify which exchange to use
 }
 
 // GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC.
 message GetOpenOrdersRequest {
   string symbol = 1;
+  string exchange = 2; // Optional: specify which exchange to use
 }
 
 // OpenOrdersResponse is the message returned from the GetOpenOrders RPC.

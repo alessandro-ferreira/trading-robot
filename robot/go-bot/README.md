@@ -63,10 +63,11 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
 ```
 
-Now, run the following command from the project's **root directory** (`trading/`) to generate the code:
+Now, use the provided `Makefile` to generate the code:
 
 ```bash
-protoc -I=robot/proto --go_out=robot/go-bot/gen/go --go_opt=paths=source_relative --go-grpc_out=robot/go-bot/gen/go --go-grpc_opt=paths=source_relative robot/proto/v1/exchange.proto
+# From the go-bot/ directory
+make proto
 ```
 
 ### 4. Run the Service

@@ -5,7 +5,6 @@ import json
 
 from core import config, logger
 
-
 class LoggerTest(unittest.TestCase):
     def setUp(self):
         """Redirect the root logger to a string buffer for each test."""
@@ -39,3 +38,11 @@ class LoggerTest(unittest.TestCase):
         self.assertIn("debug message", output)
         self.assertIn("[", output) # For source
         self.assertIn("test_logger.py", output)
+
+
+# To run this test directly, use:
+#   python -m tests.core.test_logger
+
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

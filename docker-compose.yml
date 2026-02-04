@@ -13,5 +13,20 @@ services:
     volumes:
       - test-db-data:/var/lib/postgresql/data
 
+  python-gateway:
+    build:
+      context: ./robot/python-gateway
+    container_name: trading-bot-python-gateway
+    command: ["python", "main.py", "--config", "/config.toml"]
+    volumes:
+      - ./robot/python-gateway:/app
+      - ./robot/config.toml:/config.toml:ro
+    depends_on:
+      - test-db
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "15051:50051"  # Expose gRPC port (host:container, avoids local conflict)
+
 volumes:
   test-db-data:

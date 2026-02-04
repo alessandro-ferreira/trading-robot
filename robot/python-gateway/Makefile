@@ -30,6 +30,12 @@ run: ## Run the gRPC server
 	@echo "--> Running Python gRPC gateway..."
 	@$(PYTHON) $(MAIN_FILE) --config $(CONFIG_FILE)
 
+proto: ## Generate protobuf files
+	$(call CHECK_VENV)
+	@echo "--> Generating protobuf files..."
+	@python -m grpc_tools.protoc -I=../proto --python_out=. --pyi_out=. --grpc_python_out=. ../proto/v1/exchange.proto
+
+
 # ==============================================================================
 # Testing
 # ==============================================================================

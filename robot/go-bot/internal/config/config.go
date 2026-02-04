@@ -10,11 +10,11 @@ import (
 
 // Config holds the application's configuration.
 type Config struct {
-	Server   ServerConfig   `toml:"server"`
-	Log      LogConfig      `toml:"log"`
-	Database DatabaseConfig `toml:"database"`
-	GRPC     GRPCConfig     `toml:"grpc"`
-	Exchange ExchangeConfig `toml:"exchange"`
+	Server    ServerConfig     `toml:"server"`
+	Log       LogConfig        `toml:"log"`
+	Database  DatabaseConfig   `toml:"database"`
+	GRPC      GRPCConfig       `toml:"grpc"`
+	Exchanges []ExchangeConfig `toml:"exchange"`
 }
 
 // ServerConfig holds server-related settings.

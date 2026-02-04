@@ -61,10 +61,11 @@ pip install -r requirements.txt
 
 ### 3. Generate gRPC Code
 
-Run the following command from the project's **root directory** (`trading/`) to generate the gRPC server code:
+Use the provided `Makefile` to generate the gRPC server code:
 
 ```bash
-python -m grpc_tools.protoc -I=robot/proto --python_out=robot/python-gateway --pyi_out=robot/python-gateway --grpc_python_out=robot/python-gateway robot/proto/v1/exchange.proto
+# From the python-gateway/ directory
+make proto
 ```
 
 ### 4. Run the Service

@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"google.golang.org/grpc"
@@ -40,10 +41,12 @@ func NewGatewayClient(cfg *config.GRPCConfig) (*GatewayClient, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err := gwClient.Ping(ctx); err != nil {
+	resp, err := gwClient.Ping(ctx)
+	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("initial health check to python-gateway failed: %w", err)
 	}
+	slog.Info("Connected to python-gateway successfully", "message", resp)
 
 	return gwClient, nil
 }
@@ -58,19 +61,19 @@ func (c *GatewayClient) Ping(ctx context.Context) (string, error) {
 }
 
 // GetTicker fetches the current price for a given symbol.
-func (c *GatewayClient) GetTicker(ctx context.Context, symbol string) (*pb.TickerResponse, error) {
-	resp, err := c.client.GetTicker(ctx, &pb.GetTickerRequest{Symbol: symbol})
+func (c *GatewayClient) GetTicker(ctx context.Context, symbol, exchange string) (*pb.TickerResponse, error) {
+	resp, err := c.client.GetTicker(ctx, &pb.GetTickerRequest{Symbol: symbol, Exchange: exchange})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get ticker for %s: %w", symbol, err)
+		return nil, fmt.Errorf("failed to get ticker for %s on %s: %w", symbol, exchange, err)
 	}
 	return resp, nil
 }
 
 // GetBalance fetches the account balance.
-func (c *GatewayClient) GetBalance(ctx context.Context, currency string) (*pb.BalanceResponse, error) {
-	resp, err := c.client.GetBalance(ctx, &pb.GetBalanceRequest{Currency: currency})
+func (c *GatewayClient) GetBalance(ctx context.Context, currency, exchange string) (*pb.BalanceResponse, error) {
+	resp, err := c.client.GetBalance(ctx, &pb.GetBalanceRequest{Currency: currency, Exchange: exchange})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get balance for %s: %w", currency, err)
+		return nil, fmt.Errorf("failed to get balance for %s on %s: %w", currency, exchange, err)
 	}
 	return resp, nil
 }
@@ -79,34 +82,34 @@ func (c *GatewayClient) GetBalance(ctx context.Context, currency string) (*pb.Ba
 func (c *GatewayClient) CreateOrder(ctx context.Context, req *pb.CreateOrderRequest) (*pb.OrderResponse, error) {
 	resp, err := c.client.CreateOrder(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create order for %s: %w", req.Symbol, err)
+		return nil, fmt.Errorf("failed to create order for %s on %s: %w", req.Symbol, req.Exchange, err)
 	}
 	return resp, nil
 }
 
 // CancelOrder cancels an existing order.
-func (c *GatewayClient) CancelOrder(ctx context.Context, id, symbol string) (*pb.CancelOrderResponse, error) {
-	resp, err := c.client.CancelOrder(ctx, &pb.CancelOrderRequest{Id: id, Symbol: symbol})
+func (c *GatewayClient) CancelOrder(ctx context.Context, id, symbol, exchange string) (*pb.CancelOrderResponse, error) {
+	resp, err := c.client.CancelOrder(ctx, &pb.CancelOrderRequest{Id: id, Symbol: symbol, Exchange: exchange})
 	if err != nil {
-		return nil, fmt.Errorf("failed to cancel order %s: %w", id, err)
+		return nil, fmt.Errorf("failed to cancel order %s on %s: %w", id, exchange, err)
 	}
 	return resp, nil
 }
 
 // GetOrder fetches details of a specific order.
-func (c *GatewayClient) GetOrder(ctx context.Context, id, symbol string) (*pb.OrderResponse, error) {
-	resp, err := c.client.GetOrder(ctx, &pb.GetOrderRequest{Id: id, Symbol: symbol})
+func (c *GatewayClient) GetOrder(ctx context.Context, id, symbol, exchange string) (*pb.OrderResponse, error) {
+	resp, err := c.client.GetOrder(ctx, &pb.GetOrderRequest{Id: id, Symbol: symbol, Exchange: exchange})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get order %s: %w", id, err)
+		return nil, fmt.Errorf("failed to get order %s on %s: %w", id, exchange, err)
 	}
 	return resp, nil
 }
 
 // GetOpenOrders fetches all open orders for a symbol.
-func (c *GatewayClient) GetOpenOrders(ctx context.Context, symbol string) (*pb.OpenOrdersResponse, error) {
-	resp, err := c.client.GetOpenOrders(ctx, &pb.GetOpenOrdersRequest{Symbol: symbol})
+func (c *GatewayClient) GetOpenOrders(ctx context.Context, symbol, exchange string) (*pb.OpenOrdersResponse, error) {
+	resp, err := c.client.GetOpenOrders(ctx, &pb.GetOpenOrdersRequest{Symbol: symbol, Exchange: exchange})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get open orders for %s: %w", symbol, err)
+		return nil, fmt.Errorf("failed to get open orders for %s on %s: %w", symbol, exchange, err)
 	}
 	return resp, nil
 }

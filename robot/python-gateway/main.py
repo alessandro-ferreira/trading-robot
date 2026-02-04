@@ -1,3 +1,4 @@
+
 import argparse
 import grpc
 from concurrent import futures
@@ -6,8 +7,8 @@ import signal
 import time
 
 from v1 import exchange_pb2_grpc
-from exchange import ExchangeService
 from core import config, logger
+from exchange import ExchangeFactory, ExchangeService
 
 
 def serve():
@@ -32,9 +33,9 @@ def serve():
     
     logger.setup(cfg.log)
 
-    # max_workers can be specified if needed: futures.ThreadPoolExecutor(max_workers=10)
+    factory = ExchangeFactory(cfg.exchanges)
     server = grpc.server(futures.ThreadPoolExecutor())
-    exchange_pb2_grpc.add_ExchangeServiceServicer_to_server(ExchangeService(), server)
+    exchange_pb2_grpc.add_ExchangeServiceServicer_to_server(ExchangeService(cfg, factory), server)
 
     server.add_insecure_port(cfg.grpc.python_gateway_address)
     server.start()

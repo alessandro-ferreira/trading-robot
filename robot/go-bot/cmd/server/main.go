@@ -64,15 +64,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer gatewayClient.Close()
-	slog.Info("Successfully connected to python-gateway")
-
-	// Ping the gateway to verify the connection
-	pong, err := gatewayClient.Ping(ctx)
-	if err != nil {
-		slog.Error("Failed to ping python-gateway", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("Received response from python-gateway", "response", pong)
 
 	// --- Graceful Shutdown ---
 	// Block until the context is canceled (i.e., a shutdown signal is received).

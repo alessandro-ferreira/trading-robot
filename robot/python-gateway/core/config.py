@@ -1,5 +1,7 @@
 import logging
+import os
 from dataclasses import dataclass, field
+from typing import List, Union # 1. Added List and Union
 
 try:
     # Recommended for Python 3.11+
@@ -28,6 +30,13 @@ class LogConfig:
     format: str = "text"
     source: bool = False
 
+@dataclass
+class ExchangeConfig:
+    """Exchange configuration."""
+    name: str = ""
+    api_key: str = ""
+    secret: str = ""
+    sandbox_mode: bool = False
 
 @dataclass
 class Config:
@@ -35,10 +44,10 @@ class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     grpc: GRPCConfig = field(default_factory=GRPCConfig)
     log: LogConfig = field(default_factory=LogConfig)
+    exchanges: List[ExchangeConfig] = field(default_factory=list)
 
-
-def _parse_duration_to_seconds(duration: str | int, default: int) -> int:
-    """Parses a duration string like '10s' into an integer of seconds."""
+def _parse_duration_to_seconds(duration: Union[str, int], default: int) -> int:
+    """Parses a duration value which can be an integer (seconds) or a string ending with 's'."""
     if isinstance(duration, int):
         return duration
     if isinstance(duration, str) and duration.lower().endswith('s'):
@@ -48,21 +57,33 @@ def _parse_duration_to_seconds(duration: str | int, default: int) -> int:
             return default
     return default
 
-
 def load_from_dict(data: dict) -> Config:
     """Loads configuration from a dictionary, applying defaults."""
     cfg = Config()
+    
+    # Server/GRPC/Log loading
     if server_data := data.get("server"):
-        timeout_str = server_data.get("shutdown_timeout", cfg.server.shutdown_timeout)
-        cfg.server.shutdown_timeout = _parse_duration_to_seconds(timeout_str, cfg.server.shutdown_timeout)
+        timeout_val = server_data.get("shutdown_timeout", cfg.server.shutdown_timeout)
+        cfg.server.shutdown_timeout = _parse_duration_to_seconds(timeout_val, cfg.server.shutdown_timeout)
+    
     if grpc_data := data.get("grpc"):
         cfg.grpc.python_gateway_address = grpc_data.get("python_gateway_address", cfg.grpc.python_gateway_address)
+        
     if log_data := data.get("log"):
         cfg.log.level = log_data.get("level", cfg.log.level)
         cfg.log.format = log_data.get("format", cfg.log.format)
         cfg.log.source = log_data.get("source", cfg.log.source)
-    return cfg
 
+    for entry in data.get("exchange", []):
+        ex_cfg = ExchangeConfig(
+            name=entry.get("name", "binance"),
+            api_key=entry.get("api_key", ""),
+            secret=entry.get("secret", ""),
+            sandbox_mode=entry.get("sandbox_mode", True)
+        )
+        cfg.exchanges.append(ex_cfg)
+        
+    return cfg
 
 def load(path: str) -> Config:
     """Loads configuration from a TOML file."""
