@@ -40,6 +40,5 @@ class TestBaseExchange(unittest.TestCase):
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_base_exchange
-
 if __name__ == "__main__":
     unittest.main()

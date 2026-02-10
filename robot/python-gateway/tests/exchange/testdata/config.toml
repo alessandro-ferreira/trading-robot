@@ -12,5 +12,18 @@ source = true
 [[exchange]]
 name = "binance"
 api_key = "test_api_key"
-secret = "test_secret"
+api_secret = "test_secret"
 sandbox_mode = false
+ccxt = true
+
+[[exchange]]
+name = "dummy"
+sandbox_mode = false
+ccxt = false
+
+[[exchange]]
+name = "mercadobitcoin"
+api_key = "test_key"
+api_secret = "test_secret"
+sandbox_mode = false
+ccxt = false

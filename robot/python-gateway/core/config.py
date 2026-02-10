@@ -1,5 +1,4 @@
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import List, Union # 1. Added List and Union
 
@@ -37,6 +36,7 @@ class ExchangeConfig:
     api_key: str = ""
     secret: str = ""
     sandbox_mode: bool = False
+    ccxt: bool = False  # Indicates if this exchange should be handled by ccxt
 
 @dataclass
 class Config:
@@ -76,10 +76,11 @@ def load_from_dict(data: dict) -> Config:
 
     for entry in data.get("exchange", []):
         ex_cfg = ExchangeConfig(
-            name=entry.get("name", "binance"),
-            api_key=entry.get("api_key", ""),
-            secret=entry.get("secret", ""),
-            sandbox_mode=entry.get("sandbox_mode", True)
+            name=entry.get("name", None),
+            api_key=entry.get("api_key", None),
+            secret=entry.get("api_secret", None),
+            sandbox_mode=entry.get("sandbox_mode", False),
+            ccxt=entry.get("ccxt", False)
         )
         cfg.exchanges.append(ex_cfg)
         

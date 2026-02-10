@@ -42,7 +42,5 @@ class LoggerTest(unittest.TestCase):
 
 # To run this test directly, use:
 #   python -m tests.core.test_logger
-
 if __name__ == "__main__":
-    import unittest
     unittest.main()

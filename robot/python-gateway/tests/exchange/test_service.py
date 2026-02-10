@@ -154,8 +154,6 @@ class TestExchangeService(unittest.TestCase):
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_service
-
 if __name__ == "__main__":
-    import unittest
     unittest.main()
 

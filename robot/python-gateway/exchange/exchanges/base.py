@@ -1,8 +1,11 @@
-import ccxt
-
+import logging
 from abc import ABC
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+import ccxt
+
+from core.config import ExchangeConfig
 
 class ExchangeError(Exception):
     pass
@@ -21,32 +24,44 @@ class Exchange(ABC):
     Abstract base class for exchange implementations.
     """
 
-    def __init__(self, cfg=None):
+    def __init__(self, cfg: ExchangeConfig = None):
         self._cfg = cfg
         self._ccxt = None
         # Try to instantiate ccxt client if possible
         try:
-            if cfg and hasattr(cfg, 'name') and hasattr(ccxt, cfg.name):
-                ccxt_cls = getattr(ccxt, cfg.name)
-                # Prepare credentials and options if present
-                params = {}
-                if hasattr(cfg, 'apiKey') and cfg.apiKey:
-                    params['apiKey'] = cfg.apiKey
-                if hasattr(cfg, 'secret') and cfg.secret:
-                    params['secret'] = cfg.secret
-                if hasattr(cfg, 'password') and cfg.password:
-                    params['password'] = cfg.password
-                # Add any other config fields as needed
-                self._ccxt = ccxt_cls(params)
-        except ImportError:
-            pass  # ccxt not installed, ignore
-        except Exception:
-            pass  # Not a ccxt-supported exchange or bad config, ignore
+            if cfg and cfg.ccxt:
+                if cfg.name and cfg.name in ccxt.exchanges:
+                    ccxt_cls = getattr(ccxt, cfg.name)
+                    # Prepare credentials and options if present
+                    params = {}
+                    if cfg.api_key is not None:
+                        params['apiKey'] = cfg.api_key
+                        logging.debug(f"API key provided for {cfg.name}")
+                    if cfg.secret is not None:
+                        params['secret'] = cfg.secret
+                        logging.debug(f"Secret provided for {cfg.name}")
+                    # Add any other config fields as needed
+                    self._ccxt = ccxt_cls(params)
+                    logging.debug(f"Initialized ccxt exchange {cfg.name} with params: {params}")
+                else:
+                    logging.warning(f"Exchange '{cfg.name}' configured with ccxt=True but not found in ccxt library")
+
+            elif cfg and cfg.name:
+                logging.debug(f"Exchange '{cfg.name}' initialized without ccxt (native implementation)")
+            else:
+                logging.warning("No exchange name provided in config")
+
+        except Exception as e:
+            logging.error(f"Error initializing exchange '{cfg.name if cfg else "unknown"}': {e}")
+            raise
 
     def set_sandbox_mode(self, enabled: bool):
         """Enables or disables sandbox mode if supported by the exchange."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("set_sandbox_mode not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying ccxt exchange not available to set sandbox mode")
+
         try:
             self._ccxt.set_sandbox_mode(enabled)
         except Exception as e:
@@ -54,8 +69,11 @@ class Exchange(ABC):
 
     def fetch_ticker(self, symbol: str) -> Ticker:
         """Fetches the ticker for the given symbol."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("fetch_ticker not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available to fetch ticker")
+
         raw = self._ccxt.fetch_ticker(symbol)
         # normalization: prefer last -> close -> derived from info
         last = None
@@ -82,30 +100,45 @@ class Exchange(ABC):
 
     def fetch_balance(self) -> Dict[str, Dict[str, float]]:
         """Fetches the account balance."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("fetch_balance not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
+
         return self._ccxt.fetch_balance()
 
     def create_order(self, symbol: str, type: str, side: str, amount: float, price: Optional[float] = None) -> Dict[str, Any]:
         """Creates a new order."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("create_order not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
+
         return self._ccxt.create_order(symbol, type, side, amount, price)
 
     def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Cancels an existing order."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("cancel_order not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
+
         return self._ccxt.cancel_order(id, symbol)
 
     def fetch_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Fetches an existing order."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("fetch_order not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
+
         return self._ccxt.fetch_order(id, symbol)
 
-    def fetch_open_orders(self, symbol: Optional[str] = None) -> list:
+    def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fetches open orders for the given symbol."""
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("fetch_open_orders not implemented")
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
+
         return self._ccxt.fetch_open_orders(symbol)

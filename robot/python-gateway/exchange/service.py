@@ -1,13 +1,13 @@
 import logging
-
-# Import the generated classes
-from v1 import exchange_pb2
-from v1 import exchange_pb2_grpc
+from typing import Any
 
 import grpc
-from typing import Any
-from exchange.factory import ExchangeNotConfigured, ExchangeFactory
+
+from v1 import exchange_pb2
+from v1 import exchange_pb2_grpc
+from exchange.factory import ExchangeConfigurationError, ExchangeFactory, ExchangeNotConfigured
 from exchange.exchanges.base import Exchange
+from core.config import Config
 
 
 class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
@@ -17,20 +17,31 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     to perform operations on the configured exchanges.
     """
 
-    def __init__(self, cfg: object, factory: 'ExchangeFactory'):
+    def __init__(self, cfg: Config, factory: ExchangeFactory):
         """Initializes the service with configuration and exchange factory."""
         self.cfg = cfg
         self.factory = factory
         self.default_exchange = self.cfg.exchanges[0].name if self.cfg.exchanges else None
+        # initialize all exchanges at startup to catch configuration errors early
+        for exchange in self.cfg.exchanges:
+            try:
+                self.factory.get(exchange.name)
+                logging.info(f"Successfully initialized exchange: {exchange.name}")
+            except Exception as e:
+                logging.exception(f"Failed to initialize exchange {exchange.name}: {e}")
+
 
     def _getExchange(self, request: Any, context: grpc.ServicerContext) -> Exchange:
         """Helper method to retrieve the exchange instance based on the request or default."""
-        ex_name = getattr(request, 'exchange', None) or self.default_exchange
+        ex_name = request.exchange or self.default_exchange
         try:
             exchange = self.factory.get(ex_name)
         except ExchangeNotConfigured as e:
-            logging.error(f"Exchange not configured: {e}")
+            logging.exception(f"Exchange not configured: {e}")
             context.abort(grpc.StatusCode.NOT_FOUND, str(e))
+        except ExchangeConfigurationError as e:
+            logging.exception(f"Exchange configuration error: {e}")
+            context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
 
         return exchange
 
@@ -48,7 +59,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             ticker = exchange.fetch_ticker(request.symbol)
             price = float(ticker.last)
         except Exception as e:
-            logging.error(f"Error fetching ticker: {e}")
+            logging.exception(f"Error fetching ticker: {e}")
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
         return exchange_pb2.TickerResponse(symbol=ticker.symbol, price=price)
@@ -57,16 +68,20 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     def GetBalance(self, request: Any, context: grpc.ServicerContext) -> exchange_pb2.BalanceResponse:
         """Handles the GetBalance RPC."""
         logging.info(f"Received GetBalance request for {request.currency}")
-        
+
         exchange = self._getExchange(request, context)
         try:
             balance = exchange.fetch_balance()
-            # balance is expected to be a dict with 'free', 'used', 'total' keys
             free = balance.get('free', {})
             used = balance.get('used', {})
             total = balance.get('total', {})
+            if request.currency:
+                currency = request.currency
+                free = {currency: free.get(currency, 0)}
+                used = {currency: used.get(currency, 0)}
+                total = {currency: total.get(currency, 0)}
         except Exception as e:
-            logging.error(f"Error fetching balance: {e}")
+            logging.exception(f"Error fetching balance: {e}")
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
         return exchange_pb2.BalanceResponse(free=free, used=used, total=total)
@@ -85,7 +100,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 price=request.price
             )
         except Exception as e:
-            logging.error(f"Error creating order: {e}")
+            logging.exception(f"Error creating order: {e}")
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
         return exchange_pb2.OrderResponse(
@@ -110,7 +125,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             result = exchange.cancel_order(request.id, symbol=request.symbol)
         except Exception as e:
-            logging.error(f"Error canceling order: {e}")
+            logging.exception(f"Error canceling order: {e}")
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
         return exchange_pb2.CancelOrderResponse(
@@ -126,7 +141,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             order = exchange.fetch_order(request.id, symbol=request.symbol)
         except Exception as e:
-            logging.error(f"Error fetching order: {e}")
+            logging.exception(f"Error fetching order: {e}")
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
         return exchange_pb2.OrderResponse(
@@ -151,7 +166,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             orders = exchange.fetch_open_orders(request.symbol)
         except Exception as e:
-            logging.error(f"Error fetching open orders: {e}")
+            logging.exception(f"Error fetching open orders: {e}")
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
         resp_orders = [

@@ -38,7 +38,5 @@ class TestConfig(unittest.TestCase):
 
 # To run this test directly, use:
 #   python -m tests.core.test_config
-
 if __name__ == "__main__":
-    import unittest
     unittest.main()

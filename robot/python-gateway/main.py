@@ -1,12 +1,13 @@
-
 import argparse
-import grpc
-from concurrent import futures
 import logging
 import signal
 import time
+from concurrent import futures
 
-from v1 import exchange_pb2_grpc
+import grpc
+from grpc_reflection.v1alpha import reflection
+
+from v1 import exchange_pb2, exchange_pb2_grpc
 from core import config, logger
 from exchange import ExchangeFactory, ExchangeService
 
@@ -33,10 +34,19 @@ def serve():
     
     logger.setup(cfg.log)
 
+    # Initialize the exchange factory and gRPC server.
     factory = ExchangeFactory(cfg.exchanges)
     server = grpc.server(futures.ThreadPoolExecutor())
     exchange_pb2_grpc.add_ExchangeServiceServicer_to_server(ExchangeService(cfg, factory), server)
 
+    # Enable reflection for the service, which allows clients to query the server for available services and methods.
+    SERVICE_NAMES = (
+        exchange_pb2.DESCRIPTOR.services_by_name['ExchangeService'].full_name,
+        reflection.SERVICE_NAME,
+    )
+    reflection.enable_server_reflection(SERVICE_NAMES, server)
+
+    # Start the server.
     server.add_insecure_port(cfg.grpc.python_gateway_address)
     server.start()
     logging.info(f"Python gRPC gateway started on {cfg.grpc.python_gateway_address}")

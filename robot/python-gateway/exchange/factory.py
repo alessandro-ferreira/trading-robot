@@ -1,7 +1,7 @@
 import logging
+from typing import Dict, List, Optional
 
-from typing import Dict, Optional
-
+from core.config import ExchangeConfig
 from .exchanges.base import Exchange
 from .exchanges import REGISTRY
 
@@ -21,9 +21,9 @@ class ExchangeFactory:
     Implements a factory for creating and managing exchange instances based on configuration.
     This class uses a registry pattern to instantiate exchange providers dynamically.
     """
-    def __init__(self, exchanges_config: list):
+    def __init__(self, exchanges_config: List[ExchangeConfig]):
         """Initializes the factory with a list of exchange configurations."""
-        self._configs = {ex_cfg.name: ex_cfg for ex_cfg in exchanges_config}
+        self._configs: Dict[str, ExchangeConfig] = {ex_cfg.name: ex_cfg for ex_cfg in exchanges_config}
         self._instances: Dict[str, Exchange] = {}
 
     def _create_instance(self, name: str) -> Exchange:
@@ -39,7 +39,10 @@ class ExchangeFactory:
         
         # Instantiate provider from registry
         provider_cls = REGISTRY[cfg.name]
-        provider = provider_cls(cfg)
+        try:
+            provider = provider_cls(cfg)
+        except Exception as e:
+            raise ExchangeConfigurationError(f"Failed to initialize exchange '{cfg.name}': {e}")
 
         # Enforce sandbox setup via provider API
         if cfg.sandbox_mode:

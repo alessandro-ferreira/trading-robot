@@ -3,3 +3,4 @@ grpcio-tools
 ccxt
 toml
 python-dotenv
+grpcio-reflection

@@ -48,7 +48,5 @@ class TestDummyExchange(unittest.TestCase):
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_dummy_exchange
-
 if __name__ == "__main__":
-    import unittest
     unittest.main()
