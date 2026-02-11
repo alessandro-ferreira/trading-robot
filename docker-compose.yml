@@ -1,7 +1,7 @@
 services:
   # Test database for the go-bot
   test-db:
-    image: timescale/timescaledb:latest-pg14
+    image: timescale/timescaledb:latest-pg16
     container_name: trading-bot-test-db
     environment:
       - POSTGRES_USER=testuser

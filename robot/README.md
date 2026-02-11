@@ -12,6 +12,15 @@ The system is composed of two main services that communicate via gRPC. The API c
 
 For a more detailed diagram, see `ARCHITECTURE.md`.
 
+## Development Environment
+
+To ensure consistency all services are built and run against specific versions.
+
+-   **Python:** 3.12 (as defined in `python-gateway/Dockerfile`)
+-   **Go:** 1.18+ (as defined in `go-bot/go.mod`)
+
+It is highly recommended to use these versions for local development. The `python-gateway/Dockerfile` should be pinned to a `python:3.12-slim` base image.
+
 ## Setup and Running
 
 To set up and run the trading bot, please follow the instructions in the `README.md` file for each service. You will need to start both services in separate terminals.

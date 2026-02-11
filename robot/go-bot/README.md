@@ -41,7 +41,9 @@ This guide provides the necessary steps to set up and run the `go-bot` service.
 ### 1. Prerequisites
 
 -   Go 1.18+
+-   PostgreSQL 16 + TimescaleDB (Local installation)
 -   Protobuf Compiler (protoc)
+-   Docker & Docker Compose (for database and integration tests)
 
 ### 2. Installation
 
@@ -70,7 +72,33 @@ Now, use the provided `Makefile` to generate the code:
 make proto
 ```
 
-### 4. Run the Service
+### 4. Database Setup
+
+Ensure your local PostgreSQL 16 instance is running. You need to create the database and user expected by the default configuration (`config.toml`).
+
+```sql
+-- Run these commands in psql
+CREATE DATABASE trading_db;
+```
+
+**Environment Variables:**
+
+The `Makefile` uses default credentials (`postgres`/`postgres`) to run migrations. If your local database uses different credentials, create a `.env` file in this directory (`robot/go-bot/.env`) to override them.
+
+Example `.env`:
+```dotenv
+DB_USER=your_user
+DB_PASSWORD=your_password
+```
+
+Once the database is ready and configured, apply the schema migrations:
+
+```bash
+make migrate-up
+```
+
+
+### 5. Run the Service
 
 Use the provided `Makefile` to start the application. This will attempt to connect to the `python-gateway`, so ensure it is running first.
 
@@ -82,7 +110,7 @@ make run
 This will start the application, which will then attempt to connect to the `python-gateway`.
 
 
-### 5. Testing
+### 6. Testing
 
 The project includes both unit and integration tests. The `Makefile` provides convenient targets for running them.
 

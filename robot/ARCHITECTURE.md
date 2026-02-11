@@ -69,7 +69,8 @@ robot/
 │   │   ├── logger/             # Structured logging setup
 │   │   └── strategy/           # Trading strategy logic
 │   │       └── core/           # C++ logic called via cgo
-│   └── gen/go/v1/              # Auto-generated Go gRPC code
+│   ├── gen/go/v1/              # Auto-generated Go gRPC code
+│   └── migrations              # Database migrations
 │
 ├── python-gateway/             # The Python Exchange Gateway service
 │   ├── Makefile                # Automates common tasks

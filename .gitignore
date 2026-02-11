@@ -27,3 +27,6 @@ __pycache__/
 # --- Configuration ---
 # Ignore the actual config file with secrets
 robot/config.toml
+
+# Environment variables file
+robot/go-bot/.env

@@ -28,9 +28,10 @@ sslmode = "disable" # Use "require" or "verify-full" in production
 [[exchange]]
 name = "dummy"
 sandbox_mode = false
+ccxt = false
 
 [[exchange]]
-name = "mercadobitcoin" # The exchange to use (must be supported by ccxt)
+name = "binance"
 
 # It's highly recommended to use environment variables for API keys in production
 # For local development, you can place them here.
@@ -39,3 +40,5 @@ name = "mercadobitcoin" # The exchange to use (must be supported by ccxt)
 
 # Set to true for sandbox/testnet environments
 sandbox_mode = true
+# Enable ccxt support
+ccxt = true
