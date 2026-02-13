@@ -19,6 +19,14 @@ class Ticker:
     timestamp: Optional[int] = None
     info: Dict[str, Any] = None
 
+class OrderType:
+    MARKET = 'market'
+    LIMIT = 'limit'
+
+class OrderSide:
+    BUY = 'buy'
+    SELL = 'sell'
+
 class Exchange(ABC):
     """
     Abstract base class for exchange implementations.
@@ -56,7 +64,11 @@ class Exchange(ABC):
             raise
 
     def set_sandbox_mode(self, enabled: bool):
-        """Enables or disables sandbox mode if supported by the exchange."""
+        """
+        Enables or disables sandbox mode if supported by the exchange.
+
+        :param enabled: True to enable sandbox mode, False to disable.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("set_sandbox_mode not implemented")
         if not self._ccxt:
@@ -68,7 +80,12 @@ class Exchange(ABC):
             raise ExchangeError(str(e))
 
     def fetch_ticker(self, symbol: str) -> Ticker:
-        """Fetches the ticker for the given symbol."""
+        """
+        Fetches the ticker for the given symbol.
+
+        :param symbol: The symbol to fetch (e.g., 'BTC/USDT').
+        :return: A Ticker object containing market data.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("fetch_ticker not implemented")
         if not self._ccxt:
@@ -99,7 +116,11 @@ class Exchange(ABC):
         return Ticker(symbol=symbol, last=last_f, bid=(float(bid) if bid is not None else None), ask=(float(ask) if ask is not None else None), timestamp=timestamp, info=raw.get("info", {}))
 
     def fetch_balance(self) -> Dict[str, Dict[str, float]]:
-        """Fetches the account balance."""
+        """
+        Fetches the account balance.
+
+        :return: A dictionary containing 'free', 'used', and 'total' balances.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("fetch_balance not implemented")
         if not self._ccxt:
@@ -108,7 +129,16 @@ class Exchange(ABC):
         return self._ccxt.fetch_balance()
 
     def create_order(self, symbol: str, type: str, side: str, amount: float, price: Optional[float] = None) -> Dict[str, Any]:
-        """Creates a new order."""
+        """
+        Creates a new order.
+
+        :param symbol: The symbol to trade (e.g., 'BTC/USDT').
+        :param type: The order type ('market' or 'limit').
+        :param side: The order side ('buy' or 'sell').
+        :param amount: The amount of base currency to trade.
+        :param price: The price per unit (required for limit orders).
+        :return: A dictionary containing the order details.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("create_order not implemented")
         if not self._ccxt:
@@ -117,7 +147,13 @@ class Exchange(ABC):
         return self._ccxt.create_order(symbol, type, side, amount, price)
 
     def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
-        """Cancels an existing order."""
+        """
+        Cancels an existing order.
+
+        :param id: The order ID.
+        :param symbol: The symbol of the order (optional but recommended).
+        :return: A dictionary containing the cancellation details.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("cancel_order not implemented")
         if not self._ccxt:
@@ -126,7 +162,13 @@ class Exchange(ABC):
         return self._ccxt.cancel_order(id, symbol)
 
     def fetch_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
-        """Fetches an existing order."""
+        """
+        Fetches an existing order.
+
+        :param id: The order ID.
+        :param symbol: The symbol of the order (optional but recommended).
+        :return: A dictionary containing the order details.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("fetch_order not implemented")
         if not self._ccxt:
@@ -135,7 +177,12 @@ class Exchange(ABC):
         return self._ccxt.fetch_order(id, symbol)
 
     def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Fetches open orders for the given symbol."""
+        """
+        Fetches open orders for the given symbol.
+
+        :param symbol: The symbol to filter by (optional).
+        :return: A list of open orders.
+        """
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("fetch_open_orders not implemented")
         if not self._ccxt:

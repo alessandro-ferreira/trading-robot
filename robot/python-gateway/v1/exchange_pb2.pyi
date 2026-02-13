@@ -88,7 +88,7 @@ class CreateOrderRequest(_message.Message):
     def __init__(self, symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., exchange: _Optional[str] = ...) -> None: ...
 
 class OrderResponse(_message.Message):
-    __slots__ = ("id", "symbol", "side", "type", "amount", "price", "status", "filled", "remaining", "cost", "average")
+    __slots__ = ("id", "symbol", "side", "type", "amount", "price", "status", "filled", "remaining", "cost", "average", "client_order_id", "timestamp")
     ID_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     SIDE_FIELD_NUMBER: _ClassVar[int]
@@ -100,6 +100,8 @@ class OrderResponse(_message.Message):
     REMAINING_FIELD_NUMBER: _ClassVar[int]
     COST_FIELD_NUMBER: _ClassVar[int]
     AVERAGE_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ORDER_ID_FIELD_NUMBER: _ClassVar[int]
+    TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     id: str
     symbol: str
     side: str
@@ -111,7 +113,9 @@ class OrderResponse(_message.Message):
     remaining: float
     cost: float
     average: float
-    def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., status: _Optional[str] = ..., filled: _Optional[float] = ..., remaining: _Optional[float] = ..., cost: _Optional[float] = ..., average: _Optional[float] = ...) -> None: ...
+    client_order_id: str
+    timestamp: int
+    def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., status: _Optional[str] = ..., filled: _Optional[float] = ..., remaining: _Optional[float] = ..., cost: _Optional[float] = ..., average: _Optional[float] = ..., client_order_id: _Optional[str] = ..., timestamp: _Optional[int] = ...) -> None: ...
 
 class CancelOrderRequest(_message.Message):
     __slots__ = ("id", "symbol", "exchange")

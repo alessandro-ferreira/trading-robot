@@ -114,7 +114,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             filled=order.get('filled', 0.0),
             remaining=order.get('remaining', 0.0),
             cost=order.get('cost', 0.0),
-            average=order.get('average', 0.0)
+            average=order.get('average', 0.0),
+            client_order_id=str(order.get('clientOrderId') or ''),
+            timestamp=int(order.get('timestamp') or 0)
         )
 
     def CancelOrder(self, request: Any, context: grpc.ServicerContext) -> exchange_pb2.CancelOrderResponse:
@@ -155,7 +157,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             filled=order.get('filled', 0.0),
             remaining=order.get('remaining', 0.0),
             cost=order.get('cost', 0.0),
-            average=order.get('average', 0.0)
+            average=order.get('average', 0.0),
+            client_order_id=str(order.get('clientOrderId') or ''),
+            timestamp=int(order.get('timestamp') or 0)
         )
 
     def GetOpenOrders(self, request: Any, context: grpc.ServicerContext) -> exchange_pb2.OpenOrdersResponse:
@@ -181,7 +185,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 filled=order.get('filled', 0.0),
                 remaining=order.get('remaining', 0.0),
                 cost=order.get('cost', 0.0),
-                average=order.get('average', 0.0)
+                average=order.get('average', 0.0),
+                client_order_id=str(order.get('clientOrderId') or ''),
+                timestamp=int(order.get('timestamp') or 0)
             ) for order in orders
         ]
         return exchange_pb2.OpenOrdersResponse(orders=resp_orders)

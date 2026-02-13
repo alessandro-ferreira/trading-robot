@@ -11,7 +11,7 @@
 Thumbs.db
 
 # --- Python ---
-# Virtual environment - Your venv is outside the project, but this is good practice
+# Virtual environment
 venv/
 venv_trading/
 *.venv/

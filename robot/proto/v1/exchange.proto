@@ -90,6 +90,8 @@ message OrderResponse {
   double remaining = 9;
   double cost = 10;
   double average = 11;
+  string client_order_id = 12;
+  int64 timestamp = 13;
 }
 
 // CancelOrderRequest is the message sent to the CancelOrder RPC.
