@@ -47,6 +47,7 @@ def setup(cfg: LogConfig, stream=None):
 
     handler = logging.StreamHandler(stream)
 
+    formatter: logging.Formatter
     if cfg.format.lower() == "json":
         formatter = JSONFormatter(source=cfg.source)
     else:  # Default to text

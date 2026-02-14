@@ -97,7 +97,7 @@ To set up the automatic git hooks:
 
 ```bash
 pip install pre-commit
-pre-commit install
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
 To run it manually:

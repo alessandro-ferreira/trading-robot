@@ -23,5 +23,5 @@ This project uses `pre-commit` to enforce coding standards and automatically fix
     ```
 2.  Install the git hooks (run from the repository root):
     ```bash
-    pre-commit install
+    pre-commit install --hook-type pre-commit --hook-type commit-msg
     ```

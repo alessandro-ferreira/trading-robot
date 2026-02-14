@@ -1,4 +1,17 @@
 repos:
+  # General Code Hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        files: ^robot/
+      - id: end-of-file-fixer
+        files: ^robot/
+      - id: check-yaml
+        files: ^robot/
+      - id: check-added-large-files
+        files: ^robot/
+
   # Python Gateway
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.3.0
@@ -24,6 +37,15 @@ repos:
         types: [go]
         exclude: ^robot/go-bot/gen/
 
+  - repo: local
+    hooks:
+      - id: go-mod-tidy
+        name: go-mod-tidy
+        entry: bash -c 'cd robot/go-bot && go mod tidy'
+        language: system
+        files: ^robot/go-bot/
+        pass_filenames: false
+
   - repo: https://github.com/golangci/golangci-lint
     rev: v1.64.5
     hooks:
@@ -34,3 +56,29 @@ repos:
         # Run from the module directory to resolve dependencies correctly
         entry: bash -c 'cd robot/go-bot && golangci-lint run'
         pass_filenames: false
+
+  # Local Tests
+  - repo: local
+    hooks:
+      - id: python-tests
+        name: python-tests
+        # Using make ensures consistency with the Makefile
+        entry: bash -c 'cd robot/python-gateway && make test'
+        language: system
+        types: [python]
+        files: ^robot/python-gateway/
+        pass_filenames: false
+      - id: go-tests
+        name: go-tests
+        # Using make ensures consistency with the Makefile
+        entry: bash -c 'cd robot/go-bot && make test-all'
+        language: system
+        types: [go]
+        files: ^robot/go-bot/
+        pass_filenames: false
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.2.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]

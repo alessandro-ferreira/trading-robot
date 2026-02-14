@@ -46,7 +46,7 @@ help:
 	@echo "  debug-db         Show database connection info (for debugging)."
 
 # Run the Go Trading Bot
-run: 
+run:
 	@echo "==> Starting Go Trading Bot..."
 	@go run $(MAIN_FILE) --config $(CONFIG_FILE)
 

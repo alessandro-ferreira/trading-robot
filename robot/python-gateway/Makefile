@@ -6,7 +6,7 @@ PYTHON := python
 VENV_CHECK := $(shell python -c 'import sys; print(1 if sys.prefix != sys.base_prefix else 0)')
 
 .PHONY: help run test pre-commit
- 
+
 help:
 	@echo "Usage: make <target>"
 	@echo ""
