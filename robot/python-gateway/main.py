@@ -31,17 +31,19 @@ def serve():
         logging.basicConfig()
         logging.critical(f"Failed to load configuration, cannot start: {e}")
         return
-    
+
     logger.setup(cfg.log)
 
     # Initialize the exchange factory and gRPC server.
     factory = ExchangeFactory(cfg.exchanges)
     server = grpc.server(futures.ThreadPoolExecutor())
-    exchange_pb2_grpc.add_ExchangeServiceServicer_to_server(ExchangeService(cfg, factory), server)
+    exchange_pb2_grpc.add_ExchangeServiceServicer_to_server(
+        ExchangeService(cfg, factory), server
+    )
 
     # Enable reflection for the service, which allows clients to query the server for available services and methods.
     SERVICE_NAMES = (
-        exchange_pb2.DESCRIPTOR.services_by_name['ExchangeService'].full_name,
+        exchange_pb2.DESCRIPTOR.services_by_name["ExchangeService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(SERVICE_NAMES, server)
@@ -53,7 +55,9 @@ def serve():
     logging.info("Press Ctrl+C to stop the server.")
 
     def handle_shutdown(signum, frame):
-        logging.info(f"Shutdown signal received ({signal.Signals(signum).name}). Stopping server...")
+        logging.info(
+            f"Shutdown signal received ({signal.Signals(signum).name}). Stopping server..."
+        )
         # This is a non-blocking call that causes wait_for_termination() to unblock.
         server.stop(grace=1)
 
@@ -71,5 +75,6 @@ def serve():
 
     logging.info("Server stopped.")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     serve()

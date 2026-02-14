@@ -9,6 +9,7 @@ class JSONFormatter(logging.Formatter):
     """
     A custom formatter to output logs in JSON format.
     """
+
     def __init__(self, *args, source: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.include_source = source
@@ -20,11 +21,11 @@ class JSONFormatter(logging.Formatter):
             "msg": record.getMessage(),
         }
         if record.exc_info:
-            log_record['exc_info'] = self.formatException(record.exc_info)
+            log_record["exc_info"] = self.formatException(record.exc_info)
         if record.stack_info:
-            log_record['stack_info'] = self.formatStack(record.stack_info)
+            log_record["stack_info"] = self.formatStack(record.stack_info)
         if self.include_source:
-            log_record['source'] = f"{record.pathname}:{record.lineno}"
+            log_record["source"] = f"{record.pathname}:{record.lineno}"
 
         return json.dumps(log_record)
 
@@ -46,12 +47,14 @@ def setup(cfg: LogConfig, stream=None):
 
     handler = logging.StreamHandler(stream)
 
-    if cfg.format.lower() == 'json':
+    if cfg.format.lower() == "json":
         formatter = JSONFormatter(source=cfg.source)
-    else: # Default to text
+    else:  # Default to text
         log_format = "%(asctime)s - %(levelname)s - %(message)s"
         if cfg.source:
-            log_format = "%(asctime)s - %(levelname)s - [%(pathname)s:%(lineno)d] - %(message)s"
+            log_format = (
+                "%(asctime)s - %(levelname)s - [%(pathname)s:%(lineno)d] - %(message)s"
+            )
         formatter = logging.Formatter(log_format)
 
     handler.setFormatter(formatter)

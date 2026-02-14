@@ -101,7 +101,7 @@ func setupTest(t *testing.T, mockSrv *mockExchangeServer) (*GatewayClient, func(
 	}()
 
 	// Create a client connection to the in-memory listener instead of a real network address.
-	conn, err := grpc.Dial("bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := grpc.NewClient("passthrough://bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)

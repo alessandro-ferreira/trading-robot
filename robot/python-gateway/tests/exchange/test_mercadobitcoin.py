@@ -9,6 +9,7 @@ from exchange.exchanges.mercadobitcoin import MercadoBitcoinExchange
 
 TEST_DATA_DIR = "tests/exchange/testdata"
 
+
 class TestMercadoBitcoinExchange(unittest.TestCase):
     def setUp(self):
         cfg = config.load(os.path.join(TEST_DATA_DIR, "config.toml"))
@@ -22,7 +23,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_response.status_code = http.client.OK
         mock_response.json.return_value = {
             "access_token": "mock_token",
-            "expiration": 1800
+            "expiration": 1800,
         }
         mock_post.return_value = mock_response
 
@@ -48,17 +49,19 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         # Mock ticker response
         mock_response = MagicMock()
         mock_response.status_code = http.client.OK
-        mock_response.json.return_value = [{
-            "pair": "BTC-BRL",
-            "high": "200000.00000000",
-            "low": "190000.00000000",
-            "vol": "50.00000000",
-            "last": "195000.00000000",
-            "buy": "194900.00000000",
-            "sell": "195100.00000000",
-            "open": "192000.00000000",
-            "date": 1672531200000000000  # Nanoseconds
-        }]
+        mock_response.json.return_value = [
+            {
+                "pair": "BTC-BRL",
+                "high": "200000.00000000",
+                "low": "190000.00000000",
+                "vol": "50.00000000",
+                "last": "195000.00000000",
+                "buy": "194900.00000000",
+                "sell": "195100.00000000",
+                "open": "192000.00000000",
+                "date": 1672531200000000000,  # Nanoseconds
+            }
+        ]
         mock_get.return_value = mock_response
 
         ticker = self.exchange.fetch_ticker("BTC/BRL")
@@ -93,13 +96,18 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         accounts_resp = MagicMock()
         accounts_resp.status_code = http.client.OK
         accounts_resp.json.return_value = [{"id": "acc_123"}]
-        
+
         # Mock Balances
         balances_resp = MagicMock()
         balances_resp.status_code = http.client.OK
         balances_resp.json.return_value = [
-            {"symbol": "BRL", "available": "1000.0", "on_hold": "0.0", "total": "1000.0"},
-            {"symbol": "BTC", "available": "0.5", "on_hold": "0.1", "total": "0.6"}
+            {
+                "symbol": "BRL",
+                "available": "1000.0",
+                "on_hold": "0.0",
+                "total": "1000.0",
+            },
+            {"symbol": "BTC", "available": "0.5", "on_hold": "0.1", "total": "0.6"},
         ]
 
         # Configure side_effect to return accounts then balances
@@ -107,9 +115,9 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
         balance = self.exchange.fetch_balance()
 
-        self.assertEqual(balance['free']['BRL'], 1000.0)
-        self.assertEqual(balance['total']['BTC'], 0.6)
-        self.assertEqual(balance['used']['BTC'], 0.1)
+        self.assertEqual(balance["free"]["BRL"], 1000.0)
+        self.assertEqual(balance["total"]["BTC"], 0.6)
+        self.assertEqual(balance["used"]["BTC"], 0.1)
 
     @patch("requests.request")
     def test_create_order_success(self, mock_request):
@@ -126,21 +134,23 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
             "limitPrice": "100000.0",
             "side": "buy",
             "type": "limit",
-            "status": "created"
+            "status": "created",
         }
         mock_request.return_value = mock_response
 
-        order = self.exchange.create_order("BTC/BRL", OrderType.LIMIT, "buy", 0.1, 100000.0)
+        order = self.exchange.create_order(
+            "BTC/BRL", OrderType.LIMIT, "buy", 0.1, 100000.0
+        )
 
         self.assertEqual(order["id"], "ord_123")
         self.assertEqual(order["symbol"], "BTC/BRL")
         self.assertEqual(order["status"], "open")
-        
+
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "POST")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders", args[1])
         self.assertEqual(kwargs["json"]["qty"], "0.1")
-        self.assertEqual(kwargs["json"]["limitPrice"], "100000")
+        self.assertEqual(kwargs["json"]["limitPrice"], 100000.0)
 
     def test_create_order_missing_price_for_limit(self):
         with self.assertRaises(ExchangeError) as cm:
@@ -177,7 +187,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
         self.assertEqual(result["id"], "ord_123")
         self.assertEqual(result["status"], "canceled")
-        
+
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "DELETE")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders/ord_123?async=false", args[1])
@@ -219,7 +229,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
             "qty": "0.1",
             "filledQty": "0.05",
             "status": "working",
-            "created_at": 1672531200
+            "created_at": 1672531200,
         }
         mock_request.return_value = mock_response
 
@@ -267,7 +277,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
                 "instrument": "BTC-BRL",
                 "qty": "0.1",
                 "filledQty": "0.0",
-                "created_at": 1672531200
+                "created_at": 1672531200,
             }
         ]
         mock_request.return_value = mock_response
@@ -277,7 +287,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["id"], "ord_1")
         self.assertEqual(orders[0]["symbol"], "BTC/BRL")
-        
+
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "GET")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders", args[1])
@@ -299,7 +309,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
                     "instrument": "ETH-BRL",
                     "qty": "1.0",
                     "filledQty": "0.0",
-                    "created_at": 1672531200
+                    "created_at": 1672531200,
                 }
             ]
         }
@@ -310,7 +320,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["id"], "ord_2")
         self.assertEqual(orders[0]["symbol"], "ETH/BRL")
-        
+
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "GET")
         self.assertIn("/accounts/acc_123/orders", args[1])
@@ -330,6 +340,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         with self.assertRaises(ExchangeError) as cm:
             self.exchange.fetch_open_orders("BTC/BRL")
         self.assertIn("MercadoBitcoin API Error: 500", str(cm.exception))
+
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_mercadobitcoin

@@ -1,0 +1,36 @@
+repos:
+  # Python Gateway
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.0
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+        files: ^robot/python-gateway/
+        exclude: ^robot/python-gateway/v1/
+      - id: ruff-format
+        files: ^robot/python-gateway/
+        exclude: ^robot/python-gateway/v1/
+
+  # Go Bot
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        files: ^robot/go-bot/
+        types: [go]
+        exclude: ^robot/go-bot/gen/
+      - id: go-imports
+        files: ^robot/go-bot/
+        types: [go]
+        exclude: ^robot/go-bot/gen/
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.64.5
+    hooks:
+      - id: golangci-lint
+        files: ^robot/go-bot/
+        types: [go]
+        exclude: ^robot/go-bot/gen/
+        # Run from the module directory to resolve dependencies correctly
+        entry: bash -c 'cd robot/go-bot && golangci-lint run'
+        pass_filenames: false

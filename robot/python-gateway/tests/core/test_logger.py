@@ -5,6 +5,7 @@ import json
 
 from core import config, logger
 
+
 class LoggerTest(unittest.TestCase):
     def setUp(self):
         """Redirect the root logger to a string buffer for each test."""
@@ -20,10 +21,10 @@ class LoggerTest(unittest.TestCase):
         output = self.log_stream.getvalue()
         log_data = json.loads(output)
 
-        self.assertEqual(log_data['level'], 'INFO')
-        self.assertEqual(log_data['msg'], 'test message')
-        self.assertIn('source', log_data)
-        self.assertIn('test_logger.py', log_data['source'])
+        self.assertEqual(log_data["level"], "INFO")
+        self.assertEqual(log_data["msg"], "test message")
+        self.assertIn("source", log_data)
+        self.assertIn("test_logger.py", log_data["source"])
 
     def test_text_format(self):
         """Tests that the logger produces standard text output."""
@@ -36,7 +37,7 @@ class LoggerTest(unittest.TestCase):
 
         self.assertIn("DEBUG", output)
         self.assertIn("debug message", output)
-        self.assertIn("[", output) # For source
+        self.assertIn("[", output)  # For source
         self.assertIn("test_logger.py", output)
 
 

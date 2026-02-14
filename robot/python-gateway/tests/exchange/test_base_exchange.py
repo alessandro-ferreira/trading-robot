@@ -5,6 +5,7 @@ from exchange.exchanges.base import Exchange, Ticker, ExchangeError
 
 TEST_DATA_DIR = "tests/exchange/testdata"
 
+
 class TestBaseExchange(unittest.TestCase):
     def setUp(self):
         cfg = config.load(os.path.join(TEST_DATA_DIR, "config.toml"))

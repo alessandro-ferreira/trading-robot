@@ -5,7 +5,7 @@ CONFIG_FILE ?= ../config.toml
 PYTHON := python
 VENV_CHECK := $(shell python -c 'import sys; print(1 if sys.prefix != sys.base_prefix else 0)')
 
-.PHONY: help run test
+.PHONY: help run test pre-commit
  
 help:
 	@echo "Usage: make <target>"
@@ -35,6 +35,10 @@ proto: ## Generate protobuf files
 	@echo "--> Generating protobuf files..."
 	@python -m grpc_tools.protoc -I=../proto --python_out=. --pyi_out=. --grpc_python_out=. ../proto/v1/exchange.proto
 
+pre-commit: ## Run pre-commit hooks (linting & formatting)
+	$(call CHECK_VENV)
+	@echo "--> Running pre-commit hooks..."
+	@cd ../.. && pre-commit run --all-files
 
 # ==============================================================================
 # Testing

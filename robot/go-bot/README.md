@@ -13,6 +13,7 @@ This service is the core of the trading robot, containing the primary business l
   - [3. Generate gRPC Code](#3-generate-grpc-code)
   - [4. Run the Service](#4-run-the-service)
   - [5. Testing](#5-testing)
+  - [6. Code Quality](#6-code-quality)
 
 ## Folder Structure
 
@@ -121,4 +122,21 @@ The `test-all` target automates the entire process: it starts the test database,
 ```bash
 # From the go-bot/ directory
 make test-all
+```
+
+### 6. Code Quality
+
+This project uses `pre-commit` with `golangci-lint` and `go-fmt` to enforce coding standards. The configuration is located at the repository root.
+
+To set up the automatic git hooks:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+To run it manually:
+
+```bash
+pre-commit run --all-files
 ```

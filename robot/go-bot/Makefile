@@ -18,7 +18,7 @@ DB_SSLMODE ?= disable
 DB_URL ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 MIGRATIONS_PATH := ./migrations
 
-.PHONY: help run proto
+.PHONY: help run proto install-tools pre-commit
 .PHONY: test test-integration test-all
 .PHONY: db-up db-down
 .PHONY: install-migrate migrate-up migrate-down migrate-drop migrate-create migrate-version debug-db
@@ -29,6 +29,9 @@ help:
 	@echo "Targets:"
 	@echo "  help             Show this help message."
 	@echo "  run              Start the Go Trading Bot."
+	@echo "  proto            Generate protobuf files from .proto definitions."
+	@echo "  install-tools    Install development tools."
+	@echo "  pre-commit       Run pre-commit hooks (requires pre-commit installed)."
 	@echo "  test             Run all unit tests (excluding integration tests)."
 	@echo "  test-integration Run integration tests (requires running DB and Gateway)."
 	@echo "  test-all         Run all unit and integration tests, managing the test environment."
@@ -51,6 +54,16 @@ run:
 proto:
 	@echo "==> Generating protobuf files..."
 	@protoc -I=../proto --go_out=gen/go --go_opt=paths=source_relative --go-grpc_out=gen/go --go-grpc_opt=paths=source_relative ../proto/v1/exchange.proto
+
+
+# Pre-commit hooks
+install-tools:
+	@echo "==> Installing goimports..."
+	@go install golang.org/x/tools/cmd/goimports@latest
+
+pre-commit: install-tools
+	@echo "==> Running pre-commit hooks..."
+	@cd ../.. && pre-commit run --all-files
 
 # Testing targets
 test:

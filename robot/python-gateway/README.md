@@ -13,6 +13,7 @@ This service acts as a gRPC server that bridges the core `go-bot` and the crypto
   - [3. Generate gRPC Code](#3-generate-grpc-code)
   - [4. Run the Service](#4-run-the-service)
   - [5. Testing](#5-testing)
+  - [6. Code Quality](#6-code-quality)
 
 ## Folder Structure
 
@@ -86,4 +87,21 @@ Use the provided `Makefile` to run the tests.
 ```bash
 # From the python-gateway/ directory
 make test
+```
+
+### 6. Code Quality
+
+This project uses `pre-commit` with `ruff` to enforce coding standards and automatically fix issues (like unused imports). The configuration is located at the repository root.
+
+To set up the automatic git hooks:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+To run it manually:
+
+```bash
+pre-commit run --all-files
 ```

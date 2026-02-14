@@ -7,8 +7,10 @@ import ccxt
 
 from core.config import ExchangeConfig
 
+
 class ExchangeError(Exception):
     pass
+
 
 @dataclass
 class Ticker:
@@ -19,13 +21,16 @@ class Ticker:
     timestamp: Optional[int] = None
     info: Dict[str, Any] = None
 
+
 class OrderType:
-    MARKET = 'market'
-    LIMIT = 'limit'
+    MARKET = "market"
+    LIMIT = "limit"
+
 
 class OrderSide:
-    BUY = 'buy'
-    SELL = 'sell'
+    BUY = "buy"
+    SELL = "sell"
+
 
 class Exchange(ABC):
     """
@@ -43,24 +48,32 @@ class Exchange(ABC):
                     # Prepare credentials and options if present
                     params = {}
                     if cfg.api_key is not None:
-                        params['apiKey'] = cfg.api_key
+                        params["apiKey"] = cfg.api_key
                         logging.debug(f"API key provided for {cfg.name}")
                     if cfg.secret is not None:
-                        params['secret'] = cfg.secret
+                        params["secret"] = cfg.secret
                         logging.debug(f"Secret provided for {cfg.name}")
                     # Add any other config fields as needed
                     self._ccxt = ccxt_cls(params)
-                    logging.debug(f"Initialized ccxt exchange {cfg.name} with params: {params}")
+                    logging.debug(
+                        f"Initialized ccxt exchange {cfg.name} with params: {params}"
+                    )
                 else:
-                    logging.warning(f"Exchange '{cfg.name}' configured with ccxt=True but not found in ccxt library")
+                    logging.warning(
+                        f"Exchange '{cfg.name}' configured with ccxt=True but not found in ccxt library"
+                    )
 
             elif cfg and cfg.name:
-                logging.debug(f"Exchange '{cfg.name}' initialized without ccxt (native implementation)")
+                logging.debug(
+                    f"Exchange '{cfg.name}' initialized without ccxt (native implementation)"
+                )
             else:
                 logging.warning("No exchange name provided in config")
 
         except Exception as e:
-            logging.error(f"Error initializing exchange '{cfg.name if cfg else "unknown"}': {e}")
+            logging.error(
+                f"Error initializing exchange '{cfg.name if cfg else "unknown"}': {e}"
+            )
             raise
 
     def set_sandbox_mode(self, enabled: bool):
@@ -72,7 +85,9 @@ class Exchange(ABC):
         if not self._cfg or not self._cfg.ccxt:
             raise NotImplementedError("set_sandbox_mode not implemented")
         if not self._ccxt:
-            raise ExchangeError("Underlying ccxt exchange not available to set sandbox mode")
+            raise ExchangeError(
+                "Underlying ccxt exchange not available to set sandbox mode"
+            )
 
         try:
             self._ccxt.set_sandbox_mode(enabled)
@@ -113,7 +128,14 @@ class Exchange(ABC):
         bid = raw.get("bid")
         ask = raw.get("ask")
         timestamp = raw.get("timestamp")
-        return Ticker(symbol=symbol, last=last_f, bid=(float(bid) if bid is not None else None), ask=(float(ask) if ask is not None else None), timestamp=timestamp, info=raw.get("info", {}))
+        return Ticker(
+            symbol=symbol,
+            last=last_f,
+            bid=(float(bid) if bid is not None else None),
+            ask=(float(ask) if ask is not None else None),
+            timestamp=timestamp,
+            info=raw.get("info", {}),
+        )
 
     def fetch_balance(self) -> Dict[str, Dict[str, float]]:
         """
@@ -128,7 +150,14 @@ class Exchange(ABC):
 
         return self._ccxt.fetch_balance()
 
-    def create_order(self, symbol: str, type: str, side: str, amount: float, price: Optional[float] = None) -> Dict[str, Any]:
+    def create_order(
+        self,
+        symbol: str,
+        type: str,
+        side: str,
+        amount: float,
+        price: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         Creates a new order.
 

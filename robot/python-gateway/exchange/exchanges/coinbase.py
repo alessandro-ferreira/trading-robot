@@ -8,5 +8,5 @@ class CoinbaseExchange(Exchange):
         """Fetches the ticker for a given symbol and ensures the symbol is uppercase."""
         ticker = super().fetch_ticker(symbol)
         # Coinbase tends to use uppercase with - or /; normalize to standard X/Y
-        ticker.symbol = ticker.symbol.replace('-', '/').upper()
+        ticker.symbol = ticker.symbol.replace("-", "/").upper()
         return ticker

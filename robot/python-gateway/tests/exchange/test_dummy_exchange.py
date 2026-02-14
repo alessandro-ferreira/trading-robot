@@ -1,6 +1,7 @@
 import unittest
 from exchange.exchanges.dummy import DummyExchange
 
+
 class TestDummyExchange(unittest.TestCase):
     def setUp(self):
         self.exchange = DummyExchange()
@@ -45,6 +46,7 @@ class TestDummyExchange(unittest.TestCase):
         self.assertIsInstance(open_orders, list)
         self.assertGreaterEqual(len(open_orders), 1)
         self.assertEqual(open_orders[0]["symbol"], "BTC/USDT")
+
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_dummy_exchange
