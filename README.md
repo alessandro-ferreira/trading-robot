@@ -17,6 +17,8 @@ This project uses `pre-commit` to enforce coding standards and automatically fix
 
 ### Setup
 
+Follow these steps after setting up your Python and Go environments:
+
 1.  Install `pre-commit`:
     ```bash
     pip install pre-commit

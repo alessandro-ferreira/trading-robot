@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 import grpc
+import ccxt
 
 from v1 import exchange_pb2
 from v1 import exchange_pb2_grpc
@@ -50,6 +51,29 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
 
         return exchange
 
+    def _handle_exchange_error(
+        self, context: grpc.ServicerContext, e: Exception, action: str
+    ):
+        """Helper to map ccxt exceptions to gRPC status codes."""
+        logging.exception(f"Error {action}: {e}")
+
+        if isinstance(e, ccxt.NetworkError):
+            context.abort(grpc.StatusCode.UNAVAILABLE, f"Exchange network error: {e}")
+        elif isinstance(e, ccxt.AuthenticationError):
+            context.abort(
+                grpc.StatusCode.UNAUTHENTICATED, f"Exchange authentication failed: {e}"
+            )
+        elif isinstance(e, ccxt.InsufficientFunds):
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION, f"Insufficient funds: {e}"
+            )
+        elif isinstance(e, ccxt.InvalidOrder):
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, f"Invalid order parameters: {e}"
+            )
+        else:
+            context.abort(grpc.StatusCode.INTERNAL, str(e))
+
     def Ping(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.PingResponse:
@@ -68,8 +92,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             ticker = exchange.fetch_ticker(request.symbol)
             price = float(ticker.last)
         except Exception as e:
-            logging.exception(f"Error fetching ticker: {e}")
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            self._handle_exchange_error(context, e, "fetching ticker")
 
         return exchange_pb2.TickerResponse(symbol=ticker.symbol, price=price)
 
@@ -91,8 +114,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 used = {currency: used.get(currency, 0)}
                 total = {currency: total.get(currency, 0)}
         except Exception as e:
-            logging.exception(f"Error fetching balance: {e}")
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            self._handle_exchange_error(context, e, "fetching balance")
 
         return exchange_pb2.BalanceResponse(free=free, used=used, total=total)
 
@@ -114,8 +136,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 price=request.price,
             )
         except Exception as e:
-            logging.exception(f"Error creating order: {e}")
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            self._handle_exchange_error(context, e, "creating order")
 
         return exchange_pb2.OrderResponse(
             id=str(order.get("id", "")),
@@ -145,8 +166,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             result = exchange.cancel_order(request.id, symbol=request.symbol)
         except Exception as e:
-            logging.exception(f"Error canceling order: {e}")
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            self._handle_exchange_error(context, e, "canceling order")
 
         return exchange_pb2.CancelOrderResponse(
             id=str(result.get("id", request.id)), status=result.get("status", "")
@@ -162,8 +182,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             order = exchange.fetch_order(request.id, symbol=request.symbol)
         except Exception as e:
-            logging.exception(f"Error fetching order: {e}")
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            self._handle_exchange_error(context, e, "fetching order")
 
         return exchange_pb2.OrderResponse(
             id=str(order.get("id", request.id)),
@@ -191,8 +210,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             orders = exchange.fetch_open_orders(request.symbol)
         except Exception as e:
-            logging.exception(f"Error fetching open orders: {e}")
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            self._handle_exchange_error(context, e, "fetching open orders")
 
         resp_orders = [
             exchange_pb2.OrderResponse(

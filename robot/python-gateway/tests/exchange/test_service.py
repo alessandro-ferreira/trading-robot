@@ -1,6 +1,8 @@
 import os
 import unittest
 from unittest.mock import MagicMock
+import grpc
+import ccxt
 
 from exchange.service import ExchangeService, ExchangeNotConfigured
 from v1 import exchange_pb2
@@ -109,6 +111,16 @@ class TestExchangeService(unittest.TestCase):
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_ticker.side_effect = None
 
+    def test_get_ticker_network_error(self):
+        self.mock_exchange.fetch_ticker.side_effect = ccxt.NetworkError("Timeout")
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.GetTickerRequest(symbol="BTC/USDT", exchange="binance")
+        with self.assertRaises(Exception):
+            self.service.GetTicker(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.UNAVAILABLE, "Exchange network error: Timeout"
+        )
+
     def test_get_balance(self):
         request = exchange_pb2.GetBalanceRequest(currency="USDT", exchange="binance")
         response = self.service.GetBalance(request, self.context)
@@ -124,6 +136,19 @@ class TestExchangeService(unittest.TestCase):
         self.assertIn("Internal error", str(cm.exception))
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_balance.side_effect = None
+
+    def test_get_balance_authentication_error(self):
+        self.mock_exchange.fetch_balance.side_effect = ccxt.AuthenticationError(
+            "Invalid API Key"
+        )
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.GetBalanceRequest(currency="USDT", exchange="binance")
+        with self.assertRaises(Exception):
+            self.service.GetBalance(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.UNAUTHENTICATED,
+            "Exchange authentication failed: Invalid API Key",
+        )
 
     def test_create_order(self):
         request = exchange_pb2.CreateOrderRequest(
@@ -155,6 +180,43 @@ class TestExchangeService(unittest.TestCase):
         self.assertIn("Internal error", str(cm.exception))
         self.context.abort.side_effect = None
         self.mock_exchange.create_order.side_effect = None
+
+    def test_create_order_insufficient_funds(self):
+        self.mock_exchange.create_order.side_effect = ccxt.InsufficientFunds("No money")
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.CreateOrderRequest(
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            amount=1.0,
+            price=50000.0,
+            exchange="binance",
+        )
+        with self.assertRaises(Exception):
+            self.service.CreateOrder(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.FAILED_PRECONDITION, "Insufficient funds: No money"
+        )
+
+    def test_create_order_invalid_order(self):
+        self.mock_exchange.create_order.side_effect = ccxt.InvalidOrder(
+            "Order amount is too small"
+        )
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.CreateOrderRequest(
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            amount=0.0001,
+            price=50000.0,
+            exchange="binance",
+        )
+        with self.assertRaises(Exception):
+            self.service.CreateOrder(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            "Invalid order parameters: Order amount is too small",
+        )
 
     def test_cancel_order(self):
         request = exchange_pb2.CancelOrderRequest(

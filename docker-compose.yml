@@ -12,7 +12,8 @@ services:
       - "5433:5432"
     volumes:
       - test-db-data:/var/lib/postgresql/data
-
+      # Mount the migrations folder so the database can init.
+      - ./robot/go-bot/migrations:/migrations
   python-gateway:
     build:
       context: ./robot/python-gateway

@@ -75,11 +75,19 @@ test-integration:
 	@go test -v -tags=integration -count=1 ./...
 
 test-all:
+	@echo "==> Running unit tests..."
 	@$(MAKE) test
 	@echo "\n==> Starting test environment (DB + Gateway)..."
 	@$(COMPOSE_CMD) up --build -d python-gateway test-db
 	@echo "==> Waiting for services..."
-	@sleep 5
+	@sleep 3
+	@echo "==> Waiting for database to be ready..."
+	@echo "==> Applying migrations to test database..."
+	@$(COMPOSE_CMD) exec -T test-db psql -U testuser -d testdb -c "DROP SCHEMA IF EXISTS trading CASCADE;" > /dev/null 2>&1
+	@for migration_file in $$(find $(MIGRATIONS_PATH) -name "*.up.sql" | sort); do \
+ 		$(COMPOSE_CMD) exec -T test-db psql -U testuser -d testdb -f "$$migration_file" > /dev/null; \
+ 	done
+	@echo "==> Running integration tests..."
 	@$(MAKE) test-integration
 	@echo "==> Tearing down environment..."
 	@$(COMPOSE_CMD) down
