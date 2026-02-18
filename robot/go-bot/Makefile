@@ -5,7 +5,7 @@ MAIN_FILE := ./cmd/server/main.go
 CONFIG_FILE := ../config.toml
 
 # Use the modern 'docker compose' command. The -f flag points to the root docker-compose.yml
-COMPOSE_CMD = docker compose -f ../../docker-compose.yml
+COMPOSE_CMD = docker compose -f ../docker-compose.yml
 MIGRATE_VERSION = v4.15.2
 
 # Database migration settings

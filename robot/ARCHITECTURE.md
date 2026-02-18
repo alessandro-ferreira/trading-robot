@@ -51,8 +51,8 @@ The system is composed of two main microservices communicating via gRPC:
 ```
 robot/
 ├── ARCHITECTURE.md             # This file
-├── .gitignore
 ├── config.toml.example         # Example configuration for the services
+├── docker-compose.yml          # Docker Compose for integration tests
 │
 ├── go-bot/                     # The core Go application
 │   ├── go.mod
@@ -66,6 +66,7 @@ robot/
 │   │   │   └── risk/           # Risk management
 │   │   ├── config/             # Configuration loading
 │   │   ├── database/           # Database connection and access logic
+│   │       └── repository      # Data access layer (Repository Pattern)
 │   │   ├── logger/             # Structured logging setup
 │   │   └── strategy/           # Trading strategy logic
 │   │       └── core/           # C++ logic called via cgo

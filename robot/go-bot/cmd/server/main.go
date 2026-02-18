@@ -13,6 +13,7 @@ import (
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
+	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/logger"
 )
 
@@ -48,12 +49,12 @@ func main() {
 	)
 
 	// Initialize database connection
-	dbPool, err := database.NewDBPool(ctx, cfg.Database)
+	db, err := database.NewDBPool(ctx, cfg.Database)
 	if err != nil {
 		slog.Error("Failed to initialize database connection", "error", err)
 		os.Exit(1)
 	}
-	defer dbPool.Close()
+	defer db.Close()
 
 	slog.Info("Database connection pool established")
 
@@ -65,6 +66,21 @@ func main() {
 	}
 	defer gatewayClient.Close()
 
+	// Initialize repositories and services
+	repoContainer := repository.New()
+
+	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
+	slog.Info("Execution service initialized")
+
+	// Example usage: Get balance for a fixed asset. This is expected to fail
+	// with a 'not implemented' error until the service and repository are fully implemented.
+	err = execService.GetBalance(ctx, "binance", "BTC") // "BTC" is the symbol for Bitcoin
+	if err != nil {
+		slog.Warn("Could not get initial balance (expected during development)", "exchange", "binance", "asset", "BTC", "error", err)
+	} else {
+		slog.Info("Successfully retrieved initial balance")
+	}
+
 	// --- Graceful Shutdown ---
 	// Block until the context is canceled (i.e., a shutdown signal is received).
 	<-ctx.Done()
@@ -74,7 +90,7 @@ func main() {
 	// Perform cleanup operations.
 	slog.Info("Closing client connections and database pool...")
 	gatewayClient.Close()
-	dbPool.Close()
+	db.Close()
 
 	// Wait for a configurable period to allow for any final logs to be processed.
 	if cfg.Server.ShutdownTimeout > 0 {

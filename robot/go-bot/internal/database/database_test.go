@@ -5,14 +5,14 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/pashagolub/pgxmock/v2"
+	"github.com/pashagolub/pgxmock/v3"
 	"github.com/stretchr/testify/require"
 )
 
 // newMockPool creates a new mock pool with ping monitoring enabled.
 func newMockPool(t *testing.T) pgxmock.PgxPoolIface {
 	t.Helper()
-	mock, err := pgxmock.NewPool(pgxmock.MonitorPingsOption(true))
+	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	return mock
 }

@@ -31,11 +31,8 @@ class DummyExchange(Exchange):
         """Return a fixed balance for testing."""
         return {
             "free": {"USDT": 10000.0, "BTC": 0.5, "ETH": 10.0},
-            "used": {"USDT": 0.0, "BTC": 0.0, "ETH": 0.0},
-            "total": {"USDT": 10000.0, "BTC": 0.5, "ETH": 10.0},
-            "USDT": {"free": 10000.0, "used": 0.0, "total": 10000.0},
-            "BTC": {"free": 0.5, "used": 0.0, "total": 0.5},
-            "ETH": {"free": 10.0, "used": 0.0, "total": 10.0},
+            "used": {"USDT": 0.0, "BTC": 1.0, "ETH": 0.0},
+            "total": {"USDT": 10000.0, "BTC": 1.5, "ETH": 10.0},
         }
 
     def create_order(

@@ -13,15 +13,15 @@ services:
     volumes:
       - test-db-data:/var/lib/postgresql/data
       # Mount the migrations folder so the database can init.
-      - ./robot/go-bot/migrations:/migrations
+      - ./go-bot/migrations:/migrations
   python-gateway:
     build:
-      context: ./robot/python-gateway
+      context: ./python-gateway
     container_name: trading-bot-python-gateway
     command: ["python", "main.py", "--config", "/config.toml"]
     volumes:
-      - ./robot/python-gateway:/app
-      - ./robot/config.toml:/config.toml:ro
+      - ./python-gateway:/app
+      - ./config.toml:/config.toml:ro
     depends_on:
       - test-db
     environment:
