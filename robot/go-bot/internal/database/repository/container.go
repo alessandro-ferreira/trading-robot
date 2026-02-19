@@ -22,12 +22,13 @@ type DBExecutor interface {
 // This allows services to access any repository through a single dependency.
 type Container struct {
 	Balances BalancesRepo
-	// Orders   *OrdersRepo // Future repositories will be added here
+	Orders   OrdersRepo
 }
 
 // New creates a new repository container.
 func New() *Container {
 	return &Container{
 		Balances: NewBalancesRepo(),
+		Orders:   NewOrdersRepo(),
 	}
 }

@@ -66,10 +66,11 @@ func (s *Service) GetBalance(ctx context.Context, exchangeName, assetSymbol stri
 		Used:         used,
 		Total:        total,
 	}
-	if err := s.repo.Balances.UpsertBalance(ctx, s.db, balance); err != nil {
+	id, err := s.repo.Balances.UpsertBalance(ctx, s.db, balance)
+	if err != nil {
 		return fmt.Errorf("failed to persist balance: %w", err)
 	}
 
-	s.logger.Info("Balance persisted successfully")
+	s.logger.Info("Balance persisted successfully", "balance_id", id)
 	return nil
 }

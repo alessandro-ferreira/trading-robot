@@ -27,9 +27,9 @@ func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBE
 	return args.Get(0).([]repository.BalanceData), args.Error(1)
 }
 
-func (m *MockBalancesRepo) UpsertBalance(ctx context.Context, db repository.DBExecutor, balance repository.BalanceData) error {
+func (m *MockBalancesRepo) UpsertBalance(ctx context.Context, db repository.DBExecutor, balance repository.BalanceData) (int64, error) {
 	args := m.Called(ctx, db, balance)
-	return args.Error(0)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 func TestService_GetBalance(t *testing.T) {
@@ -52,7 +52,7 @@ func TestService_GetBalance(t *testing.T) {
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
 				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.MatchedBy(func(b repository.BalanceData) bool {
 					return b.AssetSymbol == "BTC" && b.Free == 1.5 && b.Used == 0.5 && b.Total == 2.0
-				})).Return(nil)
+				})).Return(int64(1), nil)
 			},
 		},
 		{
@@ -73,7 +73,7 @@ func TestService_GetBalance(t *testing.T) {
 				}
 			},
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
-				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("db error"))
+				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), errors.New("db error"))
 			},
 			expectedErrContains: "failed to persist balance",
 		},
@@ -87,7 +87,7 @@ func TestService_GetBalance(t *testing.T) {
 				}
 			},
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
-				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(1), nil)
 			},
 			assertLogs: func(t *testing.T, logBuffer *bytes.Buffer) {
 				assert.Contains(t, logBuffer.String(), "Balance inconsistency detected")

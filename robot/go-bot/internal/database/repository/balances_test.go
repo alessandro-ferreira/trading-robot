@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pashagolub/pgxmock/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,31 +26,37 @@ func TestPgBalancesRepo_UpsertBalance(t *testing.T) {
 	testCases := []struct {
 		name                string
 		setupMock           func(mockDB pgxmock.PgxPoolIface)
+		expectedID          int64
 		expectedErrContains string
 	}{
 		{
 			name: "Success on Update",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectExec("UPDATE trading.balances").
+				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(1))
+				mockDB.ExpectQuery("UPDATE trading.balances").
 					WithArgs(balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
-					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+					WillReturnRows(rows)
 			},
+			expectedID: 1,
 		},
 		{
 			name: "Success on Insert",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectExec("UPDATE trading.balances").
+				mockDB.ExpectQuery("UPDATE trading.balances").
 					WithArgs(balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
-					WillReturnResult(pgxmock.NewResult("UPDATE", 0))
-				mockDB.ExpectExec("INSERT INTO trading.balances").
+					WillReturnError(pgx.ErrNoRows)
+
+				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(2))
+				mockDB.ExpectQuery("INSERT INTO trading.balances").
 					WithArgs(balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
-					WillReturnResult(pgxmock.NewResult("INSERT", 1))
+					WillReturnRows(rows)
 			},
+			expectedID: 2,
 		},
 		{
 			name: "Error on Update",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectExec("UPDATE trading.balances").
+				mockDB.ExpectQuery("UPDATE trading.balances").
 					WithArgs(balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
 					WillReturnError(errors.New("db update error"))
 			},
@@ -57,10 +65,10 @@ func TestPgBalancesRepo_UpsertBalance(t *testing.T) {
 		{
 			name: "Error on Insert",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectExec("UPDATE trading.balances").
+				mockDB.ExpectQuery("UPDATE trading.balances").
 					WithArgs(balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
-					WillReturnResult(pgxmock.NewResult("UPDATE", 0))
-				mockDB.ExpectExec("INSERT INTO trading.balances").
+					WillReturnError(pgx.ErrNoRows)
+				mockDB.ExpectQuery("INSERT INTO trading.balances").
 					WithArgs(balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
 					WillReturnError(errors.New("db insert error"))
 			},
@@ -76,13 +84,14 @@ func TestPgBalancesRepo_UpsertBalance(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			err = repo.UpsertBalance(context.Background(), mockDB, balance)
+			id, err := repo.UpsertBalance(context.Background(), mockDB, balance)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
 			} else {
 				require.NoError(t, err)
+				assert.Equal(t, tc.expectedID, id)
 			}
 
 			require.NoError(t, mockDB.ExpectationsWereMet())
@@ -93,6 +102,7 @@ func TestPgBalancesRepo_UpsertBalance(t *testing.T) {
 func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 	repo := NewBalancesRepo()
 	now := time.Now()
+	nullTime := sql.NullTime{Time: now, Valid: true}
 
 	testCases := []struct {
 		name          string
@@ -102,14 +112,15 @@ func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows([]string{"id", "exchange_name", "asset_symbol", "free", "used", "total", "updated_at", "updated_by"}).
-					AddRow(int64(1), "binance", "BTC", 1.0, 0.5, 1.5, now, DefaultUser)
+				rows := pgxmock.NewRows([]string{"id", "exchange_name", "asset_symbol", "free", "used", "total", "created_at", "updated_at"}).
+					AddRow(int64(1), "binance", "BTC", 1.0, 0.5, 1.5, now, nullTime)
 				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WillReturnRows(rows)
 			},
 			assertResults: func(t *testing.T, balances []BalanceData, err error) {
 				require.NoError(t, err)
 				require.Len(t, balances, 1)
 				assert.Equal(t, "BTC", balances[0].AssetSymbol)
+				assert.Equal(t, nullTime, balances[0].UpdatedAt)
 			},
 		},
 		{

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS trading.trades (
     amount NUMERIC NOT NULL,
     cost NUMERIC NOT NULL,
     fee NUMERIC,
+    fee_rate NUMERIC,
     fee_asset_id BIGINT,
     trade_timestamp TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

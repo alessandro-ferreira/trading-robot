@@ -3,7 +3,11 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // BalanceData represents a user's balance for a specific asset on an exchange.
@@ -14,14 +18,14 @@ type BalanceData struct {
 	Free         float64
 	Used         float64
 	Total        float64
+	CreatedAt    time.Time
 	UpdatedAt    sql.NullTime
-	UpdatedBy    sql.NullString
 }
 
 // BalancesRepo defines the interface for interacting with the balances data.
 type BalancesRepo interface {
 	GetAllBalances(ctx context.Context, db DBExecutor) ([]BalanceData, error)
-	UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) error
+	UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) (int64, error)
 }
 
 // pgBalancesRepo is the PostgreSQL implementation of BalancesRepo.
@@ -44,12 +48,12 @@ func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]B
 			b.free,
 			b.used,
 			b.total,
-			b.updated_at,
-			b.updated_by
+			b.created_at,
+			b.updated_at
 		FROM trading.balances b
-		INNER JOIN trading.exchanges e ON b.exchange_id = e.id
-		INNER JOIN trading.assets a ON b.asset_id = a.id
-		WHERE b.active = TRUE AND e.active = TRUE AND a.active = TRUE
+		INNER JOIN trading.exchanges e ON b.exchange_id = e.id AND e.active = TRUE
+		INNER JOIN trading.assets a ON b.asset_id = a.id AND a.active = TRUE
+		WHERE b.active = TRUE
 		ORDER BY e.name ASC, a.symbol ASC
 	`
 	rows, err := db.Query(ctx, query)
@@ -68,8 +72,8 @@ func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]B
 			&b.Free,
 			&b.Used,
 			&b.Total,
+			&b.CreatedAt,
 			&b.UpdatedAt,
-			&b.UpdatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -80,7 +84,7 @@ func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]B
 }
 
 // UpsertBalance updates the balance for a given asset and exchange, or inserts it if it doesn't exist.
-func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) error {
+func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) (int64, error) {
 	// Try to Update first
 	updateQuery := `
 		UPDATE trading.balances
@@ -94,18 +98,20 @@ func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balan
 			active = TRUE
 			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE)
 			AND asset_id = (SELECT id FROM trading.assets WHERE symbol = $2 AND active = TRUE)
+		RETURNING id
 	`
-	cmdTag, err := db.Exec(ctx, updateQuery, balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser)
-	if err != nil {
-		return fmt.Errorf("failed to update balance: %w", err)
+	var id int64
+	err := db.
+		QueryRow(ctx, updateQuery, balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
+		Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("failed to update balance: %w", err)
 	}
 
-	// If the update affected rows, we are done.
-	if cmdTag.RowsAffected() > 0 {
-		return nil
-	}
-
-	// If no rows were updated, Insert
+	// If we get here, it means pgx.ErrNoRows was returned, so we should insert.
 	insertQuery := `
 		INSERT INTO trading.balances (exchange_id, asset_id, free, used, total, created_at, created_by)
 		VALUES (
@@ -113,11 +119,14 @@ func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balan
 			(SELECT id FROM trading.assets WHERE symbol = $2 AND active = TRUE),
 			$3, $4, $5, NOW(), $6
 		)
+		RETURNING id
 	`
-	_, err = db.Exec(ctx, insertQuery, balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser)
+	err = db.
+		QueryRow(ctx, insertQuery, balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
+		Scan(&id)
 	if err != nil {
-		return fmt.Errorf("failed to insert balance: %w", err)
+		return 0, fmt.Errorf("failed to insert balance: %w", err)
 	}
 
-	return nil
+	return id, nil
 }
