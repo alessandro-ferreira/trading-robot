@@ -75,8 +75,9 @@ func TestService_Integration_GetBalance(t *testing.T) {
 	t.Logf("Expected Balance (from Gateway): %s", expectedResp.String())
 
 	// Call Service method (which fetches and persists)
-	err = svc.GetBalance(ctx, exchangeName, assetSymbol)
+	returnedBalance, err := svc.GetBalance(ctx, exchangeName, assetSymbol)
 	require.NoError(t, err, "Service.GetBalance failed")
+	require.NotNil(t, returnedBalance, "GetBalance should return the persisted balance")
 
 	// Verification
 	// Fetch all balances from DB to verify persistence
@@ -96,6 +97,9 @@ func TestService_Integration_GetBalance(t *testing.T) {
 
 	require.True(t, found, "Balance record for %s/%s not found in database", exchangeName, assetSymbol)
 	t.Logf("Stored Balance (from DB): %+v", storedBalance)
+
+	// Assert that the ID returned by the service matches the one in the DB
+	assert.Equal(t, storedBalance.ID, returnedBalance.ID, "ID from service should match stored ID")
 
 	// Assert values match
 	// The gateway returns maps, so we access the specific symbol

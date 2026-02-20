@@ -74,11 +74,11 @@ func main() {
 
 	// Example usage: Get balance for a fixed asset. This is expected to fail
 	// with a 'not implemented' error until the service and repository are fully implemented.
-	err = execService.GetBalance(ctx, "binance", "BTC") // "BTC" is the symbol for Bitcoin
+	balance, err := execService.GetBalance(ctx, "binance", "BTC")
 	if err != nil {
 		slog.Warn("Could not get initial balance (expected during development)", "exchange", "binance", "asset", "BTC", "error", err)
 	} else {
-		slog.Info("Successfully retrieved initial balance")
+		slog.Info("Successfully retrieved initial balance", "exchange", balance.ExchangeName, "asset", balance.AssetSymbol, "total", balance.Total)
 	}
 
 	// --- Graceful Shutdown ---

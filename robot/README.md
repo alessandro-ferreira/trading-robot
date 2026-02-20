@@ -12,6 +12,49 @@ The system is composed of two main services that communicate via gRPC. The API c
 
 For a more detailed diagram, see `ARCHITECTURE.md`.
 
+## Project Directory Structure
+
+```
+robot/
+├── ARCHITECTURE.md             # This file
+├── config.toml.example         # Example configuration for the services
+├── docker-compose.yml          # Docker Compose for integration tests
+│
+├── go-bot/                     # The core Go application
+│   ├── go.mod
+│   ├── Makefile                # Automates common tasks (testing, etc.)
+│   ├── cmd/server/
+│   │   └── main.go             # Initializes and runs the Go components
+│   ├── internal/               # All internal Go packages
+│   │   ├── components/
+│   │   │   ├── execution/      # Logic for trade execution via gRPC
+│   │   │   ├── portfolio/      # Portfolio management
+│   │   │   └── risk/           # Risk management
+│   │   ├── config/             # Configuration loading
+│   │   ├── database/           # Database connection and access logic
+│   │       └── repository      # Data access layer (Repository Pattern)
+│   │   ├── logger/             # Structured logging setup
+│   │   └── strategy/           # Trading strategy logic
+│   │       └── core/           # C++ logic called via cgo
+│   ├── gen/go/v1/              # Auto-generated Go gRPC code
+│   └── migrations              # Database migrations
+│
+├── python-gateway/             # The Python Exchange Gateway service
+│   ├── Makefile                # Automates common tasks
+│   ├── requirements.txt        # Python dependencies
+│   ├── main.py                 # Starts the Python gRPC server
+│   ├── core/                   # Core application helpers
+│   └── exchange/
+│       ├── factory.py          # Logic to select exchange based on config
+│       └── service.py          # Implements the gRPC service
+│   ├── tests/                  # Service tests
+│   └── v1/                     # Auto-generated Python gRPC code
+│
+└── proto/                      # Shared gRPC definitions
+    └── v1/
+        └── exchange.proto      # Defines services and messages
+```
+
 ## Development Environment
 
 To ensure consistency all services are built and run against specific versions.
@@ -23,13 +66,6 @@ It is highly recommended to use these versions for local development. The `pytho
 
 ## Setup and Running
 
-To set up and run the trading bot, please follow the instructions in the `README.md` file for each service. You will need to start both services in separate terminals.
-
-1.  **Start the Python Gateway first:**
-    -   Instructions in `python-gateway/README.md`
-2.  **Then, start the Go Bot:**
-    -   Instructions in `go-bot/README.md`
-
 A global configuration file is shared between the services. Create it from the template:
 
 ```bash
@@ -38,8 +74,10 @@ cp config.toml.example config.toml
 
 Now, edit `config.toml` and fill in your database credentials and exchange API keys.
 
-**Important**: The `config.toml` file contains secrets and should be added to your `.gitignore` to prevent it from being committed to version control.
+To set up and run the trading bot, please follow the instructions in the `README.md` file for each service. You will need to start both services in separate terminals.
 
-### 2. Generate gRPC Code
 
-The Go and Python code for the gRPC services must be generated from the `.proto` file. This is a required step before compiling or running the services.
+1.  **Start the Python Gateway first:**
+    -   Instructions in `python-gateway/README.md`
+2.  **Then, start the Go Bot:**
+    -   Instructions in `go-bot/README.md`
