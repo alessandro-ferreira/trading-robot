@@ -70,6 +70,11 @@ class ExchangeServiceStub(object):
                 request_serializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
                 response_deserializer=v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
                 _registered_method=True)
+        self.ResetState = channel.unary_unary(
+                '/v1.ExchangeService/ResetState',
+                request_serializer=v1_dot_exchange__pb2.ResetStateRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.ResetStateResponse.FromString,
+                _registered_method=True)
 
 
 class ExchangeServiceServicer(object):
@@ -126,6 +131,14 @@ class ExchangeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ResetState(self, request, context):
+        """ResetState resets the state of the exchange.
+        WARN: This method is intended for testing purposes only.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ExchangeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -163,6 +176,11 @@ def add_ExchangeServiceServicer_to_server(servicer, server):
                     servicer.GetOpenOrders,
                     request_deserializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.FromString,
                     response_serializer=v1_dot_exchange__pb2.OpenOrdersResponse.SerializeToString,
+            ),
+            'ResetState': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResetState,
+                    request_deserializer=v1_dot_exchange__pb2.ResetStateRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.ResetStateResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -355,6 +373,33 @@ class ExchangeService(object):
             '/v1.ExchangeService/GetOpenOrders',
             v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
             v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResetState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/ResetState',
+            v1_dot_exchange__pb2.ResetStateRequest.SerializeToString,
+            v1_dot_exchange__pb2.ResetStateResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -114,6 +114,15 @@ func (c *GatewayClient) GetOpenOrders(ctx context.Context, symbol, exchange stri
 	return resp, nil
 }
 
+// ResetState resets the state of the exchange (used for testing).
+func (c *GatewayClient) ResetState(ctx context.Context) (*pb.ResetStateResponse, error) {
+	resp, err := c.client.ResetState(ctx, &pb.ResetStateRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset state: %w", err)
+	}
+	return resp, nil
+}
+
 // Close gracefully closes the connection to the gateway.
 func (c *GatewayClient) Close() error {
 	return c.conn.Close()

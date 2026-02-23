@@ -13,6 +13,10 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 )
 
+// TODO: Implement comprehensive failure handling for the full communication chain
+// with recovery mechanisms (e.g., reconciliation, retries, state synchronization) to handle
+// partial failures (e.g., order created on exchange but failed to persist in DB).
+
 // Service provides methods for trade execution and order management.
 type Service struct {
 	logger *slog.Logger
@@ -93,7 +97,7 @@ func (s *Service) GetBalance(ctx context.Context, exchangeName, assetSymbol stri
 	}
 	balance.ID = id
 
-	s.logger.Info("Balance persisted successfully", "balance_id", id)
+	s.logger.Info("Balance persisted successfully", "internal_id", id, "exchange", exchangeName, "asset", assetSymbol, "total", total)
 
 	return &balance, nil
 }
@@ -256,12 +260,14 @@ func (s *Service) GetOpenOrders(ctx context.Context, symbol, exchangeName string
 			ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(orderResp.Timestamp), Valid: orderResp.Timestamp > 0},
 		}
 
-		_, err := s.repo.Orders.UpdateOrder(ctx, s.db, orderData)
+		id, err := s.repo.Orders.UpdateOrder(ctx, s.db, orderData)
 		if err != nil {
 			s.logger.Warn("Failed to update open order in database", "error", err, "exchange_order_id", orderResp.Id)
+			// Continue to the next order even if one fails to update.
+			continue
 		}
 
-		s.logger.Info("Open order processed", "internal_id", orderData.ID, "exchange_order_id", orderResp.Id, "status", orderResp.Status)
+		s.logger.Info("Open order processed", "internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status)
 	}
 
 	s.logger.Info("Open orders processed and database updated", "exchange", exchangeName, "symbol", symbol)

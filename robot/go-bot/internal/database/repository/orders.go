@@ -7,6 +7,28 @@ import (
 	"time"
 )
 
+// Order Status constants
+const (
+	OrderStatusNew      = "new"
+	OrderStatusOpen     = "open"
+	OrderStatusClosed   = "closed"
+	OrderStatusCanceled = "canceled"
+	OrderStatusRejected = "rejected"
+	OrderStatusExpired  = "expired"
+)
+
+// Order Type constants
+const (
+	OrderTypeLimit  = "limit"
+	OrderTypeMarket = "market"
+)
+
+// Order Side constants
+const (
+	OrderSideBuy  = "buy"
+	OrderSideSell = "sell"
+)
+
 // OrderData represents the order details persisted in the database.
 type OrderData struct {
 	ID                int64
@@ -192,7 +214,7 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 		) VALUES (
 			$1, $2,
 			(SELECT id FROM trading.exchanges WHERE name = $3 AND active = TRUE),
-			(SELECT id FROM trading.instruments WHERE symbol = $4 AND active = TRUE),
+			(SELECT id FROM trading.instruments WHERE name = $4 AND active = TRUE),
 			$5, $6::trading.order_type, $7, $8, $9, $10, $11, $12, $13::trading.order_status, $14, $15, NOW(), $16
 		)
 		RETURNING id

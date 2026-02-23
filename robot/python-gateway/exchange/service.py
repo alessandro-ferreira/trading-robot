@@ -231,3 +231,19 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             for order in orders
         ]
         return exchange_pb2.OpenOrdersResponse(orders=resp_orders)
+
+    def ResetState(
+        self, request: Any, context: grpc.ServicerContext
+    ) -> exchange_pb2.ResetStateResponse:
+        """Resets the state of the dummy exchange for testing purposes."""
+        logging.info("Received ResetState request.")
+
+        try:
+            exchange = self.factory.get("dummy")
+            exchange.reset()  # Directly call reset, will raise AttributeError if not present
+            logging.info("Dummy exchange state has been reset.")
+            return exchange_pb2.ResetStateResponse(status="OK")
+        except Exception as e:
+            logging.warning(f"ResetState ignored: {e}")
+
+        return exchange_pb2.ResetStateResponse(status="IGNORED")

@@ -37,6 +37,9 @@ type ExchangeServiceClient interface {
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error)
 	// GetOpenOrders fetches all open orders for a symbol.
 	GetOpenOrders(ctx context.Context, in *GetOpenOrdersRequest, opts ...grpc.CallOption) (*OpenOrdersResponse, error)
+	// ResetState resets the state of the exchange.
+	// WARN: This method is intended for testing purposes only.
+	ResetState(ctx context.Context, in *ResetStateRequest, opts ...grpc.CallOption) (*ResetStateResponse, error)
 }
 
 type exchangeServiceClient struct {
@@ -110,6 +113,15 @@ func (c *exchangeServiceClient) GetOpenOrders(ctx context.Context, in *GetOpenOr
 	return out, nil
 }
 
+func (c *exchangeServiceClient) ResetState(ctx context.Context, in *ResetStateRequest, opts ...grpc.CallOption) (*ResetStateResponse, error) {
+	out := new(ResetStateResponse)
+	err := c.cc.Invoke(ctx, "/v1.ExchangeService/ResetState", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExchangeServiceServer is the server API for ExchangeService service.
 // All implementations must embed UnimplementedExchangeServiceServer
 // for forward compatibility
@@ -129,6 +141,9 @@ type ExchangeServiceServer interface {
 	GetOrder(context.Context, *GetOrderRequest) (*OrderResponse, error)
 	// GetOpenOrders fetches all open orders for a symbol.
 	GetOpenOrders(context.Context, *GetOpenOrdersRequest) (*OpenOrdersResponse, error)
+	// ResetState resets the state of the exchange.
+	// WARN: This method is intended for testing purposes only.
+	ResetState(context.Context, *ResetStateRequest) (*ResetStateResponse, error)
 	mustEmbedUnimplementedExchangeServiceServer()
 }
 
@@ -156,6 +171,9 @@ func (UnimplementedExchangeServiceServer) GetOrder(context.Context, *GetOrderReq
 }
 func (UnimplementedExchangeServiceServer) GetOpenOrders(context.Context, *GetOpenOrdersRequest) (*OpenOrdersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOpenOrders not implemented")
+}
+func (UnimplementedExchangeServiceServer) ResetState(context.Context, *ResetStateRequest) (*ResetStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetState not implemented")
 }
 func (UnimplementedExchangeServiceServer) mustEmbedUnimplementedExchangeServiceServer() {}
 
@@ -296,6 +314,24 @@ func _ExchangeService_GetOpenOrders_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ExchangeService_ResetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExchangeServiceServer).ResetState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/v1.ExchangeService/ResetState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExchangeServiceServer).ResetState(ctx, req.(*ResetStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ExchangeService_ServiceDesc is the grpc.ServiceDesc for ExchangeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -330,6 +366,10 @@ var ExchangeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetOpenOrders",
 			Handler:    _ExchangeService_GetOpenOrders_Handler,
+		},
+		{
+			MethodName: "ResetState",
+			Handler:    _ExchangeService_ResetState_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

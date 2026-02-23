@@ -16,6 +16,7 @@ import (
 
 	pb "trading/robot/go-bot/gen/go/v1"
 	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/database/repository"
 )
 
 // mockExchangeServer is a mock implementation of the ExchangeServiceServer.
@@ -35,6 +36,8 @@ type mockExchangeServer struct {
 	getOrderError         error
 	getOpenOrdersResponse *pb.OpenOrdersResponse
 	getOpenOrdersError    error
+	resetStateResponse    *pb.ResetStateResponse
+	resetStateError       error
 }
 
 func (s *mockExchangeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
@@ -84,6 +87,13 @@ func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOpenO
 		return nil, s.getOpenOrdersError
 	}
 	return s.getOpenOrdersResponse, nil
+}
+
+func (s *mockExchangeServer) ResetState(ctx context.Context, req *pb.ResetStateRequest) (*pb.ResetStateResponse, error) {
+	if s.resetStateError != nil {
+		return nil, s.resetStateError
+	}
+	return s.resetStateResponse, nil
 }
 
 // setupTest creates a mock gRPC server and returns a client connected to it via an in-memory buffer.
@@ -182,11 +192,11 @@ func TestGatewayClient_CreateOrder(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.createOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: "open"}
+				s.createOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen}
 			},
-			req:            &pb.CreateOrderRequest{Symbol: "BTC/USDT", Side: "buy", Type: "limit", Amount: 1.0, Price: 20000.0},
+			req:            &pb.CreateOrderRequest{Symbol: "BTC/USDT", Side: repository.OrderSideBuy, Type: repository.OrderTypeLimit, Amount: 1.0, Price: 20000.0},
 			expectedID:     "123",
-			expectedStatus: "open",
+			expectedStatus: repository.OrderStatusOpen,
 		},
 		{
 			name: "Server Error",
@@ -235,10 +245,10 @@ func TestGatewayClient_CancelOrder(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.cancelOrderResponse = &pb.CancelOrderResponse{Id: "123", Status: "canceled"}
+				s.cancelOrderResponse = &pb.CancelOrderResponse{Id: "123", Status: repository.OrderStatusCanceled}
 			},
 			expectedID:     "123",
-			expectedStatus: "canceled",
+			expectedStatus: repository.OrderStatusCanceled,
 		},
 		{
 			name: "Server Error",
@@ -282,10 +292,10 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.getOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: "closed"}
+				s.getOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed}
 			},
 			expectedID:     "123",
-			expectedStatus: "closed",
+			expectedStatus: repository.OrderStatusClosed,
 		},
 		{
 			name: "Server Error",
@@ -330,8 +340,8 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 			setupMock: func(s *mockExchangeServer) {
 				s.getOpenOrdersResponse = &pb.OpenOrdersResponse{
 					Orders: []*pb.OrderResponse{
-						{Id: "123", Symbol: "BTC/USDT", Status: "open"},
-						{Id: "124", Symbol: "BTC/USDT", Status: "open"},
+						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
+						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
 					},
 				}
 			},
@@ -362,6 +372,47 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Len(t, resp.Orders, tc.expectedLen)
+			}
+		})
+	}
+}
+
+func TestGatewayClient_ResetState(t *testing.T) {
+	testCases := []struct {
+		name        string
+		setupMock   func(*mockExchangeServer)
+		expectError bool
+	}{
+		{
+			name: "Success",
+			setupMock: func(s *mockExchangeServer) {
+				s.resetStateResponse = &pb.ResetStateResponse{Status: "OK"}
+			},
+		},
+		{
+			name: "Server Error",
+			setupMock: func(s *mockExchangeServer) {
+				s.resetStateError = status.Error(codes.Internal, "internal server error")
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			if tc.setupMock != nil {
+				tc.setupMock(mockSrv)
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			_, err := client.ResetState(context.Background())
+
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}

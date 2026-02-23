@@ -230,7 +230,7 @@ func TestService_CreateOrder(t *testing.T) {
 				mockSrv.createOrderResponse = &pb.OrderResponse{
 					Id:        "order-123",
 					Symbol:    "BTC/USDT",
-					Status:    "open",
+					Status:    repository.OrderStatusOpen,
 					Filled:    0,
 					Remaining: 1.5,
 					Cost:      0,
@@ -241,7 +241,7 @@ func TestService_CreateOrder(t *testing.T) {
 				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
 					return o.ExchangeOrderID == "order-123" &&
 						o.InstrumentSymbol == "BTC/USDT" &&
-						o.Status == "open" &&
+						o.Status == repository.OrderStatusOpen &&
 						o.Amount == 1.5
 				})).Return(int64(1), nil)
 			},
@@ -261,7 +261,7 @@ func TestService_CreateOrder(t *testing.T) {
 				mockSrv.createOrderResponse = &pb.OrderResponse{
 					Id:     "order-123",
 					Symbol: "BTC/USDT",
-					Status: "open",
+					Status: repository.OrderStatusOpen,
 				}
 			},
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
@@ -285,7 +285,7 @@ func TestService_CreateOrder(t *testing.T) {
 			container := &repository.Container{Orders: mockRepo}
 			svc := NewService(slog.Default(), nil, client, container)
 
-			resp, err := svc.CreateOrder(context.Background(), "BTC/USDT", "buy", "limit", 1.5, 50000.0, "binance")
+			resp, err := svc.CreateOrder(context.Background(), "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeLimit, 1.5, 50000.0, "binance")
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -315,12 +315,12 @@ func TestService_CancelOrder(t *testing.T) {
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.cancelOrderResponse = &pb.CancelOrderResponse{
 					Id:     "order-123",
-					Status: "canceled",
+					Status: repository.OrderStatusCanceled,
 				}
 				mockSrv.getOrderResponse = &pb.OrderResponse{
 					Id:        "order-123",
 					Symbol:    "BTC/USDT",
-					Status:    "canceled",
+					Status:    repository.OrderStatusCanceled,
 					Filled:    0.5,
 					Remaining: 1.0,
 					Cost:      10000.0,
@@ -330,7 +330,7 @@ func TestService_CancelOrder(t *testing.T) {
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
 				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
 					return o.ExchangeOrderID == "order-123" &&
-						o.Status == "canceled" &&
+						o.Status == repository.OrderStatusCanceled &&
 						o.Filled == 0.5
 				})).Return(int64(1), nil)
 			},
@@ -346,7 +346,7 @@ func TestService_CancelOrder(t *testing.T) {
 		{
 			name: "Gateway GetOrder Error",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
-				mockSrv.cancelOrderResponse = &pb.CancelOrderResponse{Id: "order-123", Status: "canceled"}
+				mockSrv.cancelOrderResponse = &pb.CancelOrderResponse{Id: "order-123", Status: repository.OrderStatusCanceled}
 				mockSrv.getOrderError = status.Error(codes.Unavailable, "gateway down")
 			},
 			setupRepoMock:       func(mockRepo *MockOrdersRepo) {},
@@ -406,7 +406,7 @@ func TestService_GetOrder(t *testing.T) {
 				mockSrv.getOrderResponse = &pb.OrderResponse{
 					Id:        "order-123",
 					Symbol:    "BTC/USDT",
-					Status:    "closed",
+					Status:    repository.OrderStatusClosed,
 					Filled:    1.5,
 					Remaining: 0,
 					Cost:      75000.0,
@@ -416,7 +416,7 @@ func TestService_GetOrder(t *testing.T) {
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
 				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
 					return o.ExchangeOrderID == "order-123" &&
-						o.Status == "closed" &&
+						o.Status == repository.OrderStatusClosed &&
 						o.Filled == 1.5
 				})).Return(int64(1), nil)
 			},
@@ -433,7 +433,7 @@ func TestService_GetOrder(t *testing.T) {
 		{
 			name: "DB Update Error",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
-				mockSrv.getOrderResponse = &pb.OrderResponse{Id: "order-123", Status: "closed"}
+				mockSrv.getOrderResponse = &pb.OrderResponse{Id: "order-123", Status: repository.OrderStatusClosed}
 			},
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
 				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), errors.New("db error"))
@@ -491,14 +491,14 @@ func TestService_GetOpenOrders(t *testing.T) {
 						{
 							Id:        "order-1",
 							Symbol:    "BTC/USDT",
-							Status:    "open",
+							Status:    repository.OrderStatusOpen,
 							Filled:    0,
 							Remaining: 1.0,
 						},
 						{
 							Id:        "order-2",
 							Symbol:    "BTC/USDT",
-							Status:    "open",
+							Status:    repository.OrderStatusOpen,
 							Filled:    0.5,
 							Remaining: 0.5,
 						},

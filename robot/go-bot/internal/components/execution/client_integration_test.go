@@ -10,6 +10,7 @@ import (
 
 	pb "trading/robot/go-bot/gen/go/v1"
 	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/database/repository"
 
 	"github.com/stretchr/testify/require"
 )
@@ -37,6 +38,10 @@ func TestGatewayClient_Integration(t *testing.T) {
 	require.NoError(t, err, "Failed to connect to python-gateway")
 	defer client.Close()
 
+	// Reset state before running tests to ensure isolation
+	_, err = client.ResetState(ctx)
+	require.NoError(t, err, "Failed to reset gateway state")
+
 	// Test GetTicker
 	tickerResp, err := client.GetTicker(ctx, "BTC/USDT", "dummy")
 	require.NoError(t, err, "GetTicker should not error")
@@ -52,8 +57,8 @@ func TestGatewayClient_Integration(t *testing.T) {
 	// Test CreateOrder
 	createOrderReq := &pb.CreateOrderRequest{
 		Symbol:   "BTC/USDT",
-		Side:     "buy",
-		Type:     "limit",
+		Side:     repository.OrderSideBuy,
+		Type:     repository.OrderTypeLimit,
 		Amount:   0.01,
 		Price:    20000.0,
 		Exchange: "dummy",

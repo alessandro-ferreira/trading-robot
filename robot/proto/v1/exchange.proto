@@ -32,6 +32,10 @@ service ExchangeService {
 
   // GetOpenOrders fetches all open orders for a symbol.
   rpc GetOpenOrders(GetOpenOrdersRequest) returns (OpenOrdersResponse) {}
+
+  // ResetState resets the state of the exchange.
+  // WARN: This method is intended for testing purposes only.
+  rpc ResetState(ResetStateRequest) returns (ResetStateResponse) {}
 }
 
 // PingRequest is the message sent to the Ping RPC.
@@ -123,4 +127,12 @@ message GetOpenOrdersRequest {
 // OpenOrdersResponse is the message returned from the GetOpenOrders RPC.
 message OpenOrdersResponse {
   repeated OrderResponse orders = 1;
+}
+
+// ResetStateRequest is the message sent to the ResetState RPC.
+message ResetStateRequest {}
+
+// ResetStateResponse is the message returned from the ResetState RPC.
+message ResetStateResponse {
+  string status = 1;
 }

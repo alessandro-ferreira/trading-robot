@@ -22,26 +22,40 @@ class TestDummyExchange(unittest.TestCase):
         self.assertEqual(balance["free"]["USDT"], 10000.0)
 
     def test_create_order(self):
+        # Test Limit Order (Open)
         order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
         self.assertEqual(order["symbol"], "BTC/USDT")
         self.assertEqual(order["side"], "buy")
         self.assertEqual(order["type"], "limit")
         self.assertEqual(order["amount"], 0.01)
         self.assertEqual(order["price"], 20000)
-        self.assertEqual(order["status"], "closed")
+        self.assertEqual(order["status"], "open")
+
+        # Test Market Order (Closed)
+        order_market = self.exchange.create_order(
+            "BTC/USDT", "market", "buy", 0.01, 20000
+        )
+        self.assertEqual(order_market["status"], "closed")
+        self.assertEqual(order_market["filled"], 0.01)
+        self.assertIsNotNone(order_market["fee"])
 
     def test_cancel_order(self):
-        result = self.exchange.cancel_order("order-id-123", "BTC/USDT")
-        self.assertEqual(result["id"], "order-id-123")
+        # Create an order first
+        order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
+        result = self.exchange.cancel_order(order["id"], "BTC/USDT")
+        self.assertEqual(result["id"], order["id"])
         self.assertEqual(result["status"], "canceled")
 
     def test_fetch_order(self):
-        order = self.exchange.fetch_order("order-id-123", "BTC/USDT")
-        self.assertEqual(order["id"], "order-id-123")
-        self.assertEqual(order["symbol"], "BTC/USDT")
-        self.assertEqual(order["status"], "closed")
+        # Create an order first
+        created = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
+        fetched = self.exchange.fetch_order(created["id"], "BTC/USDT")
+        self.assertEqual(fetched["id"], created["id"])
+        self.assertEqual(fetched["symbol"], "BTC/USDT")
+        self.assertEqual(fetched["status"], "open")
 
     def test_fetch_open_orders(self):
+        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
         open_orders = self.exchange.fetch_open_orders("BTC/USDT")
         self.assertIsInstance(open_orders, list)
         self.assertGreaterEqual(len(open_orders), 1)

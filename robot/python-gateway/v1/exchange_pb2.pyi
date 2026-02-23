@@ -158,3 +158,13 @@ class OpenOrdersResponse(_message.Message):
     ORDERS_FIELD_NUMBER: _ClassVar[int]
     orders: _containers.RepeatedCompositeFieldContainer[OrderResponse]
     def __init__(self, orders: _Optional[_Iterable[_Union[OrderResponse, _Mapping]]] = ...) -> None: ...
+
+class ResetStateRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ResetStateResponse(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: str
+    def __init__(self, status: _Optional[str] = ...) -> None: ...

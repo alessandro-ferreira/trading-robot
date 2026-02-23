@@ -280,6 +280,12 @@ class TestExchangeService(unittest.TestCase):
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_open_orders.side_effect = None
 
+    def test_reset_state(self):
+        request = exchange_pb2.ResetStateRequest()
+        response = self.service.ResetState(request, self.context)
+        self.assertEqual(response.status, "OK")
+        self.mock_exchange.reset.assert_called_once()
+
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_service

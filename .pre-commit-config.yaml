@@ -77,6 +77,7 @@ repos:
         files: ^robot/go-bot/
         pass_filenames: false
 
+  # Commit Message Checker
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.2.0
     hooks:
