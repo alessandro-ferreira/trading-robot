@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"trading/robot/go-bot/internal/background"
 	"trading/robot/go-bot/internal/components/execution"
+	"trading/robot/go-bot/internal/components/health"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
@@ -18,10 +20,12 @@ import (
 )
 
 func main() {
+
 	// Create a context that is canceled on a SIGINT or SIGTERM signal.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop() // stop() removes the signal handler.
+	defer stop()
 
+	// --- Configuration & Logger ---
 	// Define a command-line flag for the config file path.
 	configPath := flag.String("config", "", "path to the configuration file")
 	flag.Parse()
@@ -31,14 +35,12 @@ func main() {
 		log.Fatal("❌ Configuration file path must be provided using the -config flag, e.g., -config=config.toml")
 	}
 
-	// Load configuration
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		// If config fails, we can't set up the logger from it, so use a basic log.
+		// Fallback to basic logging if config load fails.
 		log.Fatalf("❌ Failed to load configuration: %v", err)
 	}
 
-	// Set up the structured logger *after* loading the config.
 	logger.Setup(cfg.Log)
 
 	slog.Info("Starting Go Trading Bot...")
@@ -48,7 +50,7 @@ func main() {
 		slog.String("python_gateway", cfg.GRPC.PythonGatewayAddress),
 	)
 
-	// Initialize database connection
+	// --- Infrastructure Initialization ---
 	db, err := database.NewDBPool(ctx, cfg.Database)
 	if err != nil {
 		slog.Error("Failed to initialize database connection", "error", err)
@@ -65,38 +67,72 @@ func main() {
 		os.Exit(1)
 	}
 	defer gatewayClient.Close()
+	slog.Info("Connected to python-gateway successfully")
 
-	// Initialize repositories and services
+	// --- Service Initialization ---
 	repoContainer := repository.New()
 
 	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
 	slog.Info("Execution service initialized")
 
-	// Example usage: Get balance for a fixed asset. This is expected to fail
-	// with a 'not implemented' error until the service and repository are fully implemented.
-	balance, err := execService.GetBalance(ctx, "binance", "BTC")
-	if err != nil {
-		slog.Warn("Could not get initial balance (expected during development)", "exchange", "binance", "asset", "BTC", "error", err)
-	} else {
-		slog.Info("Successfully retrieved initial balance", "exchange", balance.ExchangeName, "asset", balance.AssetSymbol, "total", balance.Total)
-	}
+	// --- Background Tasks ---
+	bgManager := background.NewManager(slog.Default())
+
+	setupHealthMonitor(cfg, execService, bgManager)
+
+	bgManager.Start(ctx)
 
 	// --- Graceful Shutdown ---
-	// Block until the context is canceled (i.e., a shutdown signal is received).
+	// Block until a shutdown signal is received.
 	<-ctx.Done()
 
 	slog.Info("Shutdown signal received. Starting graceful shutdown...")
 
 	// Perform cleanup operations.
+	bgManager.Wait()
+
 	slog.Info("Closing client connections and database pool...")
 	gatewayClient.Close()
 	db.Close()
 
-	// Wait for a configurable period to allow for any final logs to be processed.
 	if cfg.Server.ShutdownTimeout > 0 {
 		slog.Info("Waiting for shutdown delay", "duration", cfg.Server.ShutdownTimeout)
 		time.Sleep(cfg.Server.ShutdownTimeout)
 	}
 
 	slog.Info("Server shutdown complete.")
+}
+
+func setupHealthMonitor(cfg *config.Config, execService *execution.Service, bgManager *background.Manager) {
+	// Identify which exchanges have health checks enabled and create a monitor for them.
+	var exchangeNames []string
+	for _, ex := range cfg.Exchanges {
+		if ex.HealthCheck {
+			exchangeNames = append(exchangeNames, ex.Name)
+		}
+	}
+	if len(exchangeNames) == 0 {
+		slog.Warn("No exchanges configured for health monitoring. Health monitor will not be started.")
+		return
+	}
+	slog.Info("Setting up health monitor for configured exchanges", "exchanges", exchangeNames)
+
+	healthMonitor := health.NewMonitor(slog.Default(), exchangeNames)
+
+	// Define the check logic using a closure to wrap the service call.
+	// This allows us to use arbitrary methods (like GetBalance) and custom parameters (like Asset).
+	// We also wrap the job with retry logic to handle transient failures robustly.
+	checkMethod := func(ctx context.Context, exchange string) error {
+		job := func(ctx context.Context) error {
+			_, err := execService.GetBalance(ctx, exchange, cfg.Health.Asset)
+			return err
+		}
+		return background.WithRetry(job, cfg.Health.RetryAttempts, cfg.Health.RetryDelay)(ctx)
+	}
+
+	// Register the periodic health check task
+	healthTask := background.NewPeriodicTask("health-check", cfg.Health.Interval, true, func(ctx context.Context) error {
+		return healthMonitor.CheckHealth(ctx, checkMethod)
+	})
+	bgManager.Add(healthTask)
 }

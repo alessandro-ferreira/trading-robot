@@ -32,11 +32,20 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "testdb", cfg.Database.DBName)
 		assert.Equal(t, "disable", cfg.Database.SSLMode)
 		assert.Equal(t, "localhost:50051", cfg.GRPC.PythonGatewayAddress)
+
+		// Verify Health Check Config
+		assert.Equal(t, "BTC", cfg.Health.Asset)
+		assert.Equal(t, 3*time.Minute, cfg.Health.Interval)
+		assert.Equal(t, 2, cfg.Health.RetryAttempts)
+		assert.Equal(t, 1*time.Second, cfg.Health.RetryDelay)
+
 		require.Len(t, cfg.Exchanges, 2)
 		assert.Equal(t, "binance", cfg.Exchanges[0].Name)
 		assert.True(t, cfg.Exchanges[0].SandboxMode)
+		assert.True(t, cfg.Exchanges[0].HealthCheck)
 		assert.Equal(t, "coinbase", cfg.Exchanges[1].Name)
 		assert.False(t, cfg.Exchanges[1].SandboxMode)
+		assert.False(t, cfg.Exchanges[1].HealthCheck)
 	})
 
 	t.Run("file not found", func(t *testing.T) {

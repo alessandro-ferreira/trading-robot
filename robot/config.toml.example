@@ -24,6 +24,13 @@ password = "your_password"
 dbname = "trading_db"
 sslmode = "disable" # Use "require" or "verify-full" in production
 
+# Health Check Configuration
+[health_check]
+asset = "USDT"          # Asset to check balance for (proxy for health)
+interval = "1m"         # Frequency of the check
+retry_attempts = 3      # Number of retries on failure
+retry_delay = "5s"      # Delay between retries
+
 # Exchanges configuration for the Python gateway
 [[exchange]]
 name = "dummy"
@@ -42,3 +49,5 @@ name = "binance"
 sandbox_mode = true
 # Enable ccxt support
 ccxt = true
+# Enable health check support
+health_check = true

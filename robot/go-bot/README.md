@@ -19,20 +19,26 @@ This service is the core of the trading robot, containing the primary business l
 
 ```
 .
-├── Makefile                # Automates common tasks like running and testing.
-├── cmd/                    # Application entry points.
-│   └── server/
-│       └── main.go         # Initializes and runs the Go components.
-├── gen/                    # Auto-generated Go gRPC code.
-│   └── go/v1/
-├── go.mod                  # Go module file for managing dependencies.
-├── go.sum                  # Go checksum file for dependencies.
-├── internal/               # All internal application code.
-│   ├── components/         # Core business logic components.
-│   │   └── execution/      # Logic for trade execution via gRPC.
-│   ├── config/             # Configuration loading and parsing.
-│   ├── database/           # Database connection and access logic.
-│   └── logger/             # Structured logging setup.
+├── go-bot/                     # The core Go application
+│   ├── go.mod
+│   ├── Makefile                # Automates common tasks (testing, etc.)
+│   ├── cmd/server/
+│   │   └── main.go             # Initializes and runs the Go components
+│   ├── gen/go/v1/              # Auto-generated Go gRPC code
+│   ├── internal/               # All internal Go packages
+|   │   ├── background/         # Background tasks
+│   │   ├── components/
+│   │   │   ├── execution/      # Logic for trade execution via gRPC
+│   │   │   ├── monitor/        # Periodic health checks
+│   │   │   ├── portfolio/      # Portfolio management
+│   │   │   └── risk/           # Risk management
+│   │   ├── config/             # Configuration loading
+│   │   ├── database/           # Database connection and access logic
+│   │       └── repository      # Data access layer (Repository Pattern)
+│   │   ├── logger/             # Structured logging setup
+│   │   └── strategy/           # Trading strategy logic
+│   │       └── core/           # C++ logic called via cgo
+│   └── migrations              # Database migrations
 ```
 
 ## Getting Started
@@ -41,7 +47,7 @@ This guide provides the necessary steps to set up and run the `go-bot` service.
 
 ### 1. Prerequisites
 
--   Go 1.18+
+-   Go 1.24 (as defined in `go.mod`)
 -   PostgreSQL 16 + TimescaleDB (Local installation)
 -   Protobuf Compiler (protoc)
 -   Docker & Docker Compose (for database and integration tests)

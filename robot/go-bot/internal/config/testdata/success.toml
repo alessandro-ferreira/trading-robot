@@ -16,9 +16,16 @@ sslmode = "disable"
 [grpc]
 python_gateway_address = "localhost:50051"
 
+[health_check]
+asset = "BTC"
+interval = "3m"
+retry_attempts = 2
+retry_delay = "1s"
+
 [[exchange]]
 name = "binance"
 sandbox_mode = true
+health_check = true
 
 [[exchange]]
 name = "coinbase"

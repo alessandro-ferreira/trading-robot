@@ -10,11 +10,12 @@ import (
 
 // Config holds the application's configuration.
 type Config struct {
-	Server    ServerConfig     `toml:"server"`
-	Log       LogConfig        `toml:"log"`
-	Database  DatabaseConfig   `toml:"database"`
-	GRPC      GRPCConfig       `toml:"grpc"`
-	Exchanges []ExchangeConfig `toml:"exchange"`
+	Server    ServerConfig      `toml:"server"`
+	Log       LogConfig         `toml:"log"`
+	Database  DatabaseConfig    `toml:"database"`
+	GRPC      GRPCConfig        `toml:"grpc"`
+	Health    HealthCheckConfig `toml:"health_check"`
+	Exchanges []ExchangeConfig  `toml:"exchange"`
 }
 
 // ServerConfig holds server-related settings.
@@ -45,12 +46,21 @@ type GRPCConfig struct {
 	PythonGatewayAddress string `toml:"python_gateway_address"`
 }
 
+// HealthCheckConfig holds settings for the background health monitor.
+type HealthCheckConfig struct {
+	Asset         string        `toml:"asset"`
+	Interval      time.Duration `toml:"interval"`
+	RetryAttempts int           `toml:"retry_attempts"`
+	RetryDelay    time.Duration `toml:"retry_delay"`
+}
+
 // ExchangeConfig holds the exchange connection parameters.
 type ExchangeConfig struct {
 	Name        string `toml:"name"`
 	APIKey      string `toml:"api_key"`
 	Secret      string `toml:"secret"`
 	SandboxMode bool   `toml:"sandbox_mode"`
+	HealthCheck bool   `toml:"health_check"`
 }
 
 // newWithDefaults creates a Config struct with sensible default values.

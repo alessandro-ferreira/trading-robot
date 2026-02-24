@@ -25,9 +25,12 @@ robot/
 │   ├── Makefile                # Automates common tasks (testing, etc.)
 │   ├── cmd/server/
 │   │   └── main.go             # Initializes and runs the Go components
+│   ├── gen/go/v1/              # Auto-generated Go gRPC code
 │   ├── internal/               # All internal Go packages
+|   │   ├── background/         # Background tasks
 │   │   ├── components/
 │   │   │   ├── execution/      # Logic for trade execution via gRPC
+│   │   │   ├── monitor/        # Periodic health checks
 │   │   │   ├── portfolio/      # Portfolio management
 │   │   │   └── risk/           # Risk management
 │   │   ├── config/             # Configuration loading
@@ -36,15 +39,16 @@ robot/
 │   │   ├── logger/             # Structured logging setup
 │   │   └── strategy/           # Trading strategy logic
 │   │       └── core/           # C++ logic called via cgo
-│   ├── gen/go/v1/              # Auto-generated Go gRPC code
 │   └── migrations              # Database migrations
 │
 ├── python-gateway/             # The Python Exchange Gateway service
+│   ├── Dockerfile              # Docker build instructions
 │   ├── Makefile                # Automates common tasks
-│   ├── requirements.txt        # Python dependencies
 │   ├── main.py                 # Starts the Python gRPC server
+│   ├── requirements.txt        # Python dependencies
 │   ├── core/                   # Core application helpers
 │   └── exchange/
+│       ├── exchanges/          # Supported exchanges
 │       ├── factory.py          # Logic to select exchange based on config
 │       └── service.py          # Implements the gRPC service
 │   ├── tests/                  # Service tests
