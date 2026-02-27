@@ -10,6 +10,9 @@
 .DS_Store
 Thumbs.db
 
+# IDE configuration
+.vscode/
+
 # --- Python ---
 # Virtual environment
 venv/
@@ -23,6 +26,10 @@ __pycache__/
 # --- Go ---
 # Go build artifacts
 /robot/go-bot/go-bot
+
+# --- C++ ---
+# C++ build artifacts
+robot/strategy-core/build/
 
 # --- Configuration ---
 # Ignore the actual config file with secrets

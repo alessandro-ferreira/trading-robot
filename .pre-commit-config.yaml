@@ -57,6 +57,15 @@ repos:
         entry: bash -c 'cd robot/go-bot && golangci-lint run'
         pass_filenames: false
 
+  # C++ Strategy Core
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v17.0.6
+    hooks:
+      - id: clang-format
+        types_or: [c++, c]
+        files: ^robot/strategy-core/
+        args: ['--style={BasedOnStyle: Google, ColumnLimit: 120, IndentWidth: 4}']
+
   # Local Tests
   - repo: local
     hooks:
