@@ -4,14 +4,14 @@ This component is the high-performance strategy engine of the trading bot. It is
 
 ## Summary
 
-- C++ Strategy Core
-- Summary
-- Folder Structure
-- Getting Started
-  - 1. Prerequisites
-  - 2. Build the Library
-  - 3. Integration
-  - 4. Code Quality
+- [C++ Strategy Core](#c-strategy-core)
+- [Summary](#summary)
+- [Folder Structure](#folder-structure)
+- [Getting Started](#getting-started)
+  - [1. Prerequisites](#1-prerequisites)
+  - [2. Build the Library](#2-build-the-library)
+  - [3. Integration](#3-integration)
+  - [4. Code Quality](#4-code-quality)
 
 ## Folder Structure
 

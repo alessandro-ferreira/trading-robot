@@ -1,13 +1,13 @@
-#include "trading/rules/risk_management.hpp"
+#include "trading/rules/trailing_stop.hpp"
 
 #include "trading/interfaces/market_state.hpp"
 
 namespace trading {
 
-RiskManagementExitRule::RiskManagementExitRule(double stop_loss_pct, double activation_pct, double trailing_stop_pct)
+TrailingStopExitRule::TrailingStopExitRule(double stop_loss_pct, double activation_pct, double trailing_stop_pct)
     : stop_loss_pct_(stop_loss_pct), activation_pct_(activation_pct), trailing_stop_pct_(trailing_stop_pct) {}
 
-bool RiskManagementExitRule::Check(const MarketState& state, double entry_price, double highest_price) {
+bool TrailingStopExitRule::Check(const MarketState& state, double entry_price, double highest_price) {
     double current = state.GetCurrentPrice();
 
     // Use the highest price seen since entry to determine which phase we are in.

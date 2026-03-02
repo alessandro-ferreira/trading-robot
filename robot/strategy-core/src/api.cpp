@@ -4,8 +4,9 @@
 #include <memory>
 #include <vector>
 
+#include "trading/rules/fixed_profit.hpp"
 #include "trading/rules/momentum.hpp"
-#include "trading/rules/risk_management.hpp"
+#include "trading/rules/trailing_stop.hpp"
 #include "trading/state/sliding_window.hpp"
 #include "trading/strategy.hpp"
 
@@ -21,7 +22,7 @@ StrategyHandle Strategy_Create(StrategyConfig config) {
         return new trading::Strategy(std::move(state), std::move(entry_rules), std::move(exit_rules));
     }
 
-    if (config.type == STRATEGY_MOMENTUM) {
+    if (config.type == STRATEGY_MOMENTUM_PROFIT || config.type == STRATEGY_MOMENTUM_TRAILING) {
         if (config.num_momentum_windows > MAX_MOMENTUM_WINDOWS || config.num_momentum_windows < 0) {
             return nullptr;  // Invalid config
         }
@@ -30,12 +31,16 @@ StrategyHandle Strategy_Create(StrategyConfig config) {
             return nullptr;  // Stop loss must be positive
         }
 
-        if (config.activation_pct <= 0.0) {
-            return nullptr;  // Activation threshold must be positive
+        if (config.type == STRATEGY_MOMENTUM_PROFIT) {
+            if (config.profit_target_pct <= 0.0) {
+                return nullptr;  // Profit target must be positive
+            }
         }
 
-        if (config.trailing_stop_pct <= 0.0) {
-            return nullptr;  // Trailing stop distance must be positive
+        if (config.type == STRATEGY_MOMENTUM_TRAILING) {
+            if (config.activation_pct <= 0.0 || config.trailing_stop_pct <= 0.0) {
+                return nullptr;  // Trailing parameters must be positive
+            }
         }
 
         std::vector<std::pair<int, double>> lookback_thresholds;
@@ -58,8 +63,14 @@ StrategyHandle Strategy_Create(StrategyConfig config) {
         entry_rules.push_back(std::make_unique<trading::MomentumEntryRule>(lookback_thresholds, require_all));
 
         std::vector<std::unique_ptr<trading::ExitRule>> exit_rules;
-        exit_rules.push_back(std::make_unique<trading::RiskManagementExitRule>(
-            config.stop_loss_pct, config.activation_pct, config.trailing_stop_pct));
+
+        if (config.type == STRATEGY_MOMENTUM_PROFIT) {
+            exit_rules.push_back(
+                std::make_unique<trading::FixedProfitExitRule>(config.stop_loss_pct, config.profit_target_pct));
+        } else {
+            exit_rules.push_back(std::make_unique<trading::TrailingStopExitRule>(
+                config.stop_loss_pct, config.activation_pct, config.trailing_stop_pct));
+        }
 
         return new trading::Strategy(std::move(state), std::move(entry_rules), std::move(exit_rules));
     }
@@ -73,8 +84,15 @@ void Strategy_Destroy(StrategyHandle handle) {
     }
 }
 
-void Strategy_Init(StrategyHandle handle, const double* prices, int count, int in_position, double entry_price,
-                   double highest_price) {
+void Strategy_Init_Profit(StrategyHandle handle, const double* prices, int count, int in_position, double entry_price) {
+    if (handle) {
+        // For non-trailing strategies, highest_price is not used, so we can pass 0.0.
+        static_cast<trading::Strategy*>(handle)->Init(prices, count, in_position != 0, entry_price, 0.0);
+    }
+}
+
+void Strategy_Init_Trailing(StrategyHandle handle, const double* prices, int count, int in_position, double entry_price,
+                            double highest_price) {
     if (handle) {
         static_cast<trading::Strategy*>(handle)->Init(prices, count, in_position != 0, entry_price, highest_price);
     }

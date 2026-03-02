@@ -9,9 +9,9 @@ namespace trading {
 //   Phase 2 (after activation):  trailing stop at highest_price * (1 - trailing_stop_pct).
 // Activation is determined by the highest price seen since entry:
 //   if (highest_price / entry_price - 1) >= activation_pct → Phase 2.
-class RiskManagementExitRule : public ExitRule {
+class TrailingStopExitRule : public ExitRule {
    public:
-    RiskManagementExitRule(double stop_loss_pct, double activation_pct, double trailing_stop_pct);
+    TrailingStopExitRule(double stop_loss_pct, double activation_pct, double trailing_stop_pct);
     bool Check(const MarketState& state, double entry_price, double highest_price) override;
 
    private:

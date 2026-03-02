@@ -1,7 +1,6 @@
 #include "trading/strategy.hpp"
 
 #include "trading/rules/momentum.hpp"
-#include "trading/rules/risk_management.hpp"
 #include "trading/state/sliding_window.hpp"
 
 namespace trading {

@@ -39,4 +39,6 @@ $(BUILD_DIR)/tests/%.o: $(TEST_DIR)/%.cpp
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all clean test
+rebuild: clean all
+
+.PHONY: all clean test rebuild
