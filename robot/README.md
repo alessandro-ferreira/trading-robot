@@ -81,7 +81,7 @@ To ensure consistency all services are built and run against specific versions.
 
 -   **Python:** 3.12 (as defined in `python-gateway/Dockerfile`)
 -   **Go:** 1.24 (as defined in `go-bot/go.mod`)
--   **C++:** GCC or Clang with C++20 support.
+-   **C++:** GCC or Clang with C++17 support.
 
 It is highly recommended to use these versions for local development. The `python-gateway/Dockerfile` should be pinned to a `python:3.12-slim` base image.
 
@@ -100,7 +100,7 @@ To set up and run the trading bot, please follow the instructions in the `README
 
 1.  **Build Strategy Core Library:**
     -   Instructions in `strategy-core/README.md`
-2.  **Start the Python Gateway first:**
+2.  **Start the Python Gateway:**
     -   Instructions in `python-gateway/README.md`
 3.  **Then, start the Go Bot:**
     -   Instructions in `go-bot/README.md`

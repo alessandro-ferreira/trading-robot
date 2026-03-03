@@ -3,6 +3,7 @@
 
 MAIN_FILE := ./cmd/server/main.go
 CONFIG_FILE := ../config.toml
+STRATEGY_CORE_DIR := ../strategy-core
 
 # Use the modern 'docker compose' command. The -f flag points to the root docker-compose.yml
 COMPOSE_CMD = docker compose -f ../docker-compose.yml
@@ -19,6 +20,7 @@ DB_URL ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?
 MIGRATIONS_PATH := ./migrations
 
 .PHONY: help run proto install-tools pre-commit
+.PHONY: strategy-core clean-strategy
 .PHONY: test test-integration test-all
 .PHONY: db-up db-down
 .PHONY: install-migrate migrate-up migrate-down migrate-drop migrate-create migrate-version debug-db
@@ -29,6 +31,8 @@ help:
 	@echo "Targets:"
 	@echo "  help             Show this help message."
 	@echo "  run              Start the Go Trading Bot."
+	@echo "  strategy-core    Build the C++ Strategy Core static library."
+	@echo "  clean-strategy   Clean the C++ Strategy Core static library."
 	@echo "  proto            Generate protobuf files from .proto definitions."
 	@echo "  install-tools    Install development tools."
 	@echo "  pre-commit       Run pre-commit hooks (requires pre-commit installed)."
@@ -46,9 +50,18 @@ help:
 	@echo "  debug-db         Show database connection info (for debugging)."
 
 # Run the Go Trading Bot
-run:
+run: strategy-core
 	@echo "==> Starting Go Trading Bot..."
 	@go run $(MAIN_FILE) --config $(CONFIG_FILE)
+
+# Strategy Core
+strategy-core:
+	@echo "==> Building C++ Strategy Core..."
+	@$(MAKE) -C $(STRATEGY_CORE_DIR)
+
+clean-strategy:
+	@echo "==> Cleaning C++ Strategy Core..."
+	@$(MAKE) -C $(STRATEGY_CORE_DIR) clean
 
 # Protobuf generation
 proto:
@@ -66,11 +79,11 @@ pre-commit: install-tools
 	@cd ../.. && pre-commit run --all-files
 
 # Testing targets
-test:
+test: strategy-core
 	@echo "==> Running unit tests..."
 	@go test -v ./...
 
-test-integration:
+test-integration: strategy-core
 	@echo "==> Running integration tests (requires running DB and Gateway)..."
 	@go test -v -tags=integration -count=1 ./...
 

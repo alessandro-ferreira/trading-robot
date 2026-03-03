@@ -13,6 +13,7 @@ import (
 	"trading/robot/go-bot/internal/background"
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/health"
+	"trading/robot/go-bot/internal/components/signal_generator"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
@@ -79,6 +80,18 @@ func main() {
 	bgManager := background.NewManager(slog.Default())
 
 	setupHealthMonitor(cfg, execService, bgManager)
+
+	// --- Signal Generators ---
+	// For Phase 4, we initialize a signal generator for a default pair.
+	// In the future, this list will come from the configuration.
+	if len(cfg.Exchanges) > 0 {
+		tradingSymbol := "BTC/USD"
+		primaryExchange := cfg.Exchanges[0].Name
+		slog.Info("Initializing Signal Generator", "symbol", tradingSymbol, "exchange", primaryExchange)
+
+		sigGen := signal_generator.NewSignalGenerator(slog.Default(), gatewayClient, tradingSymbol, primaryExchange, cfg.Strategy)
+		bgManager.Add(sigGen)
+	}
 
 	bgManager.Start(ctx)
 

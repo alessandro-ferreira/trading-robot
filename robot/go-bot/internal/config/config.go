@@ -8,6 +8,12 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+const (
+	StrategyDummy            = "dummy"
+	StrategyMomentumProfit   = "momentum_profit"
+	StrategyMomentumTrailing = "momentum_trailing"
+)
+
 // Config holds the application's configuration.
 type Config struct {
 	Server    ServerConfig      `toml:"server"`
@@ -16,6 +22,7 @@ type Config struct {
 	GRPC      GRPCConfig        `toml:"grpc"`
 	Health    HealthCheckConfig `toml:"health_check"`
 	Exchanges []ExchangeConfig  `toml:"exchange"`
+	Strategy  StrategyConfig    `toml:"strategy"`
 }
 
 // ServerConfig holds server-related settings.
@@ -63,6 +70,21 @@ type ExchangeConfig struct {
 	HealthCheck bool   `toml:"health_check"`
 }
 
+// StrategyConfig holds the trading strategy parameters.
+type StrategyConfig struct {
+	Type     string         `toml:"type"`
+	Momentum MomentumConfig `toml:"momentum"`
+}
+
+type MomentumConfig struct {
+	WindowSize      int     `toml:"window_size"`
+	Lookback        int     `toml:"lookback"`
+	Threshold       float64 `toml:"threshold"`
+	StopLossPct     float64 `toml:"stop_loss_pct"`
+	ActivationPct   float64 `toml:"activation_pct"`
+	TrailingStopPct float64 `toml:"trailing_stop_pct"`
+}
+
 // newWithDefaults creates a Config struct with sensible default values.
 func newWithDefaults() *Config {
 	return &Config{
@@ -76,6 +98,16 @@ func newWithDefaults() *Config {
 		},
 		Database: DatabaseConfig{
 			SSLMode: "disable",
+		},
+		Strategy: StrategyConfig{
+			Type: StrategyMomentumTrailing,
+			Momentum: MomentumConfig{
+				WindowSize:      20,
+				Lookback:        100,
+				Threshold:       0.01,
+				StopLossPct:     0.02,
+				TrailingStopPct: 0.01,
+			},
 		},
 	}
 }

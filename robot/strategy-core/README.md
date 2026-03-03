@@ -36,7 +36,7 @@ This guide provides the steps to build the strategy core library for development
 
 ### 1. Prerequisites
 
--   **C++ Compiler:** GCC or Clang with C++20 support.
+-   **C++ Compiler:** GCC or Clang with C++17 support.
 -   **Make:** For build automation.
 
 ### 2. Build the Library
@@ -54,11 +54,11 @@ make
 This library is integrated into the `go-bot` using `cgo`.
 
 -   **API Definition:** The `api.cpp` file exposes a C-compatible interface.
--   **Linking:** The Go application includes the `include/` directory and links against the compiled library found in `strategy-core/`.
+-   **Linking:** The Go application includes the `include/` directory and links against the compiled library (`libstrategy.a`) found in the `strategy-core/build/` directory.
 
 ### 4. Code Quality
 
-Code should adhere to modern C++ standards (C++20).
+Code should adhere to modern C++ standards (C++17).
 
 -   **Memory Management:** Use smart pointers (`std::unique_ptr`, `std::shared_ptr`) instead of raw pointers where possible.
 -   **Modularity:** Implement new strategies by extending the `Strategy`, `EntryRule`, and `ExitRule` interfaces.

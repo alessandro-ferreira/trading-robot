@@ -19,26 +19,27 @@ This service is the core of the trading robot, containing the primary business l
 
 ```
 .
-├── go-bot/                     # The core Go application
+├── go-bot/                       # The core Go application
 │   ├── go.mod
-│   ├── Makefile                # Automates common tasks (testing, etc.)
+│   ├── Makefile                  # Automates common tasks (testing, etc.)
 │   ├── cmd/server/
-│   │   └── main.go             # Initializes and runs the Go components
-│   ├── gen/go/v1/              # Auto-generated Go gRPC code
-│   ├── internal/               # All internal Go packages
-|   │   ├── background/         # Background tasks
+│   │   └── main.go               # Initializes and runs the Go components
+│   ├── gen/go/v1/                # Auto-generated Go gRPC code
+│   ├── internal/                 # All internal Go packages
+|   │   ├── background/           # Background tasks
 │   │   ├── components/
-│   │   │   ├── execution/      # Logic for trade execution via gRPC
-│   │   │   ├── monitor/        # Periodic health checks
-│   │   │   ├── portfolio/      # Portfolio management
-│   │   │   └── risk/           # Risk management
-│   │   ├── config/             # Configuration loading
-│   │   ├── database/           # Database connection and access logic
-│   │       └── repository      # Data access layer (Repository Pattern)
-│   │   ├── logger/             # Structured logging setup
-│   │   └── strategy/           # Trading strategy logic
-│   │       └── core/           # C++ logic called via cgo
-│   └── migrations              # Database migrations
+│   │   │   ├── execution/        # Logic for trade execution via gRPC
+│   │   │   ├── monitor/          # Periodic health checks
+│   │   │   ├── portfolio/        # Portfolio management
+│   │   │   ├── risk/             # Risk management
+│   │   │   └── signal_generator/ # Drives the strategy to generate signals
+│   │   ├── config/               # Configuration loading
+│   │   ├── database/             # Database connection and access logic
+│   │       └── repository        # Data access layer (Repository Pattern)
+│   │   ├── logger/               # Structured logging setup
+│   │   └── strategy/             # Trading strategy logic
+│   │       └── core/             # C++ logic called via cgo
+│   └── migrations                # Database migrations
 ```
 
 ## Getting Started
