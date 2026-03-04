@@ -4,6 +4,8 @@
 #include "trading/interfaces/market_state.hpp"
 #include "trading/rules/trailing_stop.hpp"
 
+using std::vector;
+
 namespace trading {
 
 // A minimal mock for MarketState, providing only what the ExitRule interface requires.
@@ -14,7 +16,12 @@ struct MockMarketState : public MarketState {
 
     // --- MarketState Interface Implementation ---
     double GetCurrentPrice() const override { return current_price_; }
-    void UpdatePrice(double price) override { current_price_ = price; }
+    bool Init([[maybe_unused]] const vector<PricePoint>& history) override { return true; }
+    bool UpdatePrice(const PricePoint& tick) override {
+        current_price_ = tick.price;
+        // timestamp is unused in this mock
+        return true;
+    }
 };
 
 class TrailingStopTest : public ::testing::Test {

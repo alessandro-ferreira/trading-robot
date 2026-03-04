@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -O3 -Wall -fPIC -std=c++17 -Iinclude
+CXXFLAGS = -O2 -W -Wall -fPIC -std=c++17 -Iinclude
 AR = ar
 ARFLAGS = rcs
 

@@ -2,11 +2,15 @@
 
 #include "trading/rules/momentum.hpp"
 #include "trading/state/sliding_window.hpp"
+#include "trading/types.hpp"
+
+using std::unique_ptr;
+using std::vector;
 
 namespace trading {
 
-Strategy::Strategy(std::unique_ptr<MarketState> state, std::vector<std::unique_ptr<EntryRule>> entry_rules,
-                   std::vector<std::unique_ptr<ExitRule>> exit_rules)
+Strategy::Strategy(unique_ptr<MarketState> state, vector<unique_ptr<EntryRule>> entry_rules,
+                   vector<unique_ptr<ExitRule>> exit_rules)
     : market_state_(std::move(state)),
       entry_rules_(std::move(entry_rules)),
       exit_rules_(std::move(exit_rules)),
@@ -14,43 +18,46 @@ Strategy::Strategy(std::unique_ptr<MarketState> state, std::vector<std::unique_p
       entry_price_(0.0),
       highest_price_since_entry_(0.0) {}
 
-void Strategy::Init(const double* prices, int count, bool in_position, double entry_price, double highest_price) {
-    for (int i = 0; i < count; ++i) {
-        market_state_->UpdatePrice(prices[i]);
+bool Strategy::Init(const vector<PricePoint>& history, bool in_position, double entry_price, double highest_price) {
+    if (!market_state_->Init(history)) {
+        return false;
     }
     in_position_ = in_position;
     entry_price_ = entry_price;
     // Restore the persisted peak so the two-phase exit rule uses the correct phase on restart.
     highest_price_since_entry_ = in_position ? highest_price : 0.0;
+    return true;
 }
 
-void Strategy::UpdatePrice(double price) {
-    market_state_->UpdatePrice(price);
-
+bool Strategy::UpdatePrice(const PricePoint& tick) {
+    if (!market_state_->UpdatePrice(tick)) {
+        return false;
+    }
     if (in_position_) {
-        if (price > highest_price_since_entry_) {
-            highest_price_since_entry_ = price;
+        if (tick.price > highest_price_since_entry_) {
+            highest_price_since_entry_ = tick.price;
         }
     }
+    return true;
 }
 
-double Strategy::GetSignal() {
+int Strategy::GetSignal() {
     if (in_position_) {
         // Check Exit Rules
         for (const auto& rule : exit_rules_) {
             if (rule->Check(*market_state_, entry_price_, highest_price_since_entry_)) {
                 in_position_ = false;
-                return -1.0;  // SELL Signal
+                return SIGNAL_SELL;
             }
         }
 
-        return 0.0;  // HOLD Signal
+        return SIGNAL_HOLD;
     } else {
         // Check Entry Rules
         // All rules must be satisfied to enter (AND logic)
         for (const auto& rule : entry_rules_) {
             if (!rule->Check(*market_state_)) {
-                return 0.0;  // No Signal
+                return SIGNAL_HOLD;
             }
         }
 
@@ -58,7 +65,7 @@ double Strategy::GetSignal() {
         in_position_ = true;
         entry_price_ = market_state_->GetCurrentPrice();
         highest_price_since_entry_ = entry_price_;
-        return 1.0;  // BUY Signal
+        return SIGNAL_BUY;
     }
 }
 

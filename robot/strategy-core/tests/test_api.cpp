@@ -12,13 +12,12 @@ class ApiTest : public ::testing::Test {
     StrategyHandle handle_ = nullptr;
 
     void SetUp() override {
-        // Default configuration for momentum strategy
         config_.type = STRATEGY_MOMENTUM_TRAILING;
-        config_.window_size = 2;  // Set to minimum required for a lookback of 1
+        config_.window_seconds = 7200;  // 2h window, accommodates 1h lookback
         config_.num_momentum_windows = 1;
-        config_.momentum_windows[0].lookback = 1;
-        config_.momentum_windows[0].threshold = 0.01;  // 1%
-        config_.momentum_require_all = 0;              // OR logic
+        config_.momentum_windows[0].lookback_seconds = 3600;  // 1h
+        config_.momentum_windows[0].threshold = 0.01;         // 1%
+        config_.momentum_require_all = 0;                     // OR logic
         config_.stop_loss_pct = 0.05;
         config_.activation_pct = 0.10;
         config_.trailing_stop_pct = 0.05;
@@ -57,9 +56,9 @@ TEST_F(ApiTest, ReturnsNullForTooManyMomentumWindows) {
 }
 
 TEST_F(ApiTest, ReturnsNullForInsufficientWindowSize) {
-    // Lookback is 1, so window size must be > 1 (at least 2)
-    config_.momentum_windows[0].lookback = 1;
-    config_.window_size = 1;
+    // window_seconds must be strictly greater than max lookback_seconds.
+    config_.momentum_windows[0].lookback_seconds = 3600;
+    config_.window_seconds = 3600;  // equal -> invalid
     handle_ = Strategy_Create(config_);
     EXPECT_EQ(handle_, nullptr);
 }
@@ -93,55 +92,58 @@ TEST_F(ApiTest, InitDoesNotTriggerSignal) {
     handle_ = Strategy_Create(config_);
 
     // Load history that does NOT meet the signal threshold.
-    // 100 -> 100.5 is a 0.5% jump, which is less than the 1% threshold.
-    double prices[] = {100.0, 100.5};
-    Strategy_Init_Trailing(handle_, prices, 2, 0, 0.0, 0.0);
+    // 0.5% gain (100 -> 100.5) over 1h is below the 1% threshold.
+    PricePoint ticks[] = {{0, 100.0}, {7200, 100.5}};
+    Strategy_Init_Trailing(handle_, ticks, 2, 0, 0.0, 0.0);
 
-    // Should be 0.0 because the threshold is not met.
-    EXPECT_DOUBLE_EQ(Strategy_GetSignal(handle_), 0.0);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_HOLD);
 }
 
 TEST_F(ApiTest, UpdatePriceTriggersSignal) {
     handle_ = Strategy_Create(config_);
 
-    // Warm up with initial price
-    Strategy_UpdatePrice(handle_, 100.0);
-    EXPECT_DOUBLE_EQ(Strategy_GetSignal(handle_), 0.0);
+    // Warm up: window not ready yet.
+    Strategy_UpdatePrice(handle_, 100.0, 0);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_HOLD);  // span=0, not ready
 
-    // Update with price jump > 1%
-    Strategy_UpdatePrice(handle_, 102.0);
-    EXPECT_DOUBLE_EQ(Strategy_GetSignal(handle_), 1.0);  // BUY
+    Strategy_UpdatePrice(handle_, 100.0, 3600);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_HOLD);  // span=3600 < 7200, not ready
+
+    // Window ready; 1h-ago price is 100, current is 102 -> 2% gain >= 1% threshold.
+    Strategy_UpdatePrice(handle_, 102.0, 7200);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_BUY);  // BUY
 }
 
 TEST_F(ApiTest, MatchAllConfigurationRespected) {
-    // Configure 2 windows: 1 tick > 1%, 2 ticks > 5%
+    // Configure 2 windows: 1h > 1%, 2h > 5%.
     config_.num_momentum_windows = 2;
-    config_.momentum_windows[1].lookback = 2;
+    config_.momentum_windows[1].lookback_seconds = 7200;  // 2h
     config_.momentum_windows[1].threshold = 0.05;
     config_.momentum_require_all = 1;  // AND logic
+    config_.window_seconds = 10800;    // must be > max lookback (7200)
 
     handle_ = Strategy_Create(config_);
 
-    // 100 -> 100 -> 102.
-    // 1-tick change: 2% (Passes). 2-tick change: 2% (Fails > 5%).
-    Strategy_UpdatePrice(handle_, 100.0);
-    Strategy_UpdatePrice(handle_, 100.0);
-    Strategy_UpdatePrice(handle_, 102.0);
+    // Feed 4 hourly prices: 100, 100, 100, 102.
+    // 1h back: (102-100)/100 = 2% >= 1% -> passes.
+    // 2h back: (102-100)/100 = 2% <  5% -> fails.
+    Strategy_UpdatePrice(handle_, 100.0, 0);
+    Strategy_UpdatePrice(handle_, 100.0, 3600);
+    Strategy_UpdatePrice(handle_, 100.0, 7200);
+    Strategy_UpdatePrice(handle_, 102.0, 10800);
 
-    // Should be 0.0 because AND logic requires both to pass
-    EXPECT_DOUBLE_EQ(Strategy_GetSignal(handle_), 0.0);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_HOLD);
 }
 
 TEST_F(ApiTest, InitPositionEnablesExitRules) {
     handle_ = Strategy_Create(config_);
 
-    // Restore state: in position at 100, peak also 100 (never went above entry), current price is 90 (10% loss).
-    // The configured stop loss is 5%, so this should trigger a sell via Phase 1.
+    // Restore state: in position at 100, peak also 100. Current price is 90 (10% loss).
+    // Stop loss is 5%, so this triggers a Phase 1 exit.
     Strategy_Init_Trailing(handle_, nullptr, 0, 1, 100.0, 100.0);
-    Strategy_UpdatePrice(handle_, 90.0);
+    Strategy_UpdatePrice(handle_, 90.0, 1);
 
-    // Check that the exit rule was evaluated and triggered a SELL signal.
-    EXPECT_DOUBLE_EQ(Strategy_GetSignal(handle_), -1.0);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SELL);
 }
 
 TEST_F(ApiTest, InitProfitPositionEnablesExitRules) {
@@ -149,13 +151,11 @@ TEST_F(ApiTest, InitProfitPositionEnablesExitRules) {
     config_.profit_target_pct = 0.10;
     handle_ = Strategy_Create(config_);
 
-    // Restore state: in position at 100, current price is 111 (11% gain).
-    // The configured profit target is 10%, so this should trigger a sell.
+    // Restore state: in position at 100. Current price is 111 (11% gain > 10% target).
     Strategy_Init_Profit(handle_, nullptr, 0, 1, 100.0);
-    Strategy_UpdatePrice(handle_, 111.0);
+    Strategy_UpdatePrice(handle_, 111.0, 1);
 
-    // Check that the exit rule was evaluated and triggered a SELL signal.
-    EXPECT_DOUBLE_EQ(Strategy_GetSignal(handle_), -1.0);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SELL);
 }
 
 }  // namespace trading

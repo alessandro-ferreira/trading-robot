@@ -36,8 +36,8 @@ This guide provides the steps to build the strategy core library for development
 
 ### 1. Prerequisites
 
--   **C++ Compiler:** GCC or Clang with C++17 support.
--   **Make:** For build automation.
+-   **C++ Compiler:** GCC or Clang with C++17 support (as defined in `Makefile`)
+-   **Make:** For build automation
 
 ### 2. Build the Library
 

@@ -6,87 +6,87 @@
 #include "trading/rules/momentum.hpp"
 #include "trading/state/sliding_window.hpp"
 
+using std::unique_ptr;
+using std::vector;
+
 namespace trading {
 
 class MomentumTest : public ::testing::Test {
    protected:
-    // Helper to create a state with a specific price history
-    std::unique_ptr<SlidingWindowPriceState> CreateState(const std::vector<double>& prices) {
-        // The window size must be at least as large as the number of prices to hold them.
-        auto state = std::make_unique<SlidingWindowPriceState>(prices.size());
-        for (double p : prices) {
-            state->UpdatePrice(p);
+    // Builds a SlidingWindowPriceState from a price list using hourly (3600s) intervals.
+    // window_duration_seconds must be provided to accommodate the intended lookbacks.
+    unique_ptr<SlidingWindowPriceState> CreateState(const vector<double>& prices, long long window_duration_seconds) {
+        auto state = std::make_unique<SlidingWindowPriceState>(window_duration_seconds);
+        for (size_t i = 0; i < prices.size(); ++i) {
+            state->UpdatePrice({static_cast<long long>(i) * 3600, prices[i]});
         }
         return state;
     }
 };
 
 TEST_F(MomentumTest, FailsIfNotEnoughData) {
-    // Lookback is 5, but we only provide 3 prices. The state is not ready.
-    std::vector<std::pair<int, double>> config = {{5, 0.01}};
+    // Lookback is 5h, but we only provide 3 hourly prices (span=2h < 5h window). Not ready.
+    vector<MomentumWindow> config = {{5 * 3600, 0.01}};
     MomentumEntryRule rule(config, false);
-    auto state = CreateState({100.0, 101.0, 102.0});
+    auto state = CreateState({100.0, 101.0, 102.0}, 6 * 3600);
 
-    // The rule should check if the state is ready and return false.
     EXPECT_FALSE(rule.Check(*state));
 }
 
 TEST_F(MomentumTest, OrLogic_HandlesInvalidPastPrice) {
-    // Window 1: Lookback 1, Threshold 1% -> will use invalid price (0) and be skipped.
-    // Window 2: Lookback 2, Threshold 1% -> will pass.
-    std::vector<std::pair<int, double>> config = {{1, 0.01}, {2, 0.01}};
+    // Window 1: 1h lookback -> hits the zero-price entry (invalid, skipped in OR mode).
+    // Window 2: 2h lookback -> hits 100.0, change is 2% >= 1% threshold -> passes.
+    vector<MomentumWindow> config = {{3600, 0.01}, {7200, 0.01}};
     MomentumEntryRule rule(config, false);  // OR logic
 
-    // Prices: 100, 0, 102.
-    auto state = CreateState({100.0, 0.0, 102.0});
+    // Prices at t=[0,3600,7200,10800]: 100, 100, 0 (invalid), 102
+    // At t=10800: 1h back={7200,0}->skip; 2h back={3600,100}->2%>=1%->true
+    auto state = CreateState({100.0, 100.0, 0.0, 102.0}, 3 * 3600);
 
-    // Should return TRUE because the second, valid window passes.
     EXPECT_TRUE(rule.Check(*state));
 }
 
 TEST_F(MomentumTest, AndLogic_FailsOnInvalidPastPrice) {
-    std::vector<std::pair<int, double>> config = {{1, 0.01}, {2, 0.01}};
+    vector<MomentumWindow> config = {{3600, 0.01}, {7200, 0.01}};
     MomentumEntryRule rule(config, true);  // AND logic
-    auto state = CreateState({100.0, 0.0, 102.0});
+
+    // Same data: 1h back hits zero -> AND fails immediately.
+    auto state = CreateState({100.0, 100.0, 0.0, 102.0}, 3 * 3600);
+
     EXPECT_FALSE(rule.Check(*state));
 }
 
 TEST_F(MomentumTest, OrLogic_TriggersIfAnyWindowPasses) {
-    // Setup: 2 windows.
-    // Window 1: Lookback 1, Threshold 1% (0.01)
-    // Window 2: Lookback 2, Threshold 5% (0.05)
-    std::vector<std::pair<int, double>> config = {{1, 0.01}, {2, 0.05}};
-
-    // OR Logic (require_all = false)
+    // Window 1: 1h lookback, 1% threshold -> 2% change passes.
+    // Window 2: 2h lookback, 5% threshold -> 2% change fails.
+    // OR: one passing window is enough.
+    vector<MomentumWindow> config = {{3600, 0.01}, {7200, 0.05}};
     MomentumEntryRule rule(config, false);
 
-    // Prices: 100, 100, 102
-    // Change 1 tick ago: (102-100)/100 = 0.02 (2%) -> PASSES (> 1%)
-    // Change 2 ticks ago: (102-100)/100 = 0.02 (2%) -> FAILS (< 5%)
+    // Prices at t=[0,3600,7200,10800]: 100,100,100,102
+    // 1h back={7200,100}->2%>=1%->pass. 2h back={3600,100}->2%<5%->fail.
+    auto state = CreateState({100.0, 100.0, 100.0, 102.0}, 3 * 3600);
 
-    auto state = CreateState({100.0, 100.0, 102.0});
-
-    // Should return TRUE because one window passed
     EXPECT_TRUE(rule.Check(*state));
 }
 
 TEST_F(MomentumTest, AndLogic_FailsIfAnyWindowFails) {
-    std::vector<std::pair<int, double>> config = {{1, 0.01}, {2, 0.05}};
+    vector<MomentumWindow> config = {{3600, 0.01}, {7200, 0.05}};
+    MomentumEntryRule rule(config, true);  // AND logic
 
-    // AND Logic (require_all = true)
-    MomentumEntryRule rule(config, true);
+    // Same data: 2h window fails (2% < 5%) -> AND returns false.
+    auto state = CreateState({100.0, 100.0, 100.0, 102.0}, 3 * 3600);
 
-    // Same data as above: One passes, one fails.
-    auto state = CreateState({100.0, 100.0, 102.0});
-
-    // Should return FALSE because not ALL windows passed
     EXPECT_FALSE(rule.Check(*state));
 }
 
 TEST_F(MomentumTest, AndLogic_TriggersIfAllWindowsPass) {
-    std::vector<std::pair<int, double>> config = {{1, 0.01}, {2, 0.01}};
-    MomentumEntryRule rule(config, true);  // AND Logic
-    auto state = CreateState({100.0, 100.0, 102.0});
+    // Both windows have 1% threshold; both see a 2% gain.
+    vector<MomentumWindow> config = {{3600, 0.01}, {7200, 0.01}};
+    MomentumEntryRule rule(config, true);  // AND logic
+
+    auto state = CreateState({100.0, 100.0, 100.0, 102.0}, 3 * 3600);
+
     EXPECT_TRUE(rule.Check(*state));
 }
 

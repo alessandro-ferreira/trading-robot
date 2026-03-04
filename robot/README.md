@@ -81,7 +81,7 @@ To ensure consistency all services are built and run against specific versions.
 
 -   **Python:** 3.12 (as defined in `python-gateway/Dockerfile`)
 -   **Go:** 1.24 (as defined in `go-bot/go.mod`)
--   **C++:** GCC or Clang with C++17 support.
+-   **C++:** GCC or Clang with C++17 support (as defined in `strategy-core/Makefile`)
 
 It is highly recommended to use these versions for local development. The `python-gateway/Dockerfile` should be pinned to a `python:3.12-slim` base image.
 

@@ -1,29 +1,39 @@
 #pragma once
 
-#include <cstddef>  // For size_t
 #include <deque>
+#include <vector>
 
 #include "trading/interfaces/market_state.hpp"
 
+using std::deque;
+using std::vector;
+
 namespace trading {
 
+// A MarketState implementation that retains price history for a configurable time window.
+// Prices older than window_duration_seconds are evicted to bound memory usage.
+// IsReady() returns true once at least window_duration_seconds of history has been accumulated,
+// guaranteeing that all configured lookbacks can be resolved.
 class SlidingWindowPriceState : public MarketState {
    public:
-    explicit SlidingWindowPriceState(size_t window_size);
+    explicit SlidingWindowPriceState(long long window_duration_seconds);
 
-    void UpdatePrice(double price) override;
+    bool Init(const vector<PricePoint>& history) override;
+    bool UpdatePrice(const PricePoint& tick) override;
     double GetCurrentPrice() const override;
 
-    // Returns true once the deque has been filled to window_size, meaning all lookbacks are valid.
+    // Returns true once the accumulated history spans at least window_duration_seconds.
     bool IsReady() const;
-    // Returns the price ticks_ago steps back; ticks_ago=1 is the previous tick, ticks_ago=0 is current.
-    // Returns 0.0 if there is insufficient history.
-    double GetPriceAgo(size_t ticks_ago) const;
+
+    // Returns the most recent price recorded at or before (current_timestamp - seconds_ago).
+    // Returns 0.0 if no such entry exists in the retained window.
+    double GetPriceSecondsAgo(long long seconds_ago) const;
 
    private:
-    std::deque<double> prices_;
-    size_t window_size_;
-    double current_price_;
+    deque<PricePoint> entries_;
+    long long window_seconds_;
+    long long current_timestamp_;
+    bool is_ready_;
 };
 
 }  // namespace trading

@@ -4,6 +4,8 @@
 #include "trading/interfaces/market_state.hpp"
 #include "trading/rules/fixed_profit.hpp"
 
+using std::vector;
+
 namespace trading {
 
 // A minimal mock for MarketState
@@ -11,7 +13,12 @@ struct MockMarketState : public MarketState {
     double current_price_ = 0.0;
     void SetCurrentPrice(double price) { current_price_ = price; }
     double GetCurrentPrice() const override { return current_price_; }
-    void UpdatePrice(double price) override { current_price_ = price; }
+    bool Init([[maybe_unused]] const vector<PricePoint>& history) override { return true; }
+    bool UpdatePrice(const PricePoint& tick) override {
+        current_price_ = tick.price;
+        // timestamp is unused in this mock
+        return true;
+    }
 };
 
 class FixedProfitTest : public ::testing::Test {

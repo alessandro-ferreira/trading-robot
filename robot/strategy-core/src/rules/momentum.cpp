@@ -1,11 +1,14 @@
 #include "trading/rules/momentum.hpp"
 
 #include "trading/state/sliding_window.hpp"
+#include "trading/types.hpp"
+
+using std::vector;
 
 namespace trading {
 
-MomentumEntryRule::MomentumEntryRule(const std::vector<std::pair<int, double>>& lookback_thresholds, bool require_all)
-    : lookback_thresholds_(lookback_thresholds), require_all_(require_all) {}
+MomentumEntryRule::MomentumEntryRule(const vector<MomentumWindow>& windows, bool require_all)
+    : windows_(windows), require_all_(require_all) {}
 
 bool MomentumEntryRule::Check(const MarketState& state) {
     const auto* momentum_state = dynamic_cast<const SlidingWindowPriceState*>(&state);
@@ -13,9 +16,9 @@ bool MomentumEntryRule::Check(const MarketState& state) {
         return false;
     }
 
-    for (const auto& [lookback, threshold] : lookback_thresholds_) {
+    for (const auto& [lookback_seconds, threshold] : windows_) {
         double current = momentum_state->GetCurrentPrice();
-        double past = momentum_state->GetPriceAgo(lookback);
+        double past = momentum_state->GetPriceSecondsAgo(lookback_seconds);
 
         if (past <= 0.000001) {
             if (require_all_) return false;  // In AND mode, invalid data fails the check

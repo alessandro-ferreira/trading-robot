@@ -85,6 +85,13 @@ repos:
         types: [go]
         files: ^robot/go-bot/
         pass_filenames: false
+      - id: cpp-tests
+        name: cpp-tests
+        entry: bash -c 'cd robot/strategy-core && make test'
+        language: system
+        types: [c++, c]
+        files: ^robot/strategy-core/
+        pass_filenames: false
 
   # Commit Message Checker
   - repo: https://github.com/compilerla/conventional-pre-commit
