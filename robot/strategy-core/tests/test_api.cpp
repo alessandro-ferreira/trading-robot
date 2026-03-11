@@ -36,6 +36,12 @@ TEST_F(ApiTest, CreateAndDestroy) {
     EXPECT_NE(handle_, nullptr);
 }
 
+TEST_F(ApiTest, CreateDummyStrategy) {
+    config_.type = STRATEGY_DUMMY;
+    handle_ = Strategy_Create(config_);
+    EXPECT_NE(handle_, nullptr);
+}
+
 TEST_F(ApiTest, CreateFixedProfitStrategy) {
     config_.type = STRATEGY_MOMENTUM_PROFIT;
     config_.profit_target_pct = 0.10;
@@ -44,7 +50,7 @@ TEST_F(ApiTest, CreateFixedProfitStrategy) {
 }
 
 TEST_F(ApiTest, ReturnsNullForInvalidType) {
-    config_.type = static_cast<StrategyType>(999);
+    config_.type = static_cast<StrategyType>(-1);
     handle_ = Strategy_Create(config_);
     EXPECT_EQ(handle_, nullptr);
 }
@@ -58,7 +64,11 @@ TEST_F(ApiTest, ReturnsNullForTooManyMomentumWindows) {
 TEST_F(ApiTest, ReturnsNullForInsufficientWindowSize) {
     // window_seconds must be strictly greater than max lookback_seconds.
     config_.momentum_windows[0].lookback_seconds = 3600;
-    config_.window_seconds = 3600;  // equal -> invalid
+    config_.window_seconds = config_.momentum_windows[0].lookback_seconds;  // equal -> invalid
+    handle_ = Strategy_Create(config_);
+    EXPECT_EQ(handle_, nullptr);
+
+    config_.window_seconds = config_.momentum_windows[0].lookback_seconds - 1;
     handle_ = Strategy_Create(config_);
     EXPECT_EQ(handle_, nullptr);
 }

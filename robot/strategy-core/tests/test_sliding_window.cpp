@@ -40,13 +40,22 @@ TEST(SlidingWindowTest, GetPriceSecondsAgoReturnsLastKnownPrice) {
 }
 
 TEST(SlidingWindowTest, GetPriceSecondsAgoHandlesGap) {
-    // Simulates a missed update: no entry at t=3600, so the last known price before that is at t=0.
+    // Simulates a missed update: no entry at t=3600.
     SlidingWindowPriceState state(7200);
     state.UpdatePrice({0, 100.0});
+    state.UpdatePrice({3550, 101.0});  // Add a point that is not stale
     state.UpdatePrice({7200, 102.0});  // gap: no update at t=3600
 
-    // 3600s ago from t=7200 => look for t<=3600. Last entry there is {0, 100.0}.
-    EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(3600), 100.0);
+    // 3600s ago from t=7200 => look for t<=3600.
+    // Last entry is {3550, 101.0}.
+    // Gap is 3600 - 3550 = 50, which is <= 60s. This is a valid match.
+    EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(3600), 101.0);
+
+    // Now test a case where the gap is too large.
+    // 7000s ago from t=7200 => look for t<=200.
+    // Last entry is {0, 100.0}.
+    // Gap is 200 - 0 = 200, which is > 60s. This is stale and should be rejected.
+    EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(7000), 0.0);
 }
 
 TEST(SlidingWindowTest, OldEntriesEvictedAsWindowAdvances) {
@@ -77,7 +86,7 @@ TEST(SlidingWindowTest, GetPriceSecondsAgoReturnsZeroIfLookbackExceedsHistory) {
 TEST(SlidingWindowTest, InitWithSmallHistory) {
     SlidingWindowPriceState state(100);
     // History size 2: Ensure both are loaded, not just the last one.
-    vector<PricePoint> history = {{100, 10.0}, {150, 11.0}};
+    vector<PricePoint> history = {{100, 10.0}, {150, 10.5}};
     state.Init(history);
 
     // If the first point was dropped, looking back to t=100 would fail.
@@ -107,6 +116,33 @@ TEST(SlidingWindowTest, UpdatePriceFailsWithStaleTick) {
     state.UpdatePrice({200, 10.0});
     // This tick is older than the current state, so it should be rejected.
     EXPECT_FALSE(state.UpdatePrice({199, 11.0}));
+}
+
+TEST(SlidingWindowTest, RejectsUnrealisticPriceJumps) {
+    SlidingWindowPriceState state(100);
+    state.UpdatePrice({100, 100.0});
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 100.0);
+
+    // Attempt to update with a >10% price jump (100 -> 111). Should be rejected.
+    EXPECT_FALSE(state.UpdatePrice({101, 111.0}));
+    // Verify that the state was not updated.
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 100.0);
+
+    // Attempt to update with a valid <10% price jump (100 -> 105). Should be accepted.
+    EXPECT_TRUE(state.UpdatePrice({102, 105.0}));
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 105.0);
+}
+
+TEST(SlidingWindowTest, RejectsZeroOrNegativePrice) {
+    SlidingWindowPriceState state(100);
+    state.UpdatePrice({100, 100.0});
+
+    // Attempt to update with a zero price. Should be rejected.
+    EXPECT_FALSE(state.UpdatePrice({101, 0.0}));
+    // Attempt to update with a negative price. Should be rejected.
+    EXPECT_FALSE(state.UpdatePrice({102, -50.0}));
+    // Verify that the state was not updated.
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 100.0);
 }
 
 }  // namespace trading

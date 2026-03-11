@@ -10,13 +10,14 @@ using std::vector;
 namespace trading {
 
 Strategy::Strategy(unique_ptr<MarketState> state, vector<unique_ptr<EntryRule>> entry_rules,
-                   vector<unique_ptr<ExitRule>> exit_rules)
-    : market_state_(std::move(state)),
-      entry_rules_(std::move(entry_rules)),
-      exit_rules_(std::move(exit_rules)),
-      in_position_(false),
-      entry_price_(0.0),
-      highest_price_since_entry_(0.0) {}
+                   vector<unique_ptr<ExitRule>> exit_rules) {
+    market_state_ = std::move(state);
+    entry_rules_ = std::move(entry_rules);
+    exit_rules_ = std::move(exit_rules);
+    in_position_ = false;
+    entry_price_ = 0.0;
+    highest_price_since_entry_ = 0.0;
+}
 
 bool Strategy::Init(const vector<PricePoint>& history, bool in_position, double entry_price, double highest_price) {
     if (!market_state_->Init(history)) {
@@ -44,6 +45,7 @@ bool Strategy::UpdatePrice(const PricePoint& tick) {
 int Strategy::GetSignal() {
     if (in_position_) {
         // Check Exit Rules
+        // If any rule is satisfied, we exit (OR logic)
         for (const auto& rule : exit_rules_) {
             if (rule->Check(*market_state_, entry_price_, highest_price_since_entry_)) {
                 in_position_ = false;
@@ -61,7 +63,6 @@ int Strategy::GetSignal() {
             }
         }
 
-        // If we get here, all entry rules passed
         in_position_ = true;
         entry_price_ = market_state_->GetCurrentPrice();
         highest_price_since_entry_ = entry_price_;

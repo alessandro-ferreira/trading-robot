@@ -19,9 +19,12 @@ class Strategy {
 
     // Initializes the strategy with history and position state.
     // highest_price must be the highest price seen since the position was opened (persisted by the caller).
+    // Returns false if the history is not in chronological order.
     bool Init(const vector<PricePoint>& history, bool in_position, double entry_price, double highest_price);
 
     // Feeds a live price tick. Also tracks the highest price seen while in position.
+    // Returns false if the tick seems corrupted (e.g. timestamp in the past, non-positive price, or unrealistic price
+    // jump).
     bool UpdatePrice(const PricePoint& tick);
 
     // Evaluates entry or exit rules and transitions internal state.

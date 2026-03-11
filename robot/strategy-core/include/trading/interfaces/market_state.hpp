@@ -18,7 +18,8 @@ class MarketState {
     virtual bool Init(const vector<PricePoint>& history) = 0;
 
     // Updates the state with a new price tick.
-    // Returns false if the tick's timestamp is older than the last received tick.
+    // Returns false if the tick seems corrupted (e.g. timestamp in the past, non-positive price, or unrealistic price
+    // jump).
     virtual bool UpdatePrice(const PricePoint& tick) = 0;
 
     // Returns the most recent price tick.

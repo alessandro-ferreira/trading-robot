@@ -4,8 +4,11 @@
 
 namespace trading {
 
-TrailingStopExitRule::TrailingStopExitRule(double stop_loss_pct, double activation_pct, double trailing_stop_pct)
-    : stop_loss_pct_(stop_loss_pct), activation_pct_(activation_pct), trailing_stop_pct_(trailing_stop_pct) {}
+TrailingStopExitRule::TrailingStopExitRule(double stop_loss_pct, double activation_pct, double trailing_stop_pct) {
+    stop_loss_pct_ = stop_loss_pct;
+    activation_pct_ = activation_pct;
+    trailing_stop_pct_ = trailing_stop_pct;
+}
 
 bool TrailingStopExitRule::Check(const MarketState& state, double entry_price, double highest_price) {
     double current = state.GetCurrentPrice();

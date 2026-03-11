@@ -5,7 +5,7 @@ This repository contains a suite of tools for automated trading.
 ## Project Structure
 
 The project is organized into a main component:
--   `./robot/`: A live trading bot built with a microservices architecture. It consists of a Go application for the core logic, a Python gateway to communicate with exchange APIs via gRPC, and a C++ core for high-performance strategy execution.
+-   `robot`: A live trading bot built with a microservices architecture. It consists of a Go application for the core logic, a Python gateway to communicate with exchange APIs via gRPC, and a C++ core for high-performance strategy execution.
 
 For more information and setup instructions, please see the `README.md` file within each respective directory.
 
@@ -15,7 +15,7 @@ This project uses `pre-commit` to enforce coding standards and automatically fix
 
 ### Setup
 
-Follow these steps after setting up your Python and Go environments:
+Follow these steps after setting up your Go, Python and C++ environments:
 
 1.  Install `pre-commit`:
     ```bash

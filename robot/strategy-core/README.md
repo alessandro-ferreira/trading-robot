@@ -41,10 +41,11 @@ This guide provides the steps to build the strategy core library for development
 
 ### 2. Build the Library
 
-Use the provided `Makefile` to compile the source code into a static library (`libstrategy.a`) or shared object, depending on the build configuration.
-Make sure you have gtest installed `sudo apt-get install libgtest-dev`
+Use the provided `Makefile` to compile the source code into a static library (`libstrategy.a`).
+Make sure you have gtest installed
 
 ```bash
+sudo apt-get install libgtest-dev
 # From the strategy-core/ directory
 make
 ```

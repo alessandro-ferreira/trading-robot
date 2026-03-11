@@ -23,7 +23,8 @@ StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* t
                                       double entry_price, double highest_price);
 
 // Feeds a live price tick. Also tracks the highest price seen while in position.
-// Returns STRATEGY_FAILURE if the timestamp is older than the last received tick.
+// Returns STRATEGY_FAILURE if the tick seems corrupted (e.g. timestamp in the past, non-positive price, or unrealistic
+// price jump).
 StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long long timestamp);
 
 // Evaluates entry or exit rules and transitions internal state.

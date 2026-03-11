@@ -7,8 +7,10 @@ using std::vector;
 
 namespace trading {
 
-MomentumEntryRule::MomentumEntryRule(const vector<MomentumWindow>& windows, bool require_all)
-    : windows_(windows), require_all_(require_all) {}
+MomentumEntryRule::MomentumEntryRule(const vector<MomentumWindow>& windows, bool require_all) {
+    windows_ = windows;
+    require_all_ = require_all;
+}
 
 bool MomentumEntryRule::Check(const MarketState& state) {
     const auto* momentum_state = dynamic_cast<const SlidingWindowPriceState*>(&state);
@@ -20,7 +22,8 @@ bool MomentumEntryRule::Check(const MarketState& state) {
         double current = momentum_state->GetCurrentPrice();
         double past = momentum_state->GetPriceSecondsAgo(lookback_seconds);
 
-        if (past <= 0.000001) {
+        // A non-positive past price indicates that the lookback period went beyond the available history.
+        if (past <= 0.0) {
             if (require_all_) return false;  // In AND mode, invalid data fails the check
             continue;                        // In OR mode, skip invalid data
         }

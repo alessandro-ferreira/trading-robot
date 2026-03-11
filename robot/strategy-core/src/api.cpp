@@ -86,7 +86,8 @@ StrategyHandle Strategy_Create(StrategyConfig config) {
 
 void Strategy_Destroy(StrategyHandle handle) {
     if (handle) {
-        delete static_cast<trading::Strategy*>(handle);
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        delete strategy;
     }
 }
 
@@ -95,15 +96,15 @@ static vector<trading::PricePoint> ToHistory(const PricePoint* ticks, int count)
     if (!ticks || count <= 0) {
         return {};
     }
-    // The C and C++ structs are now layout-compatible, allowing for direct construction.
     return vector<trading::PricePoint>(ticks, ticks + count);
 }
 
 StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
                                     double entry_price) {
     if (handle) {
-        bool success =
-            static_cast<trading::Strategy*>(handle)->Init(ToHistory(ticks, count), in_position != 0, entry_price, 0.0);
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        bool success = strategy->Init(ToHistory(ticks, count), in_position != 0, entry_price, 0.0);
+
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
     return STRATEGY_FAILURE;
@@ -112,8 +113,9 @@ StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* tic
 StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
                                       double entry_price, double highest_price) {
     if (handle) {
-        bool success = static_cast<trading::Strategy*>(handle)->Init(ToHistory(ticks, count), in_position != 0,
-                                                                     entry_price, highest_price);
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        bool success = strategy->Init(ToHistory(ticks, count), in_position != 0, entry_price, highest_price);
+
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
     return STRATEGY_FAILURE;
@@ -121,7 +123,9 @@ StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* t
 
 StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long long timestamp) {
     if (handle) {
-        bool success = static_cast<trading::Strategy*>(handle)->UpdatePrice({timestamp, price});
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        bool success = strategy->UpdatePrice({timestamp, price});
+
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
     return STRATEGY_FAILURE;
@@ -129,6 +133,8 @@ StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long lo
 
 Signal Strategy_GetSignal(StrategyHandle handle) {
     if (!handle) return SIGNAL_HOLD;
-    return static_cast<trading::Strategy*>(handle)->GetSignal();
+
+    auto strategy = static_cast<trading::Strategy*>(handle);
+    return strategy->GetSignal();
 }
 }
