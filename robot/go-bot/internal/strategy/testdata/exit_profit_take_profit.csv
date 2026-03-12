@@ -1,0 +1,4 @@
+timestamp,price,expected_signal,description
+30,102.0,0,"Hold, below take profit"
+60,104.0,0,"Hold, still below take profit"
+90,105.0,-1,"Sell, above or equal to  5% take profit"

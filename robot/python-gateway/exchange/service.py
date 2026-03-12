@@ -85,7 +85,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.TickerResponse:
         """Handles the GetTicker RPC."""
-        logging.info(f"Received GetTicker request for {request.symbol}")
+        logging.info(
+            f"Received GetTicker request for exchange: {request.exchange}, symbol: {request.symbol}"
+        )
 
         exchange = self._getExchange(request, context)
         try:
@@ -100,7 +102,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.BalanceResponse:
         """Handles the GetBalance RPC."""
-        logging.info(f"Received GetBalance request for {request.currency}")
+        logging.info(
+            f"Received GetBalance request for exchange: {request.exchange}, currency: {request.currency}"
+        )
 
         exchange = self._getExchange(request, context)
         try:
@@ -123,7 +127,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     ) -> exchange_pb2.OrderResponse:
         """Handles the CreateOrder RPC."""
         logging.info(
-            f"Received CreateOrder request for {request.symbol} {request.side} {request.type} {request.amount} @ {request.price}"
+            f"Received CreateOrder request for exchange: {request.exchange}, symbol: {request.symbol}, side: {request.side}, type: {request.type}, amount: {request.amount}, price: {request.price}"
         )
 
         exchange = self._getExchange(request, context)
@@ -159,7 +163,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     ) -> exchange_pb2.CancelOrderResponse:
         """Handles the CancelOrder RPC."""
         logging.info(
-            f"Received CancelOrder request for ID: {request.id} symbol: {request.symbol}"
+            f"Received CancelOrder request for exchange: {request.exchange}, ID: {request.id}, symbol: {request.symbol}"
         )
 
         exchange = self._getExchange(request, context)
@@ -176,7 +180,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrderResponse:
         """Handles the GetOrder RPC."""
-        logging.info(f"Received GetOrder request for ID: {request.id}")
+        logging.info(
+            f"Received GetOrder request for exchange: {request.exchange}, ID: {request.id}"
+        )
 
         exchange = self._getExchange(request, context)
         try:
@@ -204,7 +210,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OpenOrdersResponse:
         """Handles the GetOpenOrders RPC."""
-        logging.info(f"Received GetOpenOrders request for {request.symbol}")
+        logging.info(
+            f"Received GetOpenOrders request for exchange: {request.exchange}, symbol: {request.symbol}"
+        )
 
         exchange = self._getExchange(request, context)
         try:

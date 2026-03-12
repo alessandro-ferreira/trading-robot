@@ -77,10 +77,12 @@ type StrategyConfig struct {
 }
 
 type MomentumConfig struct {
-	WindowSize      int     `toml:"window_size"`
-	Lookback        int     `toml:"lookback"`
+	WindowSeconds   int64   `toml:"window_seconds"`
+	LookbackSeconds int64   `toml:"lookback_seconds"`
 	Threshold       float64 `toml:"threshold"`
+	RequireAll      bool    `toml:"require_all"`
 	StopLossPct     float64 `toml:"stop_loss_pct"`
+	ProfitTargetPct float64 `toml:"profit_target_pct"`
 	ActivationPct   float64 `toml:"activation_pct"`
 	TrailingStopPct float64 `toml:"trailing_stop_pct"`
 }
@@ -102,10 +104,13 @@ func newWithDefaults() *Config {
 		Strategy: StrategyConfig{
 			Type: StrategyMomentumTrailing,
 			Momentum: MomentumConfig{
-				WindowSize:      20,
-				Lookback:        100,
+				WindowSeconds:   60,
+				LookbackSeconds: 10,
 				Threshold:       0.01,
+				RequireAll:      true,
 				StopLossPct:     0.02,
+				ProfitTargetPct: 0.05,
+				ActivationPct:   0.03,
 				TrailingStopPct: 0.01,
 			},
 		},

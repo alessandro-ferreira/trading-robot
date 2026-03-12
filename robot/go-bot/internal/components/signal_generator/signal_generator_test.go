@@ -2,6 +2,7 @@ package signal_generator
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -27,37 +28,56 @@ func (m *MockMarketDataProvider) GetTicker(ctx context.Context, symbol, exchange
 }
 
 func TestSignalGenerator_Process(t *testing.T) {
-	// Setup
+	// Setup logger
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// Setup mock client
 	mockClient := new(MockMarketDataProvider)
 	symbol := "BTC/USD"
 	exchange := "binance"
-	cfg := config.StrategyConfig{
-		Type: "dummy",
+
+	// Setup config for momentum strategy
+	appCfg := config.StrategyConfig{
+		Type: config.StrategyMomentumTrailing, // Use momentum to trigger the specific config mapping path
+		Momentum: config.MomentumConfig{
+			WindowSeconds:   100,
+			LookbackSeconds: 50,
+			Threshold:       0.01,
+			StopLossPct:     0.1,
+			ActivationPct:   0.05,
+			TrailingStopPct: 0.02,
+		},
 	}
 
-	// Create the component
-	sg := NewSignalGenerator(logger, mockClient, symbol, exchange, cfg)
-	defer sg.strategy.Close()
-
-	// Define expected behavior
-	expectedPrice := 50000.0
-	mockClient.On("GetTicker", mock.Anything, symbol, exchange).Return(&pb.TickerResponse{
-		Symbol: symbol,
-		Price:  expectedPrice,
-	}, nil)
-
-	// Execute the private process method directly for testing purposes
-	// Note: In a real scenario, we might export a Process() method or use the Run() loop with a timeout.
-	// For this unit test, we are verifying the logic inside process().
-	err := sg.process(context.Background())
-
-	// Assertions
+	// Create generator
+	sg, err := NewSignalGenerator(logger, mockClient, symbol, exchange, appCfg)
 	assert.NoError(t, err)
-	mockClient.AssertExpectations(t)
+	assert.NotNil(t, sg)
 
-	// Verify the strategy state
-	// The dummy strategy returns 1.0 (BUY) on the first update (inside process).
-	// Since GetSignal() is stateful, the subsequent call here returns 0.0 (HOLD) as we are now in position.
-	assert.Equal(t, 0.0, sg.strategy.GetSignal())
+	t.Run("successful processing", func(t *testing.T) {
+		// Mock successful ticker response
+		expectedTicker := &pb.TickerResponse{
+			Symbol: symbol,
+			Price:  50000.0,
+		}
+		mockClient.On("GetTicker", mock.Anything, symbol, exchange).Return(expectedTicker, nil).Once()
+
+		// Execute process
+		err := sg.Process(context.Background())
+
+		assert.NoError(t, err)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("client error handling", func(t *testing.T) {
+		// Mock client error
+		mockClient.On("GetTicker", mock.Anything, symbol, exchange).Return((*pb.TickerResponse)(nil), errors.New("network error")).Once()
+
+		// Execute process
+		err := sg.Process(context.Background())
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "network error")
+		mockClient.AssertExpectations(t)
+	})
 }

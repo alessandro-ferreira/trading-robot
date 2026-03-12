@@ -1,7 +1,7 @@
 # Makefile for the Go Trading Bot
 -include .env
 
-MAIN_FILE := ./cmd/server/main.go
+MAIN_PACKAGE := ./cmd/server
 CONFIG_FILE := ../config.toml
 STRATEGY_CORE_DIR := ../strategy-core
 
@@ -52,7 +52,7 @@ help:
 # Run the Go Trading Bot
 run: strategy-core
 	@echo "==> Starting Go Trading Bot..."
-	@go run $(MAIN_FILE) --config $(CONFIG_FILE)
+	@go run $(MAIN_PACKAGE) --config $(CONFIG_FILE)
 
 # Strategy Core
 strategy-core:
