@@ -22,6 +22,7 @@ type Config struct {
 	GRPC      GRPCConfig        `toml:"grpc"`
 	Health    HealthCheckConfig `toml:"health_check"`
 	Exchanges []ExchangeConfig  `toml:"exchange"`
+	Risk      RiskConfig        `toml:"risk"`
 	Strategy  StrategyConfig    `toml:"strategy"`
 }
 
@@ -70,6 +71,16 @@ type ExchangeConfig struct {
 	HealthCheck bool   `toml:"health_check"`
 }
 
+// RiskConfig holds the risk management parameters.
+type RiskConfig struct {
+	// MaxOpenPositions defines the maximum number of simultaneous positions allowed.
+	MaxOpenPositions int `toml:"max_open_positions"`
+	// MaxDailyLoss defines the maximum allowed loss in quote currency for the day.
+	MaxDailyLoss float64 `toml:"max_daily_loss"`
+	// RiskPerTrade defines the fixed amount of quote currency to use per trade.
+	RiskPerTrade float64 `toml:"risk_per_trade"`
+}
+
 // StrategyConfig holds the trading strategy parameters.
 type StrategyConfig struct {
 	Type     string         `toml:"type"`
@@ -100,6 +111,11 @@ func newWithDefaults() *Config {
 		},
 		Database: DatabaseConfig{
 			SSLMode: "disable",
+		},
+		Risk: RiskConfig{
+			MaxOpenPositions: 0,
+			MaxDailyLoss:     0.0,
+			RiskPerTrade:     100.0, // Default to 100 units of quote currency
 		},
 		Strategy: StrategyConfig{
 			Type: StrategyMomentumTrailing,
