@@ -34,7 +34,7 @@ robot/
 |   │   ├── background/             # Background tasks
 │   │   ├── components/
 │   │   │   ├── execution/          # Logic for trade execution via gRPC
-│   │   │   ├── monitor/            # Periodic health checks
+│   │   │   ├── health/             # Periodic health checks
 │   │   │   ├── portfolio/          # Portfolio management
 │   │   │   ├── risk/               # Risk management
 │   │   │   └── signal_generator/   # Drives the strategy to generate signals

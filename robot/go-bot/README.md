@@ -29,7 +29,7 @@ This service is the core of the trading robot, containing the primary business l
 |   │   ├── background/           # Background tasks
 │   │   ├── components/
 │   │   │   ├── execution/        # Logic for trade execution via gRPC
-│   │   │   ├── monitor/          # Periodic health checks
+│   │   │   ├── health/           # Periodic health checks
 │   │   │   ├── portfolio/        # Portfolio management
 │   │   │   ├── risk/             # Risk management
 │   │   │   └── signal_generator/ # Drives the strategy to generate signals
@@ -38,7 +38,6 @@ This service is the core of the trading robot, containing the primary business l
 │   │       └── repository        # Data access layer (Repository Pattern)
 │   │   ├── logger/               # Structured logging setup
 │   │   └── strategy/             # Trading strategy logic
-│   │       └── core/             # C++ logic called via cgo
 │   └── migrations                # Database migrations
 ```
 
