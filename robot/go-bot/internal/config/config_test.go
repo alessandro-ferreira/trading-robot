@@ -9,6 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewWithDefaults(t *testing.T) {
+	cfg := newWithDefaults()
+	assert.Equal(t, 10*time.Second, cfg.Server.OrchestratorInterval)
+	assert.Equal(t, 10*time.Second, cfg.Server.ShutdownTimeout)
+	assert.Equal(t, "info", cfg.Log.Level)
+	assert.Equal(t, "text", cfg.Log.Format)
+	assert.False(t, cfg.Log.Source)
+	assert.Equal(t, "disable", cfg.Database.SSLMode)
+}
+
 func TestLoad(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		// Define the path to the test config file
@@ -21,6 +31,7 @@ func TestLoad(t *testing.T) {
 		require.NoError(t, err, "Load function returned an unexpected error")
 		require.NotNil(t, cfg, "Config struct should not be nil")
 
+		assert.Equal(t, 10*time.Second, cfg.Server.OrchestratorInterval)
 		assert.Equal(t, 30*time.Second, cfg.Server.ShutdownTimeout)
 		assert.Equal(t, "info", cfg.Log.Level)
 		assert.Equal(t, "json", cfg.Log.Format)
@@ -46,6 +57,27 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "coinbase", cfg.Exchanges[1].Name)
 		assert.False(t, cfg.Exchanges[1].SandboxMode)
 		assert.False(t, cfg.Exchanges[1].HealthCheck)
+
+		// Verify Risk Config
+		assert.Equal(t, 3, cfg.Risk.MaxOpenPositions)
+		assert.Equal(t, 100.0, cfg.Risk.MaxDailyLoss)
+
+		// Verify Pairs Config
+		require.Len(t, cfg.Pairs, 2)
+		assert.Equal(t, "BTC/USDT", cfg.Pairs[0].Symbol)
+		assert.Equal(t, "binance", cfg.Pairs[0].Exchange)
+		assert.Equal(t, 50.0, cfg.Pairs[0].Risk.RiskPerTrade)
+		assert.Equal(t, StrategyMomentumTrailing, cfg.Pairs[0].Strategy.Type)
+		assert.Equal(t, int64(3600), cfg.Pairs[0].Strategy.Momentum.WindowSeconds)
+		assert.Equal(t, 0.005, cfg.Pairs[0].Strategy.Momentum.Threshold)
+
+		assert.Equal(t, "ETH/USDT", cfg.Pairs[1].Symbol)
+		assert.Equal(t, "binance", cfg.Pairs[1].Exchange)
+		assert.Equal(t, 25.0, cfg.Pairs[1].Risk.RiskPerTrade)
+		assert.Equal(t, StrategyMomentumProfit, cfg.Pairs[1].Strategy.Type)
+		assert.Equal(t, int64(3600), cfg.Pairs[1].Strategy.Momentum.WindowSeconds)
+		assert.Equal(t, 0.02, cfg.Pairs[1].Strategy.Momentum.StopLossPct)
+		assert.Equal(t, 0.05, cfg.Pairs[1].Strategy.Momentum.ProfitTargetPct)
 	})
 
 	t.Run("file not found", func(t *testing.T) {

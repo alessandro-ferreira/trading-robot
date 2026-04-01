@@ -23,12 +23,13 @@ type Config struct {
 	Health    HealthCheckConfig `toml:"health_check"`
 	Exchanges []ExchangeConfig  `toml:"exchange"`
 	Risk      RiskConfig        `toml:"risk"`
-	Strategy  StrategyConfig    `toml:"strategy"`
+	Pairs     []PairConfig      `toml:"pairs"`
 }
 
 // ServerConfig holds server-related settings.
 type ServerConfig struct {
-	ShutdownTimeout time.Duration `toml:"shutdown_timeout"`
+	OrchestratorInterval time.Duration `toml:"orchestrator_interval"`
+	ShutdownTimeout      time.Duration `toml:"shutdown_timeout"`
 }
 
 // LogConfig holds the logging configuration.
@@ -77,7 +78,18 @@ type RiskConfig struct {
 	MaxOpenPositions int `toml:"max_open_positions"`
 	// MaxDailyLoss defines the maximum allowed loss in quote currency for the day.
 	MaxDailyLoss float64 `toml:"max_daily_loss"`
-	// RiskPerTrade defines the fixed amount of quote currency to use per trade.
+}
+
+// PairConfig defines a specific trading pair and its associated strategy.
+type PairConfig struct {
+	Symbol   string         `toml:"symbol"`
+	Exchange string         `toml:"exchange"`
+	Risk     PairRiskConfig `toml:"risk"`
+	Strategy StrategyConfig `toml:"strategy"`
+}
+
+// PairRiskConfig holds risk parameters specific to a trading pair.
+type PairRiskConfig struct {
 	RiskPerTrade float64 `toml:"risk_per_trade"`
 }
 
@@ -102,7 +114,8 @@ type MomentumConfig struct {
 func newWithDefaults() *Config {
 	return &Config{
 		Server: ServerConfig{
-			ShutdownTimeout: 10 * time.Second,
+			OrchestratorInterval: 10 * time.Second,
+			ShutdownTimeout:      10 * time.Second,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -111,24 +124,6 @@ func newWithDefaults() *Config {
 		},
 		Database: DatabaseConfig{
 			SSLMode: "disable",
-		},
-		Risk: RiskConfig{
-			MaxOpenPositions: 0,
-			MaxDailyLoss:     0.0,
-			RiskPerTrade:     100.0, // Default to 100 units of quote currency
-		},
-		Strategy: StrategyConfig{
-			Type: StrategyMomentumTrailing,
-			Momentum: MomentumConfig{
-				WindowSeconds:   60,
-				LookbackSeconds: 10,
-				Threshold:       0.01,
-				RequireAll:      true,
-				StopLossPct:     0.02,
-				ProfitTargetPct: 0.05,
-				ActivationPct:   0.03,
-				TrailingStopPct: 0.01,
-			},
 		},
 	}
 }

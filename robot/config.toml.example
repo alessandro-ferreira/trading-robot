@@ -2,6 +2,7 @@
 
 # Server settings
 [server]
+orchestrator_interval = "10s" # Time interval for processing the signal of each pair.
 shutdown_timeout = "10s" # Time to wait for graceful shutdown before force-quitting.
 
 # Logging configuration
@@ -31,6 +32,11 @@ interval = "1m"         # Frequency of the check
 retry_attempts = 3      # Number of retries on failure
 retry_delay = "5s"      # Delay between retries
 
+# Global Risk Management Settings
+[risk]
+max_open_positions = 3
+max_daily_loss = 100.0
+
 # Exchanges configuration for the Python gateway
 [[exchange]]
 name = "dummy"
@@ -51,3 +57,33 @@ sandbox_mode = true
 ccxt = true
 # Enable health check support
 health_check = true
+
+# Trading Pairs and their specific strategies
+[[pairs]]
+symbol = "BTC/USDT"
+exchange = "binance"
+[pairs.risk]
+risk_per_trade = 50.0
+[pairs.strategy]
+type = "momentum_trailing"
+[pairs.strategy.momentum]
+window_seconds = 3600
+lookback_seconds = 1800
+threshold = 0.005
+stop_loss_pct = 0.02
+activation_pct = 0.03
+trailing_stop_pct = 0.01
+
+[[pairs]]
+symbol = "ETH/USDT"
+exchange = "binance"
+[pairs.risk]
+risk_per_trade = 25.0
+[pairs.strategy]
+type = "momentum_profit"
+[pairs.strategy.momentum]
+window_seconds = 3600
+lookback_seconds = 1800
+threshold = 0.005
+stop_loss_pct = 0.02
+profit_target_pct = 0.05

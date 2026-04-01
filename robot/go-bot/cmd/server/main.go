@@ -12,10 +12,12 @@ import (
 
 	"trading/robot/go-bot/internal/background"
 	"trading/robot/go-bot/internal/components/execution"
+	"trading/robot/go-bot/internal/components/portfolio"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/logger"
+	"trading/robot/go-bot/internal/orchestrator"
 )
 
 func main() {
@@ -74,17 +76,34 @@ func main() {
 	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
 	slog.Info("Execution service initialized")
 
+	// Initialize Portfolio and load existing positions from DB
+	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer, 100000.0) // Initial cash placeholder
+	if err := pf.LoadState(ctx); err != nil {
+		slog.Error("Failed to load portfolio state", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("Portfolio state loaded successfully")
+
 	// --- Background Tasks ---
 	bgManager := background.NewManager(slog.Default())
 
 	setupHealthMonitor(cfg, execService, bgManager)
 
-	closers := setupSignalGenerators(cfg, gatewayClient, bgManager)
-	for _, c := range closers {
-		defer c.Close()
-	}
-
 	bgManager.Start(ctx)
+
+	// --- Orchestration ---
+	orch, err := orchestrator.New(slog.Default(), cfg, pf, execService, cfg.Server.OrchestratorInterval)
+	if err != nil {
+		slog.Error("Failed to initialize Orchestrator", "error", err)
+		os.Exit(1)
+	}
+	defer orch.Close()
+
+	go func() {
+		if err := orch.Start(ctx); err != nil && err != context.Canceled {
+			slog.Error("Orchestrator stopped with error", "error", err)
+		}
+	}()
 
 	// --- Graceful Shutdown ---
 	// Block until a shutdown signal is received.

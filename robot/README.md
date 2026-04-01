@@ -42,6 +42,7 @@ robot/
 │   │   ├── database/               # Database connection and access logic
 │   │       └── repository          # Data access layer (Repository Pattern)
 │   │   ├── logger/                 # Structured logging setup
+│   │   ├── orchestrator/           # Trading loop orchestrator
 │   │   └── strategy/               # Trading strategy logic
 │   └── migrations                  # Database migrations
 │

@@ -11,7 +11,7 @@ For more information and setup instructions, please see the `README.md` file wit
 
 ## Code Quality
 
-This project uses `pre-commit` to enforce coding standards and automatically fix issues (linting, formatting) across both Python and Go codebases.
+This project uses `pre-commit` to enforce coding standards and automatically fix issues (linting, formatting) across Go, Python and C++ codebases.
 
 ### Setup
 

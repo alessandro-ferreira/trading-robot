@@ -87,7 +87,7 @@ test-integration: strategy-core
 	@echo "==> Running integration tests (requires running DB and Gateway)..."
 	@go test -v -tags=integration -count=1 ./...
 
-test-all:
+test-all: strategy-core
 	@echo "==> Running unit tests..."
 	@$(MAKE) test
 	@echo "\n==> Starting test environment (DB + Gateway)..."

@@ -96,6 +96,28 @@ func (p *Portfolio) GetOpenPositionsCount() int {
 	return len(p.positions)
 }
 
+// GetPosition returns a copy of the position for a given symbol.
+func (p *Portfolio) GetPosition(exchange, symbol string) (*Position, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	key := makeKey(exchange, symbol)
+	pos, exists := p.positions[key]
+	if !exists {
+		return nil, false
+	}
+	// Return a copy to avoid race conditions if the caller modifies it
+	posCopy := *pos
+	return &posCopy, true
+}
+
+// GetCashBalance returns the current available cash balance.
+func (p *Portfolio) GetCashBalance() float64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.cashBalance
+}
+
 // UpdatePrice updates the current price and unrealized P&L for a specific symbol.
 func (p *Portfolio) UpdatePrice(exchange, symbol string, price float64) {
 	p.mu.Lock()
@@ -165,7 +187,8 @@ func (p *Portfolio) UpdatePosition(ctx context.Context, exchange, symbol string,
 		pos.CurrentPrice = price
 
 		// Clean up empty positions
-		if pos.Quantity <= 0.00000001 { // Epsilon for float comparison
+		const epsilon = 1e-9
+		if pos.Quantity <= epsilon { // Epsilon for float comparison
 			delete(p.positions, key)
 			pos = nil // Mark as nil for persistence check
 		}
@@ -196,26 +219,4 @@ func (p *Portfolio) UpdatePosition(ctx context.Context, exchange, symbol string,
 
 	p.logger.Info("Portfolio updated", "exchange", exchange, "symbol", symbol, "quantity", quantity, "price", price, "cash", p.cashBalance)
 	return nil
-}
-
-// GetPosition returns a copy of the position for a given symbol.
-func (p *Portfolio) GetPosition(exchange, symbol string) (*Position, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	key := makeKey(exchange, symbol)
-	pos, exists := p.positions[key]
-	if !exists {
-		return nil, false
-	}
-	// Return a copy to avoid race conditions if the caller modifies it
-	posCopy := *pos
-	return &posCopy, true
-}
-
-// GetCashBalance returns the current available cash balance.
-func (p *Portfolio) GetCashBalance() float64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.cashBalance
 }

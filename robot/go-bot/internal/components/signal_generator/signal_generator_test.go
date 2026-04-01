@@ -1,43 +1,111 @@
 package signal_generator
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"testing"
 
-	pb "trading/robot/go-bot/gen/go/v1"
 	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/strategy"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
-// MockMarketDataProvider is a mock implementation of MarketDataProvider
-type MockMarketDataProvider struct {
-	mock.Mock
-}
+func TestNewSignalGenerator(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	symbol := "BTC/USD"
+	exchange := "binance"
 
-func (m *MockMarketDataProvider) GetTicker(ctx context.Context, symbol, exchange string) (*pb.TickerResponse, error) {
-	args := m.Called(ctx, symbol, exchange)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
+	tests := []struct {
+		name        string
+		strategyCfg config.StrategyConfig
+		wantErr     bool
+		errSubstr   string
+	}{
+		{
+			name:        "invalid strategy type returns error",
+			strategyCfg: config.StrategyConfig{Type: "unknown_strategy"},
+			wantErr:     true,
+			errSubstr:   "unsupported strategy type",
+		},
+		{
+			name:        "dummy strategy initialization",
+			strategyCfg: config.StrategyConfig{Type: config.StrategyDummy},
+			wantErr:     false,
+		},
+		{
+			name: "momentum profit strategy initialization",
+			strategyCfg: config.StrategyConfig{
+				Type: config.StrategyMomentumProfit,
+				Momentum: config.MomentumConfig{
+					WindowSeconds:   60,
+					LookbackSeconds: 30,
+					Threshold:       0.01,
+					StopLossPct:     0.02,
+					ProfitTargetPct: 0.05,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "momentum trailing strategy initialization",
+			strategyCfg: config.StrategyConfig{
+				Type: config.StrategyMomentumTrailing,
+				Momentum: config.MomentumConfig{
+					WindowSeconds:   60,
+					LookbackSeconds: 30,
+					Threshold:       0.01,
+					StopLossPct:     0.02,
+					ActivationPct:   0.03,
+					TrailingStopPct: 0.01,
+				},
+			},
+			wantErr: false,
+		},
 	}
-	return args.Get(0).(*pb.TickerResponse), args.Error(1)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sg, err := NewSignalGenerator(logger, symbol, exchange, config.PairRiskConfig{RiskPerTrade: 100.0}, tt.strategyCfg)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, sg)
+				assert.Contains(t, err.Error(), tt.errSubstr)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, sg)
+				if sg != nil {
+					sg.Close()
+				}
+			}
+		})
+	}
 }
 
-func TestSignalGenerator_Process(t *testing.T) {
-	// Setup logger
+func TestSignalGenerator_Metadata(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	symbol := "ETH/USDT"
+	exchange := "kraken"
+	strategyCfg := config.StrategyConfig{Type: config.StrategyDummy}
+
+	sg, err := NewSignalGenerator(logger, symbol, exchange, config.PairRiskConfig{RiskPerTrade: 100.0}, strategyCfg)
+	require.NoError(t, err)
+	defer sg.Close()
+
+	assert.Equal(t, symbol, sg.Symbol())
+	assert.Equal(t, exchange, sg.Exchange())
+	assert.Equal(t, "SignalGenerator-kraken-ETH/USDT", sg.Name())
+}
+
+func TestSignalGenerator_UpdateAndGetSignal(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Setup mock client
-	mockClient := new(MockMarketDataProvider)
 	symbol := "BTC/USD"
 	exchange := "binance"
 
 	// Setup config for momentum strategy
-	appCfg := config.StrategyConfig{
+	strategyCfg := config.StrategyConfig{
 		Type: config.StrategyMomentumTrailing, // Use momentum to trigger the specific config mapping path
 		Momentum: config.MomentumConfig{
 			WindowSeconds:   100,
@@ -49,35 +117,17 @@ func TestSignalGenerator_Process(t *testing.T) {
 		},
 	}
 
-	// Create generator
-	sg, err := NewSignalGenerator(logger, mockClient, symbol, exchange, appCfg)
-	assert.NoError(t, err)
-	assert.NotNil(t, sg)
+	sg, err := NewSignalGenerator(logger, symbol, exchange, config.PairRiskConfig{RiskPerTrade: 100.0}, strategyCfg)
+	require.NoError(t, err)
+	defer sg.Close()
 
-	t.Run("successful processing", func(t *testing.T) {
-		// Mock successful ticker response
-		expectedTicker := &pb.TickerResponse{
-			Symbol: symbol,
-			Price:  50000.0,
-		}
-		mockClient.On("GetTicker", mock.Anything, symbol, exchange).Return(expectedTicker, nil).Once()
+	t.Run("hold signal on small price move", func(t *testing.T) {
+		// Threshold is 1%, so 50000 -> 50100 is < 1%
+		_, err := sg.UpdateAndGetSignal(50000.0, 1000)
+		require.NoError(t, err)
 
-		// Execute process
-		err := sg.Process(context.Background())
-
+		sig, err := sg.UpdateAndGetSignal(50100.0, 1001)
 		assert.NoError(t, err)
-		mockClient.AssertExpectations(t)
-	})
-
-	t.Run("client error handling", func(t *testing.T) {
-		// Mock client error
-		mockClient.On("GetTicker", mock.Anything, symbol, exchange).Return((*pb.TickerResponse)(nil), errors.New("network error")).Once()
-
-		// Execute process
-		err := sg.Process(context.Background())
-
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "network error")
-		mockClient.AssertExpectations(t)
+		assert.Equal(t, strategy.SignalHold, sig)
 	})
 }

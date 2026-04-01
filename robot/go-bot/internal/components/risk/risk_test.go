@@ -19,6 +19,7 @@ func TestEvaluateEntry(t *testing.T) {
 		currentPositions int
 		currentDailyLoss float64
 		price            float64
+		risk             PairRisk
 		wantAllowed      bool
 		wantReason       string
 		wantSize         float64
@@ -28,59 +29,67 @@ func TestEvaluateEntry(t *testing.T) {
 			config: config.RiskConfig{
 				MaxOpenPositions: 5,
 				MaxDailyLoss:     100.0,
-				RiskPerTrade:     100.0,
 			},
 			currentPositions: 3,
 			currentDailyLoss: 50.0,
 			price:            50.0,
-			wantAllowed:      true,
-			wantSize:         2.0, // 100 / 50 = 2
+			risk: PairRisk{
+				RiskPerTrade: 100.0,
+			},
+			wantAllowed: true,
+			wantSize:    2.0, // 100 / 50 = 2
 		},
 		{
 			name: "Reject trade: max positions reached",
 			config: config.RiskConfig{
 				MaxOpenPositions: 5,
 				MaxDailyLoss:     100.0,
-				RiskPerTrade:     100.0,
 			},
 			currentPositions: 5,
 			currentDailyLoss: 50.0,
 			price:            50.0,
-			wantAllowed:      false,
-			wantReason:       "max open positions reached",
+			risk: PairRisk{
+				RiskPerTrade: 100.0,
+			},
+			wantAllowed: false,
+			wantReason:  "max open positions reached",
 		},
 		{
 			name: "Reject trade: max daily loss reached",
 			config: config.RiskConfig{
 				MaxOpenPositions: 5,
 				MaxDailyLoss:     100.0,
-				RiskPerTrade:     100.0,
 			},
 			currentPositions: 3,
 			currentDailyLoss: 100.0,
 			price:            50.0,
-			wantAllowed:      false,
-			wantReason:       "max daily loss reached",
+			risk: PairRisk{
+				RiskPerTrade: 100.0,
+			},
+			wantAllowed: false,
+			wantReason:  "max daily loss reached",
 		},
 		{
 			name: "Allow trade: unlimited positions (0 config)",
 			config: config.RiskConfig{
 				MaxOpenPositions: 0,
 				MaxDailyLoss:     100.0,
-				RiskPerTrade:     100.0,
 			},
 			currentPositions: 100,
 			currentDailyLoss: 50.0,
 			price:            50.0,
-			wantAllowed:      true,
-			wantSize:         2.0,
+			risk: PairRisk{
+				RiskPerTrade: 100.0,
+			},
+			wantAllowed: true,
+			wantSize:    2.0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewManager(logger, tt.config)
-			eval := m.EvaluateEntry(tt.currentPositions, tt.currentDailyLoss, tt.price)
+			eval := m.EvaluateEntry(tt.currentPositions, tt.currentDailyLoss, tt.price, tt.risk)
 
 			assert.Equal(t, tt.wantAllowed, eval.Allowed)
 			if !tt.wantAllowed {

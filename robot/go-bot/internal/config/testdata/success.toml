@@ -1,9 +1,11 @@
 [server]
+orchestrator_interval = "10s"
 shutdown_timeout = "30s"
 
 [log]
 level = "info"
 format = "json"
+source = false
 
 [database]
 host = "localhost"
@@ -22,6 +24,10 @@ interval = "3m"
 retry_attempts = 2
 retry_delay = "1s"
 
+[risk]
+max_open_positions = 3
+max_daily_loss = 100.0
+
 [[exchange]]
 name = "binance"
 sandbox_mode = true
@@ -30,3 +36,27 @@ health_check = true
 [[exchange]]
 name = "coinbase"
 sandbox_mode = false
+health_check = false
+
+[[pairs]]
+symbol = "BTC/USDT"
+exchange = "binance"
+[pairs.risk]
+risk_per_trade = 50.0
+[pairs.strategy]
+type = "momentum_trailing"
+[pairs.strategy.momentum]
+window_seconds = 3600
+threshold = 0.005
+
+[[pairs]]
+symbol = "ETH/USDT"
+exchange = "binance"
+[pairs.risk]
+risk_per_trade = 25.0
+[pairs.strategy]
+type = "momentum_profit"
+[pairs.strategy.momentum]
+window_seconds = 3600
+stop_loss_pct = 0.02
+profit_target_pct = 0.05

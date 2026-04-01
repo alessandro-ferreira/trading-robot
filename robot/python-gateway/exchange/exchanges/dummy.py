@@ -20,6 +20,11 @@ class DummyExchange(Exchange):
             "used": {"USDT": 0.0, "BTC": 0.0, "ETH": 0.0},
             "total": {"USDT": 10000.0, "BTC": 0.5, "ETH": 10.0},
         }
+        self._prices = {
+            "BTC/USDT": 42500.50,
+            "ETH/USDT": 2250.75,
+            "SOL/USDT": 98.30,
+        }
         self._order_id_counter = 0
 
     def set_sandbox_mode(self, enabled: bool):
@@ -27,13 +32,12 @@ class DummyExchange(Exchange):
 
     def fetch_ticker(self, symbol: str) -> Ticker:
         """Return a fixed ticker for any symbol."""
-        # Fixed prices for testing
-        fixed_prices = {
-            "BTC/USDT": 42500.50,
-            "ETH/USDT": 2250.75,
-            "SOL/USDT": 98.30,
-        }
-        price = fixed_prices.get(symbol, 100.0)
+        price = self._prices.get(symbol, 100.0)
+
+        # Simulate an upward drift (0.1%) for the next fetch.
+        # This allows momentum strategies to eventually trigger signals in integration tests.
+        self._prices[symbol] = price * 1.001
+
         return Ticker(
             symbol=symbol,
             last=price,
@@ -57,7 +61,8 @@ class DummyExchange(Exchange):
     ) -> Dict[str, Any]:
         """Simulates creating an order and stores it in memory."""
         self._order_id_counter += 1
-        order_id = f"dummy-order-{self._order_id_counter}"
+        # Use millisecond timestamp to ensure unique IDs across resets and test runs
+        order_id = f"dummy-{int(time.time() * 1000)}-{self._order_id_counter}"
         timestamp = int(time.time() * 1000)
 
         # For simplicity, limit orders are 'open', market orders are 'closed'

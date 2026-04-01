@@ -87,6 +87,7 @@ repos:
         pass_filenames: false
       - id: cpp-tests
         name: cpp-tests
+        # Using make ensures consistency with the Makefile
         entry: bash -c 'cd robot/strategy-core && make test'
         language: system
         types: [c++, c]

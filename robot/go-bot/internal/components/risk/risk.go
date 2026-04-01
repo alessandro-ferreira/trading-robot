@@ -7,10 +7,21 @@ import (
 	"trading/robot/go-bot/internal/config"
 )
 
+// Config defines the global risk parameters for the manager.
+type RiskConfig struct {
+	MaxOpenPositions int
+	MaxDailyLoss     float64
+}
+
+// PairRisk defines the operational risk rules for a specific trading pair.
+type PairRisk struct {
+	RiskPerTrade float64
+}
+
 // Manager handles risk checks and policy enforcement.
 type Manager struct {
 	logger *slog.Logger
-	config config.RiskConfig
+	config RiskConfig
 }
 
 // Evaluation contains the result of a risk check.
@@ -25,14 +36,22 @@ type Evaluation struct {
 
 // NewManager creates a new risk manager with the provided configuration.
 func NewManager(logger *slog.Logger, cfg config.RiskConfig) *Manager {
+	logger.Info("Initializing Risk Manager",
+		"max_open_positions", cfg.MaxOpenPositions,
+		"max_daily_loss", cfg.MaxDailyLoss,
+	)
+
 	return &Manager{
 		logger: logger,
-		config: cfg,
+		config: RiskConfig{
+			MaxOpenPositions: cfg.MaxOpenPositions,
+			MaxDailyLoss:     cfg.MaxDailyLoss,
+		},
 	}
 }
 
 // EvaluateEntry checks if a new trade can be opened and calculates the position size.
-func (m *Manager) EvaluateEntry(currentPositions int, currentDailyLoss float64, price float64) Evaluation {
+func (m *Manager) EvaluateEntry(currentPositions int, currentDailyLoss float64, price float64, risk PairRisk) Evaluation {
 	// Check Max Open Positions
 	if m.config.MaxOpenPositions > 0 && currentPositions >= m.config.MaxOpenPositions {
 		m.logger.Warn("Risk check failed: Max open positions reached",
@@ -58,8 +77,8 @@ func (m *Manager) EvaluateEntry(currentPositions int, currentDailyLoss float64, 
 	// Calculate Position Size
 	// For now, we use a simple Fixed Amount model from config.
 	// In the future, this could be dynamic (e.g., % of equity).
-	if m.config.RiskPerTrade <= 0 {
-		m.logger.Warn("Risk check failed: Invalid risk per trade configuration", "value", m.config.RiskPerTrade)
+	if risk.RiskPerTrade <= 0 {
+		m.logger.Warn("Risk check failed: Invalid risk per trade configuration", "value", risk.RiskPerTrade)
 		return Evaluation{
 			Allowed: false,
 			Reason:  "invalid risk per trade configuration (must be > 0)",
@@ -74,7 +93,7 @@ func (m *Manager) EvaluateEntry(currentPositions int, currentDailyLoss float64, 
 	}
 
 	// Size = Fixed Amount / Price
-	size := m.config.RiskPerTrade / price
+	size := risk.RiskPerTrade / price
 
 	return Evaluation{
 		Allowed:      true,
