@@ -17,71 +17,91 @@ using std::vector;
 
 extern "C" {
 
+// Helper function to build the internal C++ strategy rules from the C config struct. Returns false if the config is
+// invalid.
+static bool BuildRules(const StrategyConfig& config, vector<unique_ptr<trading::EntryRule>>& entry_rules,
+                       vector<unique_ptr<trading::ExitRule>>& exit_rules) {
+    if (config.type != STRATEGY_MOMENTUM_PROFIT && config.type != STRATEGY_MOMENTUM_TRAILING) {
+        return false;
+    }
+
+    if (config.num_momentum_windows > MAX_MOMENTUM_WINDOWS || config.num_momentum_windows <= 0) {
+        return false;
+    }
+
+    if (config.stop_loss_pct <= 0.0) {
+        return false;
+    }
+
+    if (config.type == STRATEGY_MOMENTUM_PROFIT && config.profit_target_pct <= 0.0) {
+        return false;
+    }
+
+    if (config.type == STRATEGY_MOMENTUM_TRAILING &&
+        (config.activation_pct <= 0.0 || config.trailing_stop_pct <= 0.0)) {
+        return false;
+    }
+
+    vector<trading::MomentumWindow> momentum_windows;
+    long long max_lookback = 0;
+    for (int i = 0; i < config.num_momentum_windows; ++i) {
+        if (config.momentum_windows[i].lookback_seconds > max_lookback) {
+            max_lookback = config.momentum_windows[i].lookback_seconds;
+        }
+        momentum_windows.push_back({config.momentum_windows[i].lookback_seconds, config.momentum_windows[i].threshold});
+    }
+
+    if (config.window_seconds <= max_lookback) {
+        return false;
+    }
+
+    bool require_all = (config.momentum_require_all != 0);
+    entry_rules.push_back(std::make_unique<trading::MomentumEntryRule>(momentum_windows, require_all));
+
+    if (config.type == STRATEGY_MOMENTUM_PROFIT) {
+        exit_rules.push_back(
+            std::make_unique<trading::FixedProfitExitRule>(config.stop_loss_pct, config.profit_target_pct));
+    } else {
+        exit_rules.push_back(std::make_unique<trading::TrailingStopExitRule>(
+            config.stop_loss_pct, config.activation_pct, config.trailing_stop_pct));
+    }
+
+    return true;
+}
+
 StrategyHandle Strategy_Create(StrategyConfig config) {
     if (config.type == STRATEGY_DUMMY) {
-        // A minimal strategy that does nothing, for integration testing.
         auto state = std::make_unique<trading::SlidingWindowPriceState>(1);
-        vector<unique_ptr<trading::EntryRule>> entry_rules;
-        vector<unique_ptr<trading::ExitRule>> exit_rules;
-        // Provide dummy values for profit/trailing parameters for the dummy strategy.
-        return new trading::Strategy(std::move(state), std::move(entry_rules), std::move(exit_rules));
+        return new trading::Strategy(std::move(state), {}, {});
     }
 
-    if (config.type == STRATEGY_MOMENTUM_PROFIT || config.type == STRATEGY_MOMENTUM_TRAILING) {
-        if (config.num_momentum_windows > MAX_MOMENTUM_WINDOWS || config.num_momentum_windows < 0) {
-            return nullptr;  // Invalid config
-        }
-
-        if (config.stop_loss_pct <= 0.0) {
-            return nullptr;  // Stop loss must be positive
-        }
-
-        if (config.type == STRATEGY_MOMENTUM_PROFIT) {
-            if (config.profit_target_pct <= 0.0) {
-                return nullptr;  // Profit target must be positive
-            }
-        }
-
-        if (config.type == STRATEGY_MOMENTUM_TRAILING) {
-            if (config.activation_pct <= 0.0 || config.trailing_stop_pct <= 0.0) {
-                return nullptr;  // Trailing parameters must be positive
-            }
-        }
-
-        vector<trading::MomentumWindow> momentum_windows;
-        long long max_lookback_seconds = 0;
-        for (int i = 0; i < config.num_momentum_windows; ++i) {
-            if (config.momentum_windows[i].lookback_seconds > max_lookback_seconds) {
-                max_lookback_seconds = config.momentum_windows[i].lookback_seconds;
-            }
-            momentum_windows.push_back(
-                {config.momentum_windows[i].lookback_seconds, config.momentum_windows[i].threshold});
-        }
-
-        if (config.window_seconds <= max_lookback_seconds) {
-            return nullptr;  // Window duration must be strictly greater than max lookback to calculate change
-        }
-
-        auto state = std::make_unique<trading::SlidingWindowPriceState>(config.window_seconds);
-
-        vector<unique_ptr<trading::EntryRule>> entry_rules;
-        bool require_all = (config.momentum_require_all != 0);
-        entry_rules.push_back(std::make_unique<trading::MomentumEntryRule>(momentum_windows, require_all));
-
-        vector<unique_ptr<trading::ExitRule>> exit_rules;
-
-        if (config.type == STRATEGY_MOMENTUM_PROFIT) {
-            exit_rules.push_back(
-                std::make_unique<trading::FixedProfitExitRule>(config.stop_loss_pct, config.profit_target_pct));
-        } else {
-            exit_rules.push_back(std::make_unique<trading::TrailingStopExitRule>(
-                config.stop_loss_pct, config.activation_pct, config.trailing_stop_pct));
-        }
-
-        return new trading::Strategy(std::move(state), std::move(entry_rules), std::move(exit_rules));
+    vector<unique_ptr<trading::EntryRule>> entries;
+    vector<unique_ptr<trading::ExitRule>> exits;
+    if (!BuildRules(config, entries, exits)) {
+        return nullptr;
     }
 
-    return nullptr;
+    auto state = std::make_unique<trading::SlidingWindowPriceState>(config.window_seconds);
+    return new trading::Strategy(std::move(state), std::move(entries), std::move(exits));
+}
+
+StrategyStatus Strategy_UpdateConfig(StrategyHandle handle, StrategyConfig config) {
+    if (!handle) return STRATEGY_FAILURE;
+
+    auto strategy = static_cast<trading::Strategy*>(handle);
+    if (config.type == STRATEGY_DUMMY) {
+        strategy->UpdateRules({}, {});
+        return STRATEGY_SUCCESS;
+    }
+
+    vector<unique_ptr<trading::EntryRule>> entries;
+    vector<unique_ptr<trading::ExitRule>> exits;
+    if (!BuildRules(config, entries, exits)) {
+        return STRATEGY_FAILURE;
+    }
+
+    strategy->UpdateRules(std::move(entries), std::move(exits));
+    return STRATEGY_SUCCESS;
 }
 
 void Strategy_Destroy(StrategyHandle handle) {
@@ -99,22 +119,22 @@ static vector<trading::PricePoint> ToHistory(const PricePoint* ticks, int count)
     return vector<trading::PricePoint>(ticks, ticks + count);
 }
 
-StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
+StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, StrategyState state,
                                     double entry_price) {
     if (handle) {
         auto strategy = static_cast<trading::Strategy*>(handle);
-        bool success = strategy->Init(ToHistory(ticks, count), in_position != 0, entry_price, 0.0);
+        bool success = strategy->Init(ToHistory(ticks, count), state, entry_price, 0.0);
 
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
     return STRATEGY_FAILURE;
 }
 
-StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
+StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, StrategyState state,
                                       double entry_price, double highest_price) {
     if (handle) {
         auto strategy = static_cast<trading::Strategy*>(handle);
-        bool success = strategy->Init(ToHistory(ticks, count), in_position != 0, entry_price, highest_price);
+        bool success = strategy->Init(ToHistory(ticks, count), state, entry_price, highest_price);
 
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
@@ -131,10 +151,37 @@ StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long lo
     return STRATEGY_FAILURE;
 }
 
+StrategyState Strategy_GetState(StrategyHandle handle) {
+    if (!handle) return STATE_IDLE;
+    auto strategy = static_cast<trading::Strategy*>(handle);
+    return strategy->GetState();
+}
+
 Signal Strategy_GetSignal(StrategyHandle handle) {
-    if (!handle) return SIGNAL_HOLD;
+    if (!handle) return SIGNAL_INVALID;
 
     auto strategy = static_cast<trading::Strategy*>(handle);
     return strategy->GetSignal();
+}
+
+void Strategy_ConfirmSignal(StrategyHandle handle, Signal signal, double fill_price) {
+    if (handle) {
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        strategy->ConfirmSignal(signal, fill_price);
+    }
+}
+
+void Strategy_CancelSignal(StrategyHandle handle, Signal signal) {
+    if (handle) {
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        strategy->CancelSignal(signal);
+    }
+}
+
+void Strategy_ResetSignal(StrategyHandle handle) {
+    if (handle) {
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        strategy->ResetSignal();
+    }
 }
 }

@@ -7,15 +7,28 @@ extern "C" {
 #define MAX_MOMENTUM_WINDOWS 10
 
 // Defines the status code returned by API functions that can fail.
-typedef int StrategyStatus;
-#define STRATEGY_SUCCESS 1
-#define STRATEGY_FAILURE 0
+typedef enum { STRATEGY_FAILURE = 0, STRATEGY_SUCCESS = 1 } StrategyStatus;
+
+// Internal state of the strategy lifecycle.
+typedef enum {
+    STATE_IDLE = 0,         // Searching for entry
+    STATE_PENDING_BUY = 1,  // BUY signal sent, waiting for fill confirmation
+    STATE_ACTIVE = 2,       // Position open, tracking exit
+    STATE_PENDING_SELL = 3  // SELL signal sent, waiting for fill confirmation
+} StrategyState;
 
 // Defines the signal returned by the strategy evaluation.
-typedef int Signal;
-#define SIGNAL_BUY 1
-#define SIGNAL_SELL -1
-#define SIGNAL_HOLD 0
+typedef enum {
+    SIGNAL_INVALID = 0,  // Sentinel value for errors or uninitialized states
+    SIGNAL_BUY = 1,      // Trigger: Entry criteria met, place BUY order
+    SIGNAL_SELL = 2,     // Trigger: Exit criteria met, place SELL order
+
+    // Intermediate status signals representing the strategy lifecycle
+    SIGNAL_SEARCHING_ENTRY = 3,   // State: IDLE - Evaluating entry rules (AND)
+    SIGNAL_TRACKING_EXIT = 4,     // State: ACTIVE - Evaluating exit rules (OR)
+    SIGNAL_WAITING_BUY_FILL = 5,  // State: PENDING_BUY - Awaiting BUY execution confirmation
+    SIGNAL_WAITING_SELL_FILL = 6  // State: PENDING_SELL - Awaiting SELL execution confirmation
+} Signal;
 
 // Opaque handle to a strategy instance.
 typedef void* StrategyHandle;
