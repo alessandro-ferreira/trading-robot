@@ -21,12 +21,16 @@ func TestStrategy_Dummy(t *testing.T) {
 	err = s.UpdatePrice(price1, 1000)
 	assert.NoError(t, err)
 	assert.Equal(t, SignalBuy, s.GetSignal(), "First signal should be BUY for dummy strategy")
+	assert.Equal(t, SignalWaitingBuyFill, s.GetSignal(), "Signal should lock to WAITING_BUY until confirmed")
 
-	// Second update: In position, Exit rules (empty) pass (return false) -> SignalHold
+	// Confirm fill
+	s.ConfirmSignal(SignalBuy, price1)
+
+	// Second update: Now in STATE_ACTIVE, empty exit rules mean it returns SignalTracking
 	price2 := 100.50
 	err = s.UpdatePrice(price2, 1001)
 	assert.NoError(t, err)
-	assert.Equal(t, SignalHold, s.GetSignal(), "Subsequent signal should be HOLD for dummy strategy")
+	assert.Equal(t, SignalTrackingExit, s.GetSignal(), "Subsequent signal should be TRACKING for dummy strategy")
 }
 
 func TestStrategy_Momentum(t *testing.T) {
@@ -76,7 +80,7 @@ func TestStrategy_Momentum(t *testing.T) {
 			{Timestamp: 200, Price: 101.0},
 			{Timestamp: 100, Price: 100.0},
 		}
-		err = profitStrategy.InitProfit(unsortedTicks, false, 0)
+		err = profitStrategy.InitProfit(unsortedTicks, StateIdle, 0)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "the history is not in chronological order")
 	})
@@ -100,7 +104,7 @@ func TestStrategy_Momentum(t *testing.T) {
 			{Timestamp: 100, Price: 100.0},
 			{Timestamp: 200, Price: 101.0},
 		}
-		err = profitStrategy.InitProfit(sortedTicks, false, 0)
+		err = profitStrategy.InitProfit(sortedTicks, StateIdle, 0)
 		assert.NoError(t, err)
 	})
 
@@ -114,7 +118,7 @@ func TestStrategy_Momentum(t *testing.T) {
 			{Timestamp: 200, Price: 101.0},
 			{Timestamp: 100, Price: 100.0},
 		}
-		err = trailingStrategy.InitTrailing(unsortedTicks, false, 0, 0)
+		err = trailingStrategy.InitTrailing(unsortedTicks, StateIdle, 0, 0)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "the history is not in chronological order")
 	})
@@ -130,8 +134,19 @@ func TestStrategy_Momentum(t *testing.T) {
 			{Timestamp: 200, Price: 101.0},
 		}
 		// re-use the strategy 'trailingStrategy' from the parent test
-		err = trailingStrategy.InitTrailing(sortedTicks, false, 0, 0)
+		err = trailingStrategy.InitTrailing(sortedTicks, StateIdle, 0, 0)
 		assert.NoError(t, err)
+	})
+
+	t.Run("init trailing with nil history", func(t *testing.T) {
+		trailingStrategy, err := NewStrategy(cfg)
+		require.NoError(t, err)
+		defer trailingStrategy.Close()
+
+		// Verify that providing nil history performs a metadata-only update without error
+		err = trailingStrategy.InitTrailing(nil, StateActive, 100.0, 105.0)
+		assert.NoError(t, err)
+		assert.Equal(t, StateActive, trailingStrategy.GetState())
 	})
 
 	t.Run("update with stale tick", func(t *testing.T) {
@@ -160,4 +175,130 @@ func TestStrategy_Momentum(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "tick rejected")
 	})
+}
+
+func TestStrategy_UpdateConfig(t *testing.T) {
+	cfg := StrategyConfig{
+		Type:          StrategyMomentumTrailing,
+		WindowSeconds: 100,
+		MomentumWindows: []MomentumWindow{
+			{LookbackSeconds: 50, Threshold: 0.01},
+		},
+		StopLossPct:     0.1,
+		ActivationPct:   0.05,
+		TrailingStopPct: 0.02,
+	}
+	s, err := NewStrategy(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Update to a valid new configuration (e.g., tightening the stop loss)
+	newCfg := cfg
+	newCfg.StopLossPct = 0.05
+	err = s.UpdateConfig(newCfg)
+	assert.NoError(t, err)
+	assert.Equal(t, 0.05, s.cfg.StopLossPct)
+}
+
+func TestStrategy_GetState(t *testing.T) {
+	cfg := StrategyConfig{Type: StrategyDummy}
+	s, err := NewStrategy(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	assert.Equal(t, StateIdle, s.GetState())
+
+	// Trigger a buy in dummy strategy (it triggers on the first tick)
+	_ = s.UpdatePrice(100.0, 1000)
+	_ = s.GetSignal()
+	assert.Equal(t, StatePendingBuy, s.GetState())
+}
+
+func TestStrategy_ConfirmSignal_Sell(t *testing.T) {
+	cfg := StrategyConfig{
+		Type:               StrategyMomentumProfit,
+		WindowSeconds:      100,
+		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.01}},
+		StopLossPct:        0.01,
+		ProfitTargetPct:    0.1,
+		MomentumRequireAll: true,
+	}
+	s, err := NewStrategy(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Force Active state via Init
+	err = s.InitProfit(nil, StateActive, 100.0)
+	require.NoError(t, err)
+
+	// Trigger Sell (2% drop exceeds 1% stop loss)
+	_ = s.UpdatePrice(98.0, 101)
+	assert.Equal(t, SignalSell, s.GetSignal())
+
+	// Confirm Sell -> Should return to searching
+	s.ConfirmSignal(SignalSell, 98.0)
+	assert.Equal(t, SignalSearchingEntry, s.GetSignal(), "Should return to searching after confirming sell")
+}
+
+func TestStrategy_CancelSignal(t *testing.T) {
+	cfg := StrategyConfig{
+		Type:               StrategyMomentumProfit,
+		WindowSeconds:      100,
+		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.01}},
+		StopLossPct:        0.01,
+		ProfitTargetPct:    0.1,
+		MomentumRequireAll: true,
+	}
+	s, err := NewStrategy(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// --- Test Cancel Buy ---
+	_ = s.UpdatePrice(100.0, 0)
+	_ = s.UpdatePrice(100.0, 50)
+	_ = s.UpdatePrice(102.0, 100) // 2% gain triggers buy
+	assert.Equal(t, SignalBuy, s.GetSignal())
+
+	s.CancelSignal(SignalBuy)
+	// Feed a neutral price so momentum doesn't immediately re-trigger
+	_ = s.UpdatePrice(100.0, 101)
+	assert.Equal(t, SignalSearchingEntry, s.GetSignal(), "Should return to searching after canceling buy")
+
+	// --- Test Cancel Sell ---
+	err = s.InitProfit(nil, StateActive, 100.0)
+	require.NoError(t, err)
+
+	_ = s.UpdatePrice(98.0, 101) // Trigger stop loss
+	assert.Equal(t, SignalSell, s.GetSignal())
+
+	s.CancelSignal(SignalSell)
+	// Feed a neutral price so stop loss doesn't immediately re-trigger
+	_ = s.UpdatePrice(100.0, 102)
+	assert.Equal(t, SignalTrackingExit, s.GetSignal(), "Should return to tracking after canceling sell")
+}
+
+func TestStrategy_ResetSignal(t *testing.T) {
+	cfg := StrategyConfig{
+		Type:               StrategyMomentumProfit,
+		WindowSeconds:      100,
+		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.01}},
+		StopLossPct:        0.01,
+		ProfitTargetPct:    0.1,
+		MomentumRequireAll: true,
+	}
+	s, err := NewStrategy(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Move Dummy to PENDING_BUY
+	_ = s.UpdatePrice(100.0, 0)
+	_ = s.UpdatePrice(100.0, 50)
+	_ = s.UpdatePrice(102.0, 100) // 2% gain triggers buy
+	assert.Equal(t, SignalBuy, s.GetSignal())
+
+	// Explicit Reset
+	s.ResetSignal()
+	// Feed a neutral price so momentum doesn't immediately re-trigger
+	_ = s.UpdatePrice(100.0, 101)
+	assert.Equal(t, SignalSearchingEntry, s.GetSignal(), "Should return to searching after reset")
 }

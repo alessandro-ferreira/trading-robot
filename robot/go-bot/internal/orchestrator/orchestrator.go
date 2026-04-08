@@ -114,11 +114,37 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	}
 	o.logger.Debug("Received signal", "exchange", exchange, "symbol", symbol, "signal", signal)
 
+	// Get current position from portfolio for reconciliation
+	pos, exists := o.portfolio.GetPosition(exchange, symbol)
+
 	// Decision and Risk Handling
 	switch signal {
+	case strategy.SignalSearchingEntry:
+		// RECONCILIATION: If we have a position but the engine is idling, force it to ACTIVE.
+		// This handles bot restarts/recovery.
+		if exists {
+			o.logger.Info("Reconciliation: Position found while searching, syncing engine to ACTIVE state", "symbol", symbol)
+			sig.Confirm(strategy.SignalBuy, pos.EntryPrice)
+		}
+
 	case strategy.SignalBuy:
-		// Safety check: skip if we already have an open position for this pair
-		if _, exists := o.portfolio.GetPosition(exchange, symbol); exists {
+		// RECONCILIATION: If strategy core says BUY but Portfolio says we are already in,
+		// confirm the signal so the strategy starts tracking the existing position.
+		if exists {
+			o.logger.Info("Reconciliation: BUY signal while position already exists, syncing to ACTIVE state", "symbol", symbol)
+			sig.Confirm(strategy.SignalBuy, pos.EntryPrice)
+			return
+		}
+
+		// Pending Order Protection: check for existing "open" orders to prevent double-entry
+		openOrders, err := o.exec.GetOpenOrders(ctx, symbol, exchange)
+		if err != nil {
+			o.logger.Error("Failed to check open orders", "symbol", symbol, "error", err)
+			return
+		}
+		if len(openOrders.Orders) > 0 {
+			o.logger.Debug("Skipping BUY signal: open orders already exist, strategy will wait", "symbol", symbol)
+			// We do NOT cancel here; let the strategy stay in SignalWaitingBuyFill
 			return
 		}
 
@@ -127,25 +153,102 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		eval := o.risk.EvaluateEntry(openCount, 0, price, sig.Risk())
 		if !eval.Allowed {
 			o.logger.Warn("Risk check rejected entry", "symbol", symbol, "reason", eval.Reason)
+			// RECOVERY: If risk check fails, revert to IDLE so the strategy can try again on the next tick.
+			sig.Reset()
 			return
 		}
 
 		o.logger.Info("Placing BUY order", "symbol", symbol, "qty", eval.ApprovedSize, "price", price)
-		_, _ = o.exec.CreateOrder(ctx, symbol, "buy", "limit", eval.ApprovedSize, price, exchange)
+		order, err := o.exec.CreateOrder(ctx, symbol, "buy", "limit", eval.ApprovedSize, price, exchange)
+		if err != nil {
+			o.logger.Error("Failed to place BUY order", "symbol", symbol, "error", err)
+			// RECOVERY: If order placement failed, revert to IDLE so the strategy can try again on the next tick.
+			sig.Cancel(strategy.SignalBuy)
+			return
+		}
+
+		// If the order was filled immediately (e.g. Market order or filled Limit), sync state
+		if order != nil && order.Status == "closed" {
+			_ = o.portfolio.ApplyExecution(ctx, exchange, order)
+			sig.Confirm(strategy.SignalBuy, order.Price)
+		}
+
+	case strategy.SignalWaitingBuyFill:
+		if exists {
+			// Standard Late Fill: Order filled while we were waiting.
+			o.logger.Info("Reconciliation: Late fill detected, confirming BUY", "symbol", symbol)
+			sig.Confirm(strategy.SignalBuy, pos.EntryPrice)
+		} else {
+			// Check if the order still exists on the exchange.
+			openOrders, _ := o.exec.GetOpenOrders(ctx, symbol, exchange)
+			if len(openOrders.Orders) == 0 {
+				// RECOVERY: If the order is gone but we have no position, the buy likely failed or was canceled externally,
+				// so we reset the strategy to IDLE.
+				o.logger.Warn("Reconciliation: Pending BUY but no order found, unlocking strategy", "symbol", symbol)
+				sig.Cancel(strategy.SignalBuy)
+			}
+		}
 
 	case strategy.SignalSell:
-		// Safety check: only sell if we have an open position to avoid unnecessary orders
-		pos, exists := o.portfolio.GetPosition(exchange, symbol)
 		if !exists || pos.Quantity <= 0 {
+			// RECONCILIATION: Strategy core thinks we are in a position, but Portfolio says no.
+			// This happens if a Stop Loss triggered on the exchange. We must reset the engine state.
+			o.logger.Info("Reconciliation: SELL signal but no position found, resetting engine to IDLE state", "symbol", symbol)
+			sig.Reset()
+			return
+		}
+
+		// Pending Order Protection: prevent sending another SELL if one is already open
+		openOrders, err := o.exec.GetOpenOrders(ctx, symbol, exchange)
+		if err != nil {
+			o.logger.Error("Failed to check open orders", "symbol", symbol, "error", err)
+			return
+		}
+		if len(openOrders.Orders) > 0 {
+			o.logger.Debug("Skipping SELL signal: open orders already exist, strategy will wait", "symbol", symbol)
+			// We do NOT cancel here; let the strategy stay in SignalWaitingSellFill
 			return
 		}
 
 		o.logger.Info("Placing SELL order", "symbol", symbol, "qty", pos.Quantity, "price", price)
-		_, _ = o.exec.CreateOrder(ctx, symbol, "sell", "limit", pos.Quantity, price, exchange)
+		order, err := o.exec.CreateOrder(ctx, symbol, "sell", "limit", pos.Quantity, price, exchange)
+		if err != nil {
+			o.logger.Error("Failed to place SELL order", "symbol", symbol, "error", err)
+			// RECOVERY: If order placement failed, revert to ACTIVE so the exit rule can trigger again on the next tick.
+			sig.Cancel(strategy.SignalSell)
+			return
+		}
 
-	default:
-		// Handle SignalHold or any unexpected values by doing nothing
-		return
+		// If the order was filled immediately, update portfolio/positions
+		if order != nil && order.Status == "closed" {
+			_ = o.portfolio.ApplyExecution(ctx, exchange, order)
+			sig.Confirm(strategy.SignalSell, order.Price)
+		}
+
+	case strategy.SignalWaitingSellFill:
+		if !exists {
+			// Standard Late Fill: Sell order cleared while we were waiting.
+			o.logger.Info("Reconciliation: Late fill detected, confirming SELL", "symbol", symbol)
+			sig.Confirm(strategy.SignalSell, price)
+		} else {
+			// Check if the sell order still exists.
+			openOrders, _ := o.exec.GetOpenOrders(ctx, symbol, exchange)
+			if len(openOrders.Orders) == 0 {
+				// RECOVERY: If the position still exists but no sell order found, we should revert to ACTIVE.
+				o.logger.Warn("Reconciliation: Pending SELL but no order found, reverting to tracking", "symbol", symbol)
+				sig.Cancel(strategy.SignalSell)
+			}
+		}
+
+	case strategy.SignalTrackingExit:
+		// RECONCILIATION: If the position is gone (External Stop Loss/Manual Sale) while strategy is tracking, reset to IDLE.
+		if !exists {
+			o.logger.Info("Reconciliation: Position gone, syncing strategy to IDLE state", "symbol", symbol)
+			sig.Reset()
+		}
+
+	case strategy.SignalInvalid:
+		o.logger.Error("Received invalid signal from strategy core", "symbol", symbol)
 	}
 }
 

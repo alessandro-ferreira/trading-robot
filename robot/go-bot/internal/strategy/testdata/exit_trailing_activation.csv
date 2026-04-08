@@ -1,6 +1,6 @@
 timestamp,price,expected_signal,description
-15,103.0,0,"Hold, price rising smoothly"
-30,106.0,0,"Hold, activation met (5% from 100), peak=106, trail stop at 103.88"
-60,108.0,0,"Hold, new peak=108, trail stop at 105.84"
-90,106.0,0,"Hold, above trail stop"
-120,105.8,-1,"Sell, at trail stop"
+15,103.0,4,"Hold, price rising smoothly"
+30,106.0,4,"Hold, activation met (5% from 100), peak=106, trail stop at 103.88"
+60,108.0,4,"Hold, new peak=108, trail stop at 105.84"
+90,106.0,4,"Hold, above trail stop"
+120,105.8,2,"Sell, at trail stop"

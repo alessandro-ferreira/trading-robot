@@ -124,6 +124,21 @@ func (s *SignalGenerator) UpdateAndGetSignal(price float64, timestamp int64) (st
 	return s.strategy.GetSignal(), nil
 }
 
+// Confirm notifies the strategy that a pending signal (Buy or Sell) was successfully filled.
+func (s *SignalGenerator) Confirm(sig strategy.Signal, price float64) {
+	s.strategy.ConfirmSignal(sig, price)
+}
+
+// Cancel reverts a pending signal to its previous state if the execution was rejected or failed.
+func (s *SignalGenerator) Cancel(sig strategy.Signal) {
+	s.strategy.CancelSignal(sig)
+}
+
+// Reset forces the strategy engine back to an IDLE searching state.
+func (s *SignalGenerator) Reset() {
+	s.strategy.ResetSignal()
+}
+
 // Close releases resources held by the strategy.
 func (s *SignalGenerator) Close() error {
 	if s.strategy != nil {

@@ -41,14 +41,13 @@ func loadTestSteps(t *testing.T, filename string) []testStep {
 		price, err := strconv.ParseFloat(record[1], 64)
 		require.NoError(t, err, "invalid price at row %d", i+1)
 
-		expectedSignalFloat, err := strconv.ParseFloat(record[2], 64)
+		expectedSignalInt, err := strconv.Atoi(record[2])
 		require.NoError(t, err, "invalid expected signal at row %d", i+1)
-		expectedSignal := Signal(expectedSignalFloat)
 
 		steps = append(steps, testStep{
 			timestamp:      timestamp,
 			price:          price,
-			expectedSignal: expectedSignal,
+			expectedSignal: Signal(expectedSignalInt),
 			description:    record[3],
 		})
 	}
@@ -56,7 +55,7 @@ func loadTestSteps(t *testing.T, filename string) []testStep {
 }
 
 type initConfig struct {
-	inPosition   bool
+	state        StrategyState
 	entryPrice   float64
 	highestPrice float64
 }
@@ -140,7 +139,7 @@ func TestStrategy_DataDriven(t *testing.T) {
 				StopLossPct:     0.05,
 				ProfitTargetPct: 0.10,
 			},
-			init: &initConfig{inPosition: true, entryPrice: 100.0},
+			init: &initConfig{state: StateActive, entryPrice: 100.0},
 		},
 		{
 			name:     "Exit on Take Profit (Profit Strategy)",
@@ -152,7 +151,7 @@ func TestStrategy_DataDriven(t *testing.T) {
 				StopLossPct:     0.10,
 				ProfitTargetPct: 0.05,
 			},
-			init: &initConfig{inPosition: true, entryPrice: 100.0},
+			init: &initConfig{state: StateActive, entryPrice: 100.0},
 		},
 		{
 			name:     "Exit on Initial Stop Loss (Trailing Strategy)",
@@ -165,7 +164,7 @@ func TestStrategy_DataDriven(t *testing.T) {
 				ActivationPct:   0.05,
 				TrailingStopPct: 0.02,
 			},
-			init: &initConfig{inPosition: true, entryPrice: 100.0, highestPrice: 100.0},
+			init: &initConfig{state: StateActive, entryPrice: 100.0, highestPrice: 100.0},
 		},
 		{
 			name:     "Exit on Trailing Activation (Trailing Strategy)",
@@ -178,7 +177,7 @@ func TestStrategy_DataDriven(t *testing.T) {
 				ActivationPct:   0.05,
 				TrailingStopPct: 0.02,
 			},
-			init: &initConfig{inPosition: true, entryPrice: 100.0, highestPrice: 100.0},
+			init: &initConfig{state: StateActive, entryPrice: 100.0, highestPrice: 100.0},
 		},
 		{
 			name:     "Full Cycle (Profit Strategy)",
@@ -223,18 +222,25 @@ func TestStrategy_DataDriven(t *testing.T) {
 				// This simulates that we entered the position "now" or recently.
 				history := []PricePoint{{Timestamp: 0, Price: tt.init.entryPrice}}
 				if tt.config.Type == StrategyMomentumTrailing {
-					require.NoError(t, s.InitTrailing(history, tt.init.inPosition, tt.init.entryPrice, tt.init.highestPrice))
+					require.NoError(t, s.InitTrailing(history, tt.init.state, tt.init.entryPrice, tt.init.highestPrice))
 				} else {
-					require.NoError(t, s.InitProfit(history, tt.init.inPosition, tt.init.entryPrice))
+					require.NoError(t, s.InitProfit(history, tt.init.state, tt.init.entryPrice))
 				}
 			}
 
 			for i, step := range steps {
 				err := s.UpdatePrice(step.price, step.timestamp)
 				assert.NoError(t, err, "Row %d: UpdatePrice failed", i+2)
+
 				signal := s.GetSignal()
+
 				assert.Equal(t, step.expectedSignal, signal,
 					"Row %d: %s (Price: %.2f)", i+2, step.description, step.price)
+
+				// Simulate an immediate fill to progress the state machine.
+				if signal == SignalBuy || signal == SignalSell {
+					s.ConfirmSignal(signal, step.price)
+				}
 			}
 		})
 	}

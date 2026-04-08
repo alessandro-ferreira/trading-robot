@@ -1,13 +1,13 @@
 timestamp,price,expected_signal,description
-0,100,0,Start
-60,100,0,Fill
-120,100,0,Window ready
+0,100,3,Start
+60,100,3,Fill
+120,100,3,Window ready
 180,103,1,"Entry on 3% momentum"
-195,106,0,"Intermediate rise"
-210,109,0,"Hold, activation met (5% from 103), peak=109, trail stop at 105.73"
-225,106.0,0,"Hold, price dipping"
-240,105.7,-1,"Exit on 3% trailing stop (price < 105.73)"
-270,102,0,Cooldown
+195,106,4,"Intermediate rise"
+210,109,4,"Hold, activation met (5% from 103), peak=109, trail stop at 105.73"
+225,106.0,4,"Hold, price dipping"
+240,105.7,2,"Exit on 3% trailing stop (price < 105.73)"
+270,102,3,Cooldown
 330,106,1,"Re-entry on momentum (Lookback to 102 at t=270)"
-345,103,0,"Intermediate drop"
-360,100,-1,"Exit on 5% stop loss (from 106)"
+345,103,4,"Intermediate drop"
+360,100,2,"Exit on 5% stop loss (from 106)"

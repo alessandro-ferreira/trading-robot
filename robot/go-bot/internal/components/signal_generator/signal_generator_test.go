@@ -128,6 +128,24 @@ func TestSignalGenerator_UpdateAndGetSignal(t *testing.T) {
 
 		sig, err := sg.UpdateAndGetSignal(50100.0, 1001)
 		assert.NoError(t, err)
-		assert.Equal(t, strategy.SignalHold, sig)
+		assert.Equal(t, strategy.SignalSearchingEntry, sig)
+	})
+}
+
+func TestSignalGenerator_Lifecycle(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	sg, err := NewSignalGenerator(logger, "BTC/USD", "binance", config.PairRiskConfig{RiskPerTrade: 100.0}, config.StrategyConfig{Type: config.StrategyDummy})
+	require.NoError(t, err)
+	defer sg.Close()
+
+	assert.NotPanics(t, func() {
+		// Trigger a buy in dummy strategy
+		sig, _ := sg.UpdateAndGetSignal(100.0, 1000)
+		assert.Equal(t, strategy.SignalBuy, sig)
+
+		// Verify lifecycle methods
+		sg.Confirm(strategy.SignalBuy, 100.0)
+		sg.Cancel(strategy.SignalSell) // No-op if not pending, shouldn't panic
+		sg.Reset()
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
+	pb "trading/robot/go-bot/gen/go/v1"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
 )
@@ -116,6 +117,33 @@ func (p *Portfolio) GetCashBalance() float64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.cashBalance
+}
+
+// ApplyExecution updates the portfolio state based on a finalized order execution.
+// It handles the conversion from gRPC OrderResponse to internal position updates.
+func (p *Portfolio) ApplyExecution(ctx context.Context, exchange string, order *pb.OrderResponse) error {
+	if order == nil || order.Status != "closed" {
+		return nil
+	}
+
+	quantity := order.Filled
+	if order.Side == "sell" {
+		quantity = -quantity
+	}
+
+	// Use average execution price if available, otherwise fall back to limit price
+	price := order.Average
+	if price <= 0 {
+		price = order.Price
+	}
+
+	p.logger.Info("Applying execution to portfolio",
+		"symbol", order.Symbol,
+		"side", order.Side,
+		"filled", order.Filled,
+		"avg_price", price)
+
+	return p.UpdatePosition(ctx, exchange, order.Symbol, quantity, price)
 }
 
 // UpdatePrice updates the current price and unrealized P&L for a specific symbol.
