@@ -15,6 +15,7 @@ import (
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/strategy"
 )
 
 // setupIntegrationTest initializes dependencies for the portfolio integration test.
@@ -85,6 +86,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 	assert.Equal(t, symbol, posData.InstrumentSymbol)
 	assert.InDelta(t, 1.0, posData.Quantity, 0.000001)
 	assert.InDelta(t, 20000.0, posData.EntryPrice, 0.000001)
+	assert.Equal(t, 20000.0, posData.HighestPrice)
 	assert.True(t, posData.Active)
 
 	// Increase position (Buy 1 BTC @ 22000)
@@ -99,6 +101,14 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 2.0, posData.Quantity, 0.000001)
 	assert.InDelta(t, 21000.0, posData.EntryPrice, 0.000001)
+	assert.Equal(t, 22000.0, posData.HighestPrice)
+
+	// Metadata Sync: Change state manually and verify persistence
+	p.SyncMetadata(ctx, exchange, symbol, strategy.StatePendingSell)
+	// Note: Portfolio.SyncMetadata only updates memory. It is persisted on the next UpdatePosition call.
+	// In a real scenario, this metadata is synced to DB during the next Fill or via a dedicated persistence task.
+	pos, _ := p.GetPosition(exchange, symbol)
+	assert.Equal(t, strategy.StatePendingSell, pos.StrategyState)
 
 	// Get Open Positions: Should return the single aggregated position
 	t.Log("Verifying GetOpenPositions")

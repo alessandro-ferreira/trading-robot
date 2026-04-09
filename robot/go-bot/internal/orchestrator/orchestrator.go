@@ -104,7 +104,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	price := ticker.Price
 
 	// Update Portfolio price for accurate valuation and risk sizing
-	o.portfolio.UpdatePrice(exchange, symbol, price)
+	o.portfolio.UpdatePrice(ctx, exchange, symbol, price)
 
 	// Update strategy state and evaluate signal
 	signal, err := sig.UpdateAndGetSignal(price, time.Now().Unix())
@@ -122,6 +122,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	case strategy.SignalSearchingEntry:
 		// RECONCILIATION: If we have a position but the engine is idling, force it to ACTIVE.
 		// This handles bot restarts/recovery.
+		// TODO: Implement history hydration from database to warm up indicators.
 		if exists {
 			o.logger.Info("Reconciliation: Position found while searching, syncing engine to ACTIVE state", "symbol", symbol)
 			sig.Confirm(strategy.SignalBuy, pos.EntryPrice)
@@ -249,6 +250,12 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 
 	case strategy.SignalInvalid:
 		o.logger.Error("Received invalid signal from strategy core", "symbol", symbol)
+	}
+
+	// Sync latest engine state to portfolio for persistence ONLY if it has changed.
+	currentState := sig.GetState()
+	if exists && pos.StrategyState != currentState {
+		o.portfolio.SyncMetadata(ctx, exchange, symbol, currentState)
 	}
 }
 

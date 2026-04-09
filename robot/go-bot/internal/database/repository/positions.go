@@ -24,8 +24,8 @@ type PositionData struct {
 	Side             string
 	Quantity         float64
 	EntryPrice       float64
-	CurrentPrice     float64
-	UnrealizedPnL    float64
+	HighestPrice     float64
+	StrategyState    string
 	Active           bool
 	CreatedAt        time.Time
 	UpdatedAt        sql.NullTime
@@ -57,8 +57,8 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 			p.side,
 			p.quantity,
 			p.entry_price,
-			p.current_price,
-			p.unrealized_pnl,
+			p.highest_price,
+			p.strategy_state,
 			p.active,
 			p.created_at,
 			p.updated_at
@@ -76,8 +76,8 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 		&pos.Side,
 		&pos.Quantity,
 		&pos.EntryPrice,
-		&pos.CurrentPrice,
-		&pos.UnrealizedPnL,
+		&pos.HighestPrice,
+		&pos.StrategyState,
 		&pos.Active,
 		&pos.CreatedAt,
 		&pos.UpdatedAt,
@@ -99,8 +99,8 @@ func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor) (
 			p.side,
 			p.quantity,
 			p.entry_price,
-			p.current_price,
-			p.unrealized_pnl,
+			p.highest_price,
+			p.strategy_state,
 			p.active,
 			p.created_at,
 			p.updated_at
@@ -121,8 +121,8 @@ func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor) (
 		var pos PositionData
 		if err := rows.Scan(
 			&pos.ID, &pos.ExchangeName, &pos.InstrumentSymbol, &pos.Side,
-			&pos.Quantity, &pos.EntryPrice, &pos.CurrentPrice, &pos.UnrealizedPnL,
-			&pos.Active, &pos.CreatedAt, &pos.UpdatedAt,
+			&pos.Quantity, &pos.EntryPrice, &pos.HighestPrice,
+			&pos.StrategyState, &pos.Active, &pos.CreatedAt, &pos.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
@@ -139,8 +139,8 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 		SET
 			quantity = $3,
 			entry_price = $4,
-			current_price = $5,
-			unrealized_pnl = $6,
+			highest_price = $5,
+			strategy_state = $6::trading.strategy_state,
 			updated_at = NOW(),
 			updated_by = $7
 		WHERE
@@ -156,8 +156,8 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 		pos.InstrumentSymbol,
 		pos.Quantity,
 		pos.EntryPrice,
-		pos.CurrentPrice,
-		pos.UnrealizedPnL,
+		pos.HighestPrice,
+		pos.StrategyState,
 		DefaultUser,
 	).Scan(&id)
 
@@ -177,15 +177,15 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 			side,
 			quantity,
 			entry_price,
-			current_price,
-			unrealized_pnl,
+			highest_price,
+			strategy_state,
 			active,
 			created_at,
 			created_by
 		) VALUES (
 			(SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE),
 			(SELECT id FROM trading.instruments WHERE name = $2 AND active = TRUE),
-			$3::trading.position_side, $4, $5, $6, $7, TRUE, NOW(), $8
+			$3::trading.position_side, $4, $5, $6, $7::trading.strategy_state, TRUE, NOW(), $8
 		)
 	`
 
@@ -195,8 +195,8 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 		pos.Side,
 		pos.Quantity,
 		pos.EntryPrice,
-		pos.CurrentPrice,
-		pos.UnrealizedPnL,
+		pos.HighestPrice,
+		pos.StrategyState,
 		DefaultUser,
 	)
 

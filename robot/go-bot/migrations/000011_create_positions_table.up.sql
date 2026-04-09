@@ -1,6 +1,9 @@
 -- Define ENUMs for position sides to ensure data consistency
 CREATE TYPE trading.position_side AS ENUM ('long', 'short');
 
+-- Define ENUM for strategy engine lifecycle states
+CREATE TYPE trading.strategy_state AS ENUM ('idle', 'pending_buy', 'active', 'pending_sell');
+
 -- Table to track open trading positions per exchange and instrument
 CREATE TABLE IF NOT EXISTS trading.positions (
     id BIGSERIAL PRIMARY KEY,
@@ -9,8 +12,8 @@ CREATE TABLE IF NOT EXISTS trading.positions (
     side trading.position_side NOT NULL,
     quantity NUMERIC NOT NULL,
     entry_price NUMERIC NOT NULL,
-    current_price NUMERIC NOT NULL DEFAULT 0,
-    unrealized_pnl NUMERIC NOT NULL DEFAULT 0,
+    highest_price NUMERIC NOT NULL DEFAULT 0,
+    strategy_state trading.strategy_state NOT NULL DEFAULT 'idle',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by TEXT,
     updated_at TIMESTAMPTZ,

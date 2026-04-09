@@ -126,7 +126,7 @@ func setupOrchestratorIntegrationTest(t *testing.T, maxOpenPositions int) (*Orch
 // TestOrchestrator_Integration_Concurrency verifies that multiple pair loops run independently.
 func TestOrchestrator_Integration_Concurrency(t *testing.T) {
 	// Set MaxOpenPositions high enough to allow both pairs to trade
-	orch, db, _, cleanup := setupOrchestratorIntegrationTest(t, 5)
+	orch, db, _, cleanup := setupOrchestratorIntegrationTest(t, 10)
 	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

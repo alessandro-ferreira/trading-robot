@@ -113,6 +113,21 @@ func (s *SignalGenerator) Risk() risk.PairRisk {
 	return s.risk
 }
 
+// Sync performs a non-destructive initialization to restore strategy metadata.
+// This is used during reconciliation or restarts to sync state without wiping history.
+func (s *SignalGenerator) Sync(state strategy.StrategyState, entryPrice, highestPrice float64) error {
+	cfg := s.strategy.GetConfig()
+	switch cfg.Type {
+	case strategy.StrategyMomentumProfit:
+		return s.strategy.InitProfit(nil, state, entryPrice)
+	case strategy.StrategyMomentumTrailing:
+		return s.strategy.InitTrailing(nil, state, entryPrice, highestPrice)
+	default:
+		// For Dummy or other types, we just ensure the state is consistent.
+		return nil
+	}
+}
+
 // UpdateAndGetSignal updates the strategy state with a new price and returns the signal.
 func (s *SignalGenerator) UpdateAndGetSignal(price float64, timestamp int64) (strategy.Signal, error) {
 	// Update strategy with the new price
@@ -122,6 +137,11 @@ func (s *SignalGenerator) UpdateAndGetSignal(price float64, timestamp int64) (st
 
 	// Return the signal
 	return s.strategy.GetSignal(), nil
+}
+
+// GetState returns the current internal state of the strategy engine.
+func (s *SignalGenerator) GetState() strategy.StrategyState {
+	return s.strategy.GetState()
 }
 
 // Confirm notifies the strategy that a pending signal (Buy or Sell) was successfully filled.

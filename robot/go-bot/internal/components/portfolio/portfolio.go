@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"sync"
 
-	pb "trading/robot/go-bot/gen/go/v1"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/strategy"
 )
 
 // Position represents the current holding of a specific asset.
@@ -18,6 +18,8 @@ type Position struct {
 	Quantity           float64
 	EntryPrice         float64
 	CurrentPrice       float64
+	HighestPrice       float64 // High-water mark for trailing stops
+	StrategyState      strategy.StrategyState
 	UnrealizedPnL      float64
 	AssociatedOrderIDs []string // Tracks open orders (e.g., Stop Loss) related to this position
 }
@@ -47,11 +49,6 @@ func NewPortfolio(logger *slog.Logger, db *database.DB, repo *repository.Contain
 	}
 }
 
-// makeKey creates a unique key for the positions map.
-func makeKey(exchange, symbol string) string {
-	return fmt.Sprintf("%s|%s", exchange, symbol)
-}
-
 // LoadState hydrates the portfolio state from the persistent storage.
 // This should be called on application startup.
 func (p *Portfolio) LoadState(ctx context.Context) error {
@@ -70,181 +67,29 @@ func (p *Portfolio) LoadState(ctx context.Context) error {
 			Symbol:        posData.InstrumentSymbol,
 			Quantity:      posData.Quantity,
 			EntryPrice:    posData.EntryPrice,
-			CurrentPrice:  posData.CurrentPrice,
-			UnrealizedPnL: posData.UnrealizedPnL,
+			HighestPrice:  posData.HighestPrice,
+			StrategyState: toState(posData.StrategyState),
 		}
 	}
 	return nil
 }
 
-// GetTotalValue calculates the total equity of the portfolio (Cash + Market Value of Positions).
-func (p *Portfolio) GetTotalValue() float64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	total := p.cashBalance
-	for _, pos := range p.positions {
-		total += pos.CurrentPrice * pos.Quantity
-	}
-	return total
+// makeKey creates a unique key for the positions map.
+func makeKey(exchange, symbol string) string {
+	return fmt.Sprintf("%s|%s", exchange, symbol)
 }
 
-// GetOpenPositionsCount returns the number of currently active positions.
-// This is used by the Risk Manager to enforce MaxOpenPositions limits.
-func (p *Portfolio) GetOpenPositionsCount() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return len(p.positions)
-}
-
-// GetPosition returns a copy of the position for a given symbol.
-func (p *Portfolio) GetPosition(exchange, symbol string) (*Position, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	key := makeKey(exchange, symbol)
-	pos, exists := p.positions[key]
-	if !exists {
-		return nil, false
+func toState(s string) strategy.StrategyState {
+	switch s {
+	case "idle":
+		return strategy.StateIdle
+	case "pending_buy":
+		return strategy.StatePendingBuy
+	case "active":
+		return strategy.StateActive
+	case "pending_sell":
+		return strategy.StatePendingSell
+	default:
+		return strategy.StateIdle
 	}
-	// Return a copy to avoid race conditions if the caller modifies it
-	posCopy := *pos
-	return &posCopy, true
-}
-
-// GetCashBalance returns the current available cash balance.
-func (p *Portfolio) GetCashBalance() float64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.cashBalance
-}
-
-// ApplyExecution updates the portfolio state based on a finalized order execution.
-// It handles the conversion from gRPC OrderResponse to internal position updates.
-func (p *Portfolio) ApplyExecution(ctx context.Context, exchange string, order *pb.OrderResponse) error {
-	if order == nil || order.Status != "closed" {
-		return nil
-	}
-
-	quantity := order.Filled
-	if order.Side == "sell" {
-		quantity = -quantity
-	}
-
-	// Use average execution price if available, otherwise fall back to limit price
-	price := order.Average
-	if price <= 0 {
-		price = order.Price
-	}
-
-	p.logger.Info("Applying execution to portfolio",
-		"symbol", order.Symbol,
-		"side", order.Side,
-		"filled", order.Filled,
-		"avg_price", price)
-
-	return p.UpdatePosition(ctx, exchange, order.Symbol, quantity, price)
-}
-
-// UpdatePrice updates the current price and unrealized P&L for a specific symbol.
-func (p *Portfolio) UpdatePrice(exchange, symbol string, price float64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	key := makeKey(exchange, symbol)
-	pos, exists := p.positions[key]
-	if !exists {
-		return
-	}
-
-	pos.CurrentPrice = price
-	// Unrealized P&L = (Current Price - Entry Price) * Quantity
-	pos.UnrealizedPnL = (price - pos.EntryPrice) * pos.Quantity
-}
-
-// UpdatePosition adds or updates a position based on a trade execution.
-// quantity > 0 for Buy, quantity < 0 for Sell.
-func (p *Portfolio) UpdatePosition(ctx context.Context, exchange, symbol string, quantity float64, price float64) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	key := makeKey(exchange, symbol)
-	pos, exists := p.positions[key]
-
-	if quantity > 0 { // BUY
-		cost := quantity * price
-		if p.cashBalance < cost {
-			return fmt.Errorf("insufficient funds: required %.2f, available %.2f", cost, p.cashBalance)
-		}
-
-		p.cashBalance -= cost
-
-		if !exists {
-			pos = &Position{
-				Exchange:     exchange,
-				Symbol:       symbol,
-				Quantity:     quantity,
-				EntryPrice:   price,
-				CurrentPrice: price,
-			}
-		} else {
-			// Calculate new weighted average entry price
-			totalCost := (pos.Quantity * pos.EntryPrice) + cost
-			newQuantity := pos.Quantity + quantity
-			pos.EntryPrice = totalCost / newQuantity
-			// Just in case quantity was tiny/negative before, though shouldn't happen here
-			pos.Quantity = newQuantity
-			pos.CurrentPrice = price
-		}
-		p.positions[key] = pos
-	} else { // SELL
-		sellQuantity := -quantity
-		if !exists || pos.Quantity < sellQuantity {
-			return fmt.Errorf("insufficient position: holding %.4f, trying to sell %.4f",
-				func() float64 {
-					if pos == nil {
-						return 0
-					}
-					return pos.Quantity
-				}(), sellQuantity)
-		}
-
-		revenue := sellQuantity * price
-		p.cashBalance += revenue
-		pos.Quantity -= sellQuantity
-		pos.CurrentPrice = price
-
-		// Clean up empty positions
-		const epsilon = 1e-9
-		if pos.Quantity <= epsilon { // Epsilon for float comparison
-			delete(p.positions, key)
-			pos = nil // Mark as nil for persistence check
-		}
-	}
-
-	// Persist changes
-	var err error
-	if pos != nil {
-		dto := repository.PositionData{
-			ExchangeName:     pos.Exchange,
-			InstrumentSymbol: pos.Symbol,
-			Side:             repository.PositionSideLong, // Defaulting to Long for Spot
-			Quantity:         pos.Quantity,
-			EntryPrice:       pos.EntryPrice,
-			CurrentPrice:     pos.CurrentPrice,
-			UnrealizedPnL:    pos.UnrealizedPnL,
-			Active:           true,
-		}
-		err = p.repo.Positions.UpsertPosition(ctx, p.db, dto)
-	} else {
-		err = p.repo.Positions.DeletePosition(ctx, p.db, exchange, symbol)
-	}
-
-	if err != nil {
-		p.logger.Error("Failed to persist portfolio state", "error", err)
-		// We log the error but do not fail the function, as in-memory state is valid
-	}
-
-	p.logger.Info("Portfolio updated", "exchange", exchange, "symbol", symbol, "quantity", quantity, "price", price, "cash", p.cashBalance)
-	return nil
 }

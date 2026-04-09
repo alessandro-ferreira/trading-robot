@@ -30,6 +30,21 @@ const (
 	StatePendingSell StrategyState = C.STATE_PENDING_SELL
 )
 
+func (s StrategyState) String() string {
+	switch s {
+	case StateIdle:
+		return "idle"
+	case StatePendingBuy:
+		return "pending_buy"
+	case StateActive:
+		return "active"
+	case StatePendingSell:
+		return "pending_sell"
+	default:
+		return "idle"
+	}
+}
+
 // Signal defines the trading signal returned by the strategy.
 type Signal int
 
@@ -95,6 +110,11 @@ func (s *Strategy) UpdateConfig(cfg StrategyConfig) error {
 	}
 	s.cfg = cfg
 	return nil
+}
+
+// GetConfig returns the configuration used to create this strategy.
+func (s *Strategy) GetConfig() StrategyConfig {
+	return s.cfg
 }
 
 // toCConfig maps the Go StrategyConfig to the C struct.

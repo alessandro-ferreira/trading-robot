@@ -98,6 +98,34 @@ func TestSignalGenerator_Metadata(t *testing.T) {
 	assert.Equal(t, "SignalGenerator-kraken-ETH/USDT", sg.Name())
 }
 
+func TestSignalGenerator_Sync(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	symbol := "BTC/USD"
+	exchange := "binance"
+	riskCfg := config.PairRiskConfig{RiskPerTrade: 100.0}
+
+	stratCfg := config.StrategyConfig{
+		Type: config.StrategyMomentumTrailing,
+		Momentum: config.MomentumConfig{
+			WindowSeconds:   10,
+			LookbackSeconds: 5,
+			Threshold:       0.01,
+			StopLossPct:     0.01,
+			ActivationPct:   0.05,
+			TrailingStopPct: 0.02,
+		},
+	}
+
+	sg, err := NewSignalGenerator(logger, symbol, exchange, riskCfg, stratCfg)
+	require.NoError(t, err)
+	defer sg.Close()
+
+	// Test Sync: move strategy to ACTIVE state with specific entry and peak prices
+	err = sg.Sync(strategy.StateActive, 50000.0, 51000.0)
+	assert.NoError(t, err)
+	assert.Equal(t, strategy.StateActive, sg.GetState())
+}
+
 func TestSignalGenerator_UpdateAndGetSignal(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -130,6 +158,21 @@ func TestSignalGenerator_UpdateAndGetSignal(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, strategy.SignalSearchingEntry, sig)
 	})
+}
+
+func TestSignalGenerator_GetState(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	sg, err := NewSignalGenerator(logger, "BTC/USD", "binance", config.PairRiskConfig{RiskPerTrade: 100.0}, config.StrategyConfig{Type: config.StrategyDummy})
+	require.NoError(t, err)
+	defer sg.Close()
+
+	assert.Equal(t, strategy.StateIdle, sg.GetState())
+
+	// Trigger a buy in dummy strategy to change state
+	_, err = sg.UpdateAndGetSignal(100.0, 1000)
+	require.NoError(t, err)
+
+	assert.Equal(t, strategy.StatePendingBuy, sg.GetState())
 }
 
 func TestSignalGenerator_Lifecycle(t *testing.T) {

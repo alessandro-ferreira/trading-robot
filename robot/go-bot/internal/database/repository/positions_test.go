@@ -21,8 +21,8 @@ func getSamplePosition() PositionData {
 		Side:             PositionSideLong,
 		Quantity:         0.5,
 		EntryPrice:       50000.0,
-		CurrentPrice:     51000.0,
-		UnrealizedPnL:    500.0,
+		HighestPrice:     52000.0,
+		StrategyState:    "active",
 		Active:           true,
 		CreatedAt:        time.Now(),
 		UpdatedAt:        sql.NullTime{Valid: false},
@@ -44,10 +44,10 @@ func TestPgPositionsRepo_GetPosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows([]string{
 					"id", "exchange_name", "instrument_symbol", "side", "quantity",
-					"entry_price", "current_price", "unrealized_pnl", "active", "created_at", "updated_at",
+					"entry_price", "highest_price", "strategy_state", "active", "created_at", "updated_at",
 				}).AddRow(
 					pos.ID, pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
-					pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, pos.Active, pos.CreatedAt, pos.UpdatedAt,
+					pos.EntryPrice, pos.HighestPrice, pos.StrategyState, pos.Active, pos.CreatedAt, pos.UpdatedAt,
 				)
 				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
@@ -106,10 +106,10 @@ func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows([]string{
 					"id", "exchange_name", "instrument_symbol", "side", "quantity",
-					"entry_price", "current_price", "unrealized_pnl", "active", "created_at", "updated_at",
+					"entry_price", "highest_price", "strategy_state", "active", "created_at", "updated_at",
 				}).AddRow(
 					pos.ID, pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
-					pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, pos.Active, pos.CreatedAt, pos.UpdatedAt,
+					pos.EntryPrice, pos.HighestPrice, pos.StrategyState, pos.Active, pos.CreatedAt, pos.UpdatedAt,
 				)
 				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
 					WillReturnRows(rows)
@@ -168,7 +168,8 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
 						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
-						pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, DefaultUser,
+						pos.EntryPrice, pos.HighestPrice,
+						pos.StrategyState, DefaultUser,
 					).WillReturnRows(rows)
 			},
 		},
@@ -178,13 +179,15 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
 						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
-						pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, DefaultUser,
+						pos.EntryPrice, pos.HighestPrice,
+						pos.StrategyState, DefaultUser,
 					).WillReturnError(pgx.ErrNoRows)
 
 				mockDB.ExpectExec("INSERT INTO trading.positions").
 					WithArgs(
 						pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
-						pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, DefaultUser,
+						pos.EntryPrice, pos.HighestPrice,
+						pos.StrategyState, DefaultUser,
 					).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			},
 		},
@@ -194,7 +197,8 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
 						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
-						pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, DefaultUser,
+						pos.EntryPrice, pos.HighestPrice,
+						pos.StrategyState, DefaultUser,
 					).WillReturnError(errors.New("db update error"))
 			},
 			expectedErrContains: "failed to update position",
@@ -205,14 +209,16 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
 						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
-						pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, DefaultUser,
+						pos.EntryPrice, pos.HighestPrice,
+						pos.StrategyState, DefaultUser,
 					).
 					WillReturnError(pgx.ErrNoRows)
 
 				mockDB.ExpectExec("INSERT INTO trading.positions").
 					WithArgs(
 						pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
-						pos.EntryPrice, pos.CurrentPrice, pos.UnrealizedPnL, DefaultUser,
+						pos.EntryPrice, pos.HighestPrice,
+						pos.StrategyState, DefaultUser,
 					).
 					WillReturnError(errors.New("db insert error"))
 			},
