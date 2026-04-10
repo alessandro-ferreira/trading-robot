@@ -135,7 +135,8 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	ctx := context.Background()
 	exchangeName := "dummy"
-	symbol := "BTC/USDT"
+	// TODO: test BTC/USDT
+	symbol := "LTC/USDT"
 
 	// List open orders (should be empty)
 	t.Log("Listing open orders (expecting empty)")

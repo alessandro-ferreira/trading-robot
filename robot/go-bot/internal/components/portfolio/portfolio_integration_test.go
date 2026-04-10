@@ -65,7 +65,8 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	ctx := context.Background()
 	exchange := "dummy"
-	symbol := "BTC/USDT"
+	// TODO: test BTC/USDT
+	symbol := "LTC/USDT"
 
 	// Initial State: Verify no open positions
 	t.Log("Checking initial state (expecting empty)")

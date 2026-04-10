@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"trading/robot/go-bot/internal/config"
@@ -36,8 +37,19 @@ func New(w io.Writer, cfg config.LogConfig) *slog.Logger {
 		AddSource: cfg.Source, // Enable source file and line number in logs
 		Level:     level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Format time in a human-readable way
 			if a.Key == slog.TimeKey {
 				a.Value = slog.StringValue(a.Value.Time().Format("2006-01-02 15:04:05.000"))
+			}
+			// Shorten the source file path to the relative path from the project root
+			if a.Key == slog.SourceKey {
+				if source, ok := a.Value.Any().(*slog.Source); ok {
+					if idx := strings.Index(source.File, "go-bot/"); idx != -1 {
+						source.File = source.File[idx+len("go-bot/"):]
+					} else {
+						source.File = filepath.Base(source.File)
+					}
+				}
 			}
 			return a
 		},

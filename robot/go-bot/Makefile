@@ -22,8 +22,8 @@ MIGRATIONS_PATH := ./migrations
 .PHONY: help run proto install-tools pre-commit
 .PHONY: strategy-core clean-strategy
 .PHONY: test test-integration test-all
-.PHONY: db-up db-down
-.PHONY: install-migrate migrate-up migrate-down migrate-drop migrate-create migrate-version debug-db
+.PHONY: db-up db-down db-drop-all debug-db
+.PHONY: install-migrate migrate-up migrate-down migrate-create migrate-force migrate-version
 
 help:
 	@echo "Usage: make <target>"
@@ -45,6 +45,7 @@ help:
 	@echo "  migrate-up       Apply all database migrations."
 	@echo "  migrate-down     Revert the last database migration."
 	@echo "  migrate-create   Create a new migration file."
+	@echo "  migrate-force    Force the database to a specific migration version (fixes dirty state)."
 	@echo "  migrate-version  Show the current migration version."
 	@echo "  db-drop-all      Drop all database tables (clean slate)."
 	@echo "  debug-db         Show database connection info (for debugging)."
@@ -130,6 +131,11 @@ migrate-create:
 	@echo "==> Creating new migration files..."
 	@read -p "Enter migration name: " name; \
 	migrate create -ext sql -dir $(MIGRATIONS_PATH) -seq $$name
+
+migrate-force:
+	@echo "==> Forcing database version..."
+	@read -p "Enter version to force: " version; \
+	migrate -database "$(DB_URL)" -path $(MIGRATIONS_PATH) force $$version
 
 migrate-version:
 	@echo "==> Checking current migration version..."

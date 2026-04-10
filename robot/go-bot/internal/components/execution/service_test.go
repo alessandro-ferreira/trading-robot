@@ -17,10 +17,26 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 )
 
+// MockMarketDataRepo is a mock implementation of repository.MarketDataRepo
+type MockMarketDataRepo struct {
+	mock.Mock
+}
+
+func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, limit int) ([]repository.MarketDataTick, error) {
+	args := m.Called(ctx, db, exchangeName, symbol, limit)
+	return args.Get(0).([]repository.MarketDataTick), args.Error(1)
+}
+
+func (m *MockMarketDataRepo) InsertTick(ctx context.Context, db repository.DBExecutor, tick repository.MarketDataTick) error {
+	args := m.Called(ctx, db, tick)
+	return args.Error(0)
+}
+
 func TestService_GetTicker(t *testing.T) {
 	testCases := []struct {
 		name                string
 		setupGatewayMock    func(*mockExchangeServer)
+		setupRepoMock       func(*MockMarketDataRepo)
 		expectedErrContains string
 		expectedPrice       float64
 	}{
@@ -32,6 +48,11 @@ func TestService_GetTicker(t *testing.T) {
 					Price:  50000.0,
 				}
 			},
+			setupRepoMock: func(mockRepo *MockMarketDataRepo) {
+				mockRepo.On("InsertTick", mock.Anything, mock.Anything, mock.MatchedBy(func(tick repository.MarketDataTick) bool {
+					return tick.ExchangeName == "binance" && tick.Symbol == "BTC/USDT" && tick.Price == 50000.0
+				})).Return(nil)
+			},
 			expectedPrice: 50000.0,
 		},
 		{
@@ -39,6 +60,7 @@ func TestService_GetTicker(t *testing.T) {
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.tickerError = status.Error(codes.Unavailable, "gateway down")
 			},
+			setupRepoMock:       func(mockRepo *MockMarketDataRepo) {},
 			expectedErrContains: "gateway down",
 		},
 	}
@@ -51,7 +73,13 @@ func TestService_GetTicker(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			svc := NewService(slog.Default(), nil, client, &repository.Container{})
+			mockRepo := new(MockMarketDataRepo)
+			if tc.setupRepoMock != nil {
+				tc.setupRepoMock(mockRepo)
+			}
+
+			container := &repository.Container{MarketData: mockRepo}
+			svc := NewService(slog.Default(), nil, client, container)
 
 			// Act
 			resp, err := svc.GetTicker(context.Background(), "BTC/USDT", "binance")
@@ -66,6 +94,8 @@ func TestService_GetTicker(t *testing.T) {
 				assert.NotNil(t, resp)
 				assert.Equal(t, tc.expectedPrice, resp.Price)
 			}
+
+			mockRepo.AssertExpectations(t)
 		})
 	}
 }

@@ -61,23 +61,6 @@ func TestLoad(t *testing.T) {
 		// Verify Risk Config
 		assert.Equal(t, 3, cfg.Risk.MaxOpenPositions)
 		assert.Equal(t, 100.0, cfg.Risk.MaxDailyLoss)
-
-		// Verify Pairs Config
-		require.Len(t, cfg.Pairs, 2)
-		assert.Equal(t, "BTC/USDT", cfg.Pairs[0].Symbol)
-		assert.Equal(t, "binance", cfg.Pairs[0].Exchange)
-		assert.Equal(t, 50.0, cfg.Pairs[0].Risk.RiskPerTrade)
-		assert.Equal(t, StrategyMomentumTrailing, cfg.Pairs[0].Strategy.Type)
-		assert.Equal(t, int64(3600), cfg.Pairs[0].Strategy.Momentum.WindowSeconds)
-		assert.Equal(t, 0.005, cfg.Pairs[0].Strategy.Momentum.Threshold)
-
-		assert.Equal(t, "ETH/USDT", cfg.Pairs[1].Symbol)
-		assert.Equal(t, "binance", cfg.Pairs[1].Exchange)
-		assert.Equal(t, 25.0, cfg.Pairs[1].Risk.RiskPerTrade)
-		assert.Equal(t, StrategyMomentumProfit, cfg.Pairs[1].Strategy.Type)
-		assert.Equal(t, int64(3600), cfg.Pairs[1].Strategy.Momentum.WindowSeconds)
-		assert.Equal(t, 0.02, cfg.Pairs[1].Strategy.Momentum.StopLossPct)
-		assert.Equal(t, 0.05, cfg.Pairs[1].Strategy.Momentum.ProfitTargetPct)
 	})
 
 	t.Run("file not found", func(t *testing.T) {

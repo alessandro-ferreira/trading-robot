@@ -92,7 +92,7 @@ func main() {
 	bgManager.Start(ctx)
 
 	// --- Orchestration ---
-	orch, err := orchestrator.New(slog.Default(), cfg, pf, execService, cfg.Server.OrchestratorInterval)
+	orch, err := orchestrator.New(slog.Default(), db, repoContainer, cfg, pf, execService, cfg.Server.OrchestratorInterval)
 	if err != nil {
 		slog.Error("Failed to initialize Orchestrator", "error", err)
 		os.Exit(1)

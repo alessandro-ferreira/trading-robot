@@ -15,7 +15,8 @@ type RiskConfig struct {
 
 // PairRisk defines the operational risk rules for a specific trading pair.
 type PairRisk struct {
-	RiskPerTrade float64
+	RiskPerTrade    float64
+	MaxPositionSize float64 // The maximum quantity (amount) allowed for this pair's position.
 }
 
 // Manager handles risk checks and policy enforcement.
@@ -94,6 +95,14 @@ func (m *Manager) EvaluateEntry(currentPositions int, currentDailyLoss float64, 
 
 	// Size = Fixed Amount / Price
 	size := risk.RiskPerTrade / price
+
+	// Apply Max Position Size (Quantity) constraint if defined
+	if risk.MaxPositionSize > 0 && size > risk.MaxPositionSize {
+		m.logger.Info("Position size capped by max limit",
+			"requested", size,
+			"limit", risk.MaxPositionSize)
+		size = risk.MaxPositionSize
+	}
 
 	return Evaluation{
 		Allowed:      true,

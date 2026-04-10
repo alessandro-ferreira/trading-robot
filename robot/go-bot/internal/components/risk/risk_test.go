@@ -84,6 +84,22 @@ func TestEvaluateEntry(t *testing.T) {
 			wantAllowed: true,
 			wantSize:    2.0,
 		},
+		{
+			name: "Allow trade: cap by MaxPositionSize",
+			config: config.RiskConfig{
+				MaxOpenPositions: 5,
+				MaxDailyLoss:     100.0,
+			},
+			currentPositions: 3,
+			currentDailyLoss: 50.0,
+			price:            10.0,
+			risk: PairRisk{
+				RiskPerTrade:    100.0,
+				MaxPositionSize: 5.0,
+			},
+			wantAllowed: true,
+			wantSize:    5.0,
+		},
 	}
 
 	for _, tt := range tests {

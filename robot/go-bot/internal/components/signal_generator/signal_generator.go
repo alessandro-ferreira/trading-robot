@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"trading/robot/go-bot/internal/components/risk"
-	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
 )
 
@@ -19,60 +19,62 @@ type SignalGenerator struct {
 }
 
 // NewSignalGenerator creates a new SignalGenerator instance.
-func NewSignalGenerator(logger *slog.Logger, symbol, exchange string, riskCfg config.PairRiskConfig, strategyCfg config.StrategyConfig) (*SignalGenerator, error) {
+func NewSignalGenerator(logger *slog.Logger, riskData repository.RiskPairData, strategyData repository.StrategyPair) (*SignalGenerator, error) {
 	// Map application config to strategy config
 	stratCfg := strategy.StrategyConfig{}
 
-	logger.Info("Initializing strategy", "type", strategyCfg.Type, "symbol", symbol, "exchange", exchange)
+	logger.Info("Initializing strategy", "type", strategyData.Type, "symbol", strategyData.InstrumentSymbol, "exchange", strategyData.ExchangeName)
 
-	switch strategyCfg.Type {
-	case config.StrategyMomentumTrailing:
-		stratCfg.Type = strategy.StrategyMomentumTrailing
-		stratCfg.WindowSeconds = strategyCfg.Momentum.WindowSeconds
-		// In the future, this could support multiple momentum windows from config
-		stratCfg.MomentumWindows = []strategy.MomentumWindow{{
-			LookbackSeconds: strategyCfg.Momentum.LookbackSeconds,
-			Threshold:       strategyCfg.Momentum.Threshold,
-		}}
-		stratCfg.MomentumRequireAll = strategyCfg.Momentum.RequireAll
-		stratCfg.StopLossPct = strategyCfg.Momentum.StopLossPct
-		stratCfg.ActivationPct = strategyCfg.Momentum.ActivationPct
-		stratCfg.TrailingStopPct = strategyCfg.Momentum.TrailingStopPct
+	switch strategyData.Type {
+	case repository.StrategyMomentumTrailing, repository.StrategyMomentumProfit:
+		stratCfg.WindowSeconds = strategyData.Momentum.WindowSeconds
+		stratCfg.MomentumWindows = make([]strategy.MomentumWindow, len(strategyData.Momentum.Windows))
+		for i, w := range strategyData.Momentum.Windows {
+			stratCfg.MomentumWindows[i] = strategy.MomentumWindow{
+				LookbackSeconds: w.LookbackSeconds,
+				Threshold:       w.Threshold,
+			}
+		}
+		stratCfg.MomentumRequireAll = strategyData.Momentum.RequireAll
+		stratCfg.StopLossPct = strategyData.Momentum.StopLossPct
 
-		logger.Info("Configured MomentumTrailing strategy",
-			"window_seconds", stratCfg.WindowSeconds,
-			"lookback_seconds", stratCfg.MomentumWindows[0].LookbackSeconds,
-			"threshold", stratCfg.MomentumWindows[0].Threshold,
-			"require_all", stratCfg.MomentumRequireAll,
-			"stop_loss_pct", stratCfg.StopLossPct,
-			"activation_pct", stratCfg.ActivationPct,
-			"trailing_stop_pct", stratCfg.TrailingStopPct,
-		)
-	case config.StrategyMomentumProfit:
-		stratCfg.Type = strategy.StrategyMomentumProfit
-		stratCfg.WindowSeconds = strategyCfg.Momentum.WindowSeconds
-		stratCfg.MomentumWindows = []strategy.MomentumWindow{{
-			LookbackSeconds: strategyCfg.Momentum.LookbackSeconds,
-			Threshold:       strategyCfg.Momentum.Threshold,
-		}}
-		stratCfg.MomentumRequireAll = strategyCfg.Momentum.RequireAll
-		stratCfg.StopLossPct = strategyCfg.Momentum.StopLossPct
-		stratCfg.ProfitTargetPct = strategyCfg.Momentum.ProfitTargetPct
+		windowDump := make([]string, len(stratCfg.MomentumWindows))
+		for i, w := range stratCfg.MomentumWindows {
+			windowDump[i] = fmt.Sprintf("{lookback: %ds, threshold: %.2f%%}", w.LookbackSeconds, w.Threshold*100)
+		}
 
-		logger.Info("Configured MomentumProfit strategy",
-			"window_seconds", stratCfg.WindowSeconds,
-			"lookback_seconds", stratCfg.MomentumWindows[0].LookbackSeconds,
-			"threshold", stratCfg.MomentumWindows[0].Threshold,
-			"require_all", stratCfg.MomentumRequireAll,
-			"stop_loss_pct", stratCfg.StopLossPct,
-			"profit_target_pct", stratCfg.ProfitTargetPct,
-		)
-	case config.StrategyDummy:
+		if strategyData.Type == repository.StrategyMomentumTrailing {
+			stratCfg.Type = strategy.StrategyMomentumTrailing
+			stratCfg.ActivationPct = strategyData.Momentum.ActivationPct
+			stratCfg.TrailingStopPct = strategyData.Momentum.TrailingStopPct
+
+			logger.Info("Configured MomentumTrailing strategy",
+				"window_seconds", stratCfg.WindowSeconds,
+				"windows", windowDump,
+				"require_all", stratCfg.MomentumRequireAll,
+				"stop_loss_pct", stratCfg.StopLossPct,
+				"activation_pct", stratCfg.ActivationPct,
+				"trailing_stop_pct", stratCfg.TrailingStopPct,
+			)
+		} else {
+			stratCfg.Type = strategy.StrategyMomentumProfit
+			stratCfg.ProfitTargetPct = strategyData.Momentum.ProfitTargetPct
+
+			logger.Info("Configured MomentumProfit strategy",
+				"window_seconds", stratCfg.WindowSeconds,
+				"windows", windowDump,
+				"require_all", stratCfg.MomentumRequireAll,
+				"stop_loss_pct", stratCfg.StopLossPct,
+				"profit_target_pct", stratCfg.ProfitTargetPct,
+			)
+		}
+
+	case repository.StrategyDummy:
 		stratCfg.Type = strategy.StrategyDummy
-
 		logger.Info("Configured Dummy strategy")
+
 	default:
-		return nil, fmt.Errorf("unsupported strategy type: %s", strategyCfg.Type)
+		return nil, fmt.Errorf("unsupported strategy type: %s", strategyData.Type)
 	}
 
 	strat, err := strategy.NewStrategy(stratCfg)
@@ -81,19 +83,20 @@ func NewSignalGenerator(logger *slog.Logger, symbol, exchange string, riskCfg co
 	}
 
 	pairRisk := risk.PairRisk{
-		RiskPerTrade: riskCfg.RiskPerTrade,
+		RiskPerTrade:    riskData.RiskPerTrade,
+		MaxPositionSize: riskData.MaxPositionSize.Float64,
 	}
 
 	return &SignalGenerator{
-		logger:   logger.With("component", "signal_generator", "exchange", exchange, "symbol", symbol),
-		symbol:   symbol,
-		exchange: exchange,
+		logger:   logger.With("component", "signal_generator", "exchange", strategyData.ExchangeName, "symbol", strategyData.InstrumentSymbol),
+		symbol:   strategyData.InstrumentSymbol,
+		exchange: strategyData.ExchangeName,
 		risk:     pairRisk,
 		strategy: strat,
 	}, nil
 }
 
-// Name returns the name of the background task.
+// Name returns the unique identifier for this generator.
 func (s *SignalGenerator) Name() string {
 	return "SignalGenerator-" + s.exchange + "-" + s.symbol
 }
@@ -113,9 +116,43 @@ func (s *SignalGenerator) Risk() risk.PairRisk {
 	return s.risk
 }
 
+// State returns the current internal state of the strategy engine.
+func (s *SignalGenerator) State() strategy.StrategyState {
+	return s.strategy.GetState()
+}
+
+// Warmup primes the strategy engine with historical market data.
+func (s *SignalGenerator) Warmup(history []repository.MarketDataTick) error {
+	if len(history) == 0 {
+		return nil
+	}
+
+	points := make([]strategy.PricePoint, len(history))
+	for i, tick := range history {
+		points[i] = strategy.PricePoint{
+			Timestamp: tick.TickUnixAt,
+			Price:     tick.Price,
+		}
+	}
+
+	cfg := s.strategy.GetConfig()
+	var initErr error
+	switch cfg.Type {
+	case strategy.StrategyMomentumProfit:
+		initErr = s.strategy.InitProfit(points, strategy.StateIdle, 0)
+	case strategy.StrategyMomentumTrailing:
+		initErr = s.strategy.InitTrailing(points, strategy.StateIdle, 0, 0)
+	default:
+		s.logger.Debug("Skipping warm-up: strategy type does not support history initialization")
+		return nil
+	}
+
+	return initErr
+}
+
 // Sync performs a non-destructive initialization to restore strategy metadata.
 // This is used during reconciliation or restarts to sync state without wiping history.
-func (s *SignalGenerator) Sync(state strategy.StrategyState, entryPrice, highestPrice float64) error {
+func (s *SignalGenerator) SyncState(state strategy.StrategyState, entryPrice, highestPrice float64) error {
 	cfg := s.strategy.GetConfig()
 	switch cfg.Type {
 	case strategy.StrategyMomentumProfit:
@@ -128,8 +165,8 @@ func (s *SignalGenerator) Sync(state strategy.StrategyState, entryPrice, highest
 	}
 }
 
-// UpdateAndGetSignal updates the strategy state with a new price and returns the signal.
-func (s *SignalGenerator) UpdateAndGetSignal(price float64, timestamp int64) (strategy.Signal, error) {
+// Update updates the strategy state with a new price and returns the generated signal.
+func (s *SignalGenerator) UpdatePrice(price float64, timestamp int64) (strategy.Signal, error) {
 	// Update strategy with the new price
 	if err := s.strategy.UpdatePrice(price, timestamp); err != nil {
 		return 0, err
@@ -137,11 +174,6 @@ func (s *SignalGenerator) UpdateAndGetSignal(price float64, timestamp int64) (st
 
 	// Return the signal
 	return s.strategy.GetSignal(), nil
-}
-
-// GetState returns the current internal state of the strategy engine.
-func (s *SignalGenerator) GetState() strategy.StrategyState {
-	return s.strategy.GetState()
 }
 
 // Confirm notifies the strategy that a pending signal (Buy or Sell) was successfully filled.

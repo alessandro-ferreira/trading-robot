@@ -48,6 +48,18 @@ func (s *Service) GetTicker(ctx context.Context, symbol, exchangeName string) (*
 
 	s.logger.Info("Ticker received", "symbol", resp.Symbol, "price", resp.Price)
 
+	// Persist the tick to the database for historical analysis and strategy warm-up
+	tick := repository.MarketDataTick{
+		ExchangeName: exchangeName,
+		Symbol:       symbol,
+		Price:        resp.Price,
+		TickUnixAt:   time.Now().Unix(),
+	}
+
+	if err := s.repo.MarketData.InsertTick(ctx, s.db, tick); err != nil {
+		s.logger.Warn("Failed to persist market data tick", "error", err, "symbol", symbol)
+	}
+
 	return resp, nil
 }
 

@@ -58,9 +58,30 @@ const (
 	SignalWaitingSellFill Signal = C.SIGNAL_WAITING_SELL_FILL
 )
 
+func (s Signal) String() string {
+	switch s {
+	case SignalInvalid:
+		return "invalid"
+	case SignalBuy:
+		return "buy"
+	case SignalSell:
+		return "sell"
+	case SignalSearchingEntry:
+		return "searching_entry"
+	case SignalTrackingExit:
+		return "tracking_exit"
+	case SignalWaitingBuyFill:
+		return "waiting_buy_fill"
+	case SignalWaitingSellFill:
+		return "waiting_sell_fill"
+	default:
+		return "invalid"
+	}
+}
+
 // MomentumWindow defines parameters for a single momentum condition.
 type MomentumWindow struct {
-	LookbackSeconds int64
+	LookbackSeconds int
 	Threshold       float64
 }
 
@@ -73,7 +94,7 @@ type PricePoint struct {
 // StrategyConfig mirrors the C struct for passing parameters.
 type StrategyConfig struct {
 	Type               StrategyType
-	WindowSeconds      int64
+	WindowSeconds      int
 	MomentumWindows    []MomentumWindow
 	MomentumRequireAll bool // true = AND, false = OR
 	StopLossPct        float64

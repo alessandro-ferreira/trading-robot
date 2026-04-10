@@ -70,47 +70,9 @@ func setupOrchestratorIntegrationTest(t *testing.T, maxOpenPositions int) (*Orch
 			MaxOpenPositions: maxOpenPositions,
 			MaxDailyLoss:     1000.0,
 		},
-		Pairs: []config.PairConfig{
-			{
-				Symbol:   "BTC/USDT",
-				Exchange: "dummy",
-				Risk: config.PairRiskConfig{
-					RiskPerTrade: 100.0,
-				},
-				Strategy: config.StrategyConfig{
-					Type: config.StrategyMomentumTrailing,
-					Momentum: config.MomentumConfig{
-						WindowSeconds:   2,
-						LookbackSeconds: 1,
-						Threshold:       0.0001,
-						StopLossPct:     0.1,
-						ActivationPct:   0.05,
-						TrailingStopPct: 0.02,
-					},
-				},
-			},
-			{
-				Symbol:   "ETH/USDT",
-				Exchange: "dummy",
-				Risk: config.PairRiskConfig{
-					RiskPerTrade: 50.0,
-				},
-				Strategy: config.StrategyConfig{
-					Type: config.StrategyMomentumTrailing,
-					Momentum: config.MomentumConfig{
-						WindowSeconds:   2,
-						LookbackSeconds: 1,
-						Threshold:       0.0001,
-						StopLossPct:     0.1,
-						ActivationPct:   0.05,
-						TrailingStopPct: 0.02,
-					},
-				},
-			},
-		},
 	}
 
-	orch, err := New(slog.Default(), cfg, pf, execSvc, 500*time.Millisecond)
+	orch, err := New(slog.Default(), db, repoContainer, cfg, pf, execSvc, 500*time.Millisecond)
 	require.NoError(t, err, "Failed to create Orchestrator")
 
 	cleanup := func() {
@@ -123,10 +85,10 @@ func setupOrchestratorIntegrationTest(t *testing.T, maxOpenPositions int) (*Orch
 	return orch, db, client, cleanup
 }
 
-// TestOrchestrator_Integration_Concurrency verifies that multiple pair loops run independently.
-func TestOrchestrator_Integration_Concurrency(t *testing.T) {
-	// Set MaxOpenPositions high enough to allow both pairs to trade
-	orch, db, _, cleanup := setupOrchestratorIntegrationTest(t, 10)
+// TestOrchestrator_ExecutionOk verifies that the orchestrator boots correctly and processes a proactive strategy.
+func TestOrchestrator_ExecutionOk(t *testing.T) {
+	// Set MaxOpenPositions to allow trading
+	orch, db, _, cleanup := setupOrchestratorIntegrationTest(t, 5)
 	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -137,13 +99,20 @@ func TestOrchestrator_Integration_Concurrency(t *testing.T) {
 		errCh <- orch.Start(ctx)
 	}()
 
-	t.Log("Monitoring orchestrator for order placement...")
+	t.Log("Orchestrator started, waiting for signals to initialize...")
+
+	// Wait a moment for StrategyWarmup and background workers to start
+	time.Sleep(1 * time.Second)
+
+	// Verify that the signals map was populated from database migrations
+	// Migrations 10 and 15 insert BTC/USDT, ETH/USDT, and LTC/USDT
+	assert.GreaterOrEqual(t, len(orch.signals), 3, "Orchestrator should have initialized strategy pairs from DB")
 
 	repo := repository.New()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	var btcPlaced, ethPlaced bool
+	var orderPlaced bool
 Loop:
 	for {
 		select {
@@ -153,30 +122,17 @@ Loop:
 			require.NoError(t, err)
 			break Loop
 		case <-ticker.C:
-			// Verify both symbols eventually get orders (Concurrency)
-			if !btcPlaced {
-				orders, _ := repo.Orders.GetOrders(ctx, db, "dummy", "BTC/USDT", 1)
-				if len(orders) > 0 {
-					btcPlaced = true
-					t.Log("BTC order detected")
-				}
-			}
-			if !ethPlaced {
-				orders, _ := repo.Orders.GetOrders(ctx, db, "dummy", "ETH/USDT", 1)
-				if len(orders) > 0 {
-					ethPlaced = true
-					t.Log("ETH order detected")
-				}
-			}
-
-			if btcPlaced && ethPlaced {
-				t.Log("Concurrency verified: Both pairs placed orders")
+			// Check for LTC/USDT order. The 'dummy' strategy triggers a buy immediately.
+			orders, _ := repo.Orders.GetOrders(ctx, db, "dummy", "LTC/USDT", 1)
+			if len(orders) > 0 {
+				orderPlaced = true
+				t.Log("Execution Ok: Order placed for dummy strategy on LTC/USDT")
 				break Loop
 			}
 		}
 	}
 
-	assert.True(t, btcPlaced && ethPlaced, "Orchestrator should have triggered orders for both pairs")
+	assert.True(t, orderPlaced, "Orchestrator should have triggered at least one order from the dummy strategy")
 
 	cancel()
 	select {

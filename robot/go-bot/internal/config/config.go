@@ -8,12 +8,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-const (
-	StrategyDummy            = "dummy"
-	StrategyMomentumProfit   = "momentum_profit"
-	StrategyMomentumTrailing = "momentum_trailing"
-)
-
 // Config holds the application's configuration.
 type Config struct {
 	Server    ServerConfig      `toml:"server"`
@@ -23,7 +17,6 @@ type Config struct {
 	Health    HealthCheckConfig `toml:"health_check"`
 	Exchanges []ExchangeConfig  `toml:"exchange"`
 	Risk      RiskConfig        `toml:"risk"`
-	Pairs     []PairConfig      `toml:"pairs"`
 }
 
 // ServerConfig holds server-related settings.
@@ -78,36 +71,6 @@ type RiskConfig struct {
 	MaxOpenPositions int `toml:"max_open_positions"`
 	// MaxDailyLoss defines the maximum allowed loss in quote currency for the day.
 	MaxDailyLoss float64 `toml:"max_daily_loss"`
-}
-
-// PairConfig defines a specific trading pair and its associated strategy.
-type PairConfig struct {
-	Symbol   string         `toml:"symbol"`
-	Exchange string         `toml:"exchange"`
-	Risk     PairRiskConfig `toml:"risk"`
-	Strategy StrategyConfig `toml:"strategy"`
-}
-
-// PairRiskConfig holds risk parameters specific to a trading pair.
-type PairRiskConfig struct {
-	RiskPerTrade float64 `toml:"risk_per_trade"`
-}
-
-// StrategyConfig holds the trading strategy parameters.
-type StrategyConfig struct {
-	Type     string         `toml:"type"`
-	Momentum MomentumConfig `toml:"momentum"`
-}
-
-type MomentumConfig struct {
-	WindowSeconds   int64   `toml:"window_seconds"`
-	LookbackSeconds int64   `toml:"lookback_seconds"`
-	Threshold       float64 `toml:"threshold"`
-	RequireAll      bool    `toml:"require_all"`
-	StopLossPct     float64 `toml:"stop_loss_pct"`
-	ProfitTargetPct float64 `toml:"profit_target_pct"`
-	ActivationPct   float64 `toml:"activation_pct"`
-	TrailingStopPct float64 `toml:"trailing_stop_pct"`
 }
 
 // newWithDefaults creates a Config struct with sensible default values.
