@@ -1,7 +1,7 @@
 -- Insert exchanges
-INSERT INTO trading.exchanges (name)
+INSERT INTO trading.exchanges (name, created_by)
 VALUES
-    ('binance'),
-    ('coinbase'),
-    ('mercadobitcoin'),
-    ('dummy');
+    ('binance', 'migration_000008'),
+    ('coinbase', 'migration_000008'),
+    ('mercadobitcoin', 'migration_000008'),
+    ('dummy', 'migration_000008');
