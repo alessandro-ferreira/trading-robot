@@ -24,4 +24,5 @@ CREATE TABLE IF NOT EXISTS trading.positions (
 ALTER TABLE trading.positions ADD CONSTRAINT fk_positions_exchange FOREIGN KEY (exchange_id) REFERENCES trading.exchanges(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 ALTER TABLE trading.positions ADD CONSTRAINT fk_positions_instrument FOREIGN KEY (instrument_id) REFERENCES trading.instruments(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
-CREATE UNIQUE INDEX idx_positions_exchange_instrument_active ON trading.positions(exchange_id, instrument_id) WHERE active = TRUE;
+-- Ensure only one active position per exchange and instrument
+CREATE UNIQUE INDEX idx_positions_exchange_instrument_active ON trading.positions(exchange_id, instrument_id) WHERE active;

@@ -63,9 +63,9 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 			p.created_at,
 			p.updated_at
 		FROM trading.positions p
-		INNER JOIN trading.exchanges e ON p.exchange_id = e.id AND e.name = $1 AND e.active = TRUE
-		INNER JOIN trading.instruments i ON p.instrument_id = i.id AND i.name = $2 AND i.active = TRUE
-		WHERE p.active = TRUE
+		INNER JOIN trading.exchanges e ON e.id = p.exchange_id AND e.name = $1 AND e.active
+		INNER JOIN trading.instruments i ON i.id = p.instrument_id AND i.exchange_id = p.exchange_id AND i.name = $2 AND i.active
+		WHERE p.active
 	`
 
 	var pos PositionData
@@ -105,9 +105,9 @@ func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor) (
 			p.created_at,
 			p.updated_at
 		FROM trading.positions p
-		INNER JOIN trading.exchanges e ON p.exchange_id = e.id AND e.active = TRUE
-		INNER JOIN trading.instruments i ON p.instrument_id = i.id AND i.active = TRUE
-		WHERE p.active = TRUE
+		INNER JOIN trading.exchanges e ON e.id = p.exchange_id AND e.active
+		INNER JOIN trading.instruments i ON i.id = p.instrument_id AND i.exchange_id = p.exchange_id AND i.active
+		WHERE p.active
 	`
 
 	rows, err := db.Query(ctx, query)
@@ -133,6 +133,22 @@ func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor) (
 
 // UpsertPosition inserts or updates a position.
 func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos PositionData) error {
+	// Select exchange_id and instrument_id
+	selectQuery := `
+		SELECT i.exchange_id, i.id
+		FROM trading.instruments i
+		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
+		WHERE i.name = $2 AND i.active
+	`
+	var exchangeID, instrumentID int64
+	err := db.QueryRow(ctx, selectQuery, pos.ExchangeName, pos.InstrumentSymbol).Scan(
+		&exchangeID,
+		&instrumentID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve exchange and instrument IDs for position: %w", err)
+	}
+
 	// Try to Update first
 	updateQuery := `
 		UPDATE trading.positions
@@ -143,17 +159,14 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 			strategy_state = $6::trading.strategy_state,
 			updated_at = NOW(),
 			updated_by = $7
-		WHERE
-			exchange_id = (SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE)
-			AND instrument_id = (SELECT id FROM trading.instruments WHERE name = $2 AND active = TRUE)
-			AND active = TRUE
+		WHERE exchange_id = $1 AND instrument_id = $2 AND active
 		RETURNING id
 	`
 
 	var id int64
-	err := db.QueryRow(ctx, updateQuery,
-		pos.ExchangeName,
-		pos.InstrumentSymbol,
+	err = db.QueryRow(ctx, updateQuery,
+		exchangeID,
+		instrumentID,
 		pos.Quantity,
 		pos.EntryPrice,
 		pos.HighestPrice,
@@ -183,15 +196,13 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 			created_at,
 			created_by
 		) VALUES (
-			(SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE),
-			(SELECT id FROM trading.instruments WHERE name = $2 AND active = TRUE),
-			$3::trading.position_side, $4, $5, $6, $7::trading.strategy_state, TRUE, NOW(), $8
+			$1, $2, $3::trading.position_side, $4, $5, $6, $7::trading.strategy_state, TRUE, NOW(), $8
 		)
 	`
 
 	_, err = db.Exec(ctx, insertQuery,
-		pos.ExchangeName,
-		pos.InstrumentSymbol,
+		exchangeID,
+		instrumentID,
 		pos.Side,
 		pos.Quantity,
 		pos.EntryPrice,
@@ -209,15 +220,30 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 
 // DeletePosition marks a position as inactive (soft delete).
 func (r *pgPositionsRepo) DeletePosition(ctx context.Context, db DBExecutor, exchangeName, symbol string) error {
-	query := `
+	// Select exchange_id and instrument_id
+	selectQuery := `
+		SELECT i.exchange_id, i.id
+		FROM trading.instruments i
+		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
+		WHERE i.name = $2 AND i.active
+	`
+	var exchangeID, instrumentID int64
+	err := db.QueryRow(ctx, selectQuery, exchangeName, symbol).Scan(
+		&exchangeID,
+		&instrumentID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve exchange and instrument IDs for position: %w", err)
+	}
+
+	// Soft delete the position by setting active to FALSE
+	updateQuery := `
 		UPDATE trading.positions
 		SET active = FALSE, updated_at = NOW(), updated_by = $3
-		WHERE exchange_id = (SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE)
-		  AND instrument_id = (SELECT id FROM trading.instruments WHERE name = $2 AND active = TRUE)
-		  AND active = TRUE
+		WHERE exchange_id = $1 AND instrument_id = $2 AND active
 	`
 
-	_, err := db.Exec(ctx, query, exchangeName, symbol, DefaultUser)
+	_, err = db.Exec(ctx, updateQuery, exchangeID, instrumentID, DefaultUser)
 	if err != nil {
 		return fmt.Errorf("failed to delete position: %w", err)
 	}

@@ -32,7 +32,7 @@ ALTER TABLE trading.orders ADD CONSTRAINT fk_orders_exchange FOREIGN KEY (exchan
 ALTER TABLE trading.orders ADD CONSTRAINT fk_orders_instrument FOREIGN KEY (instrument_id) REFERENCES trading.instruments(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 -- Indexes for performance and uniqueness
-CREATE UNIQUE INDEX idx_orders_exchange_order_id_active ON trading.orders(exchange_id, exchange_order_id) WHERE active = TRUE;
-CREATE UNIQUE INDEX idx_orders_client_order_id_active ON trading.orders(exchange_id, client_order_id) WHERE active = TRUE;
+CREATE UNIQUE INDEX idx_orders_exchange_order_id_active ON trading.orders(exchange_id, exchange_order_id) WHERE active;
+CREATE UNIQUE INDEX idx_orders_client_order_id_active ON trading.orders(exchange_id, client_order_id) WHERE active;
 CREATE INDEX idx_orders_status ON trading.orders(order_status);
 CREATE INDEX idx_orders_active ON trading.orders(active);

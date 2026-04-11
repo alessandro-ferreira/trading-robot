@@ -78,7 +78,7 @@ func TestNewSignalGenerator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			riskData := repository.RiskPairData{RiskPerTrade: 100.0}
+			riskData := repository.RiskPair{RiskPerTrade: 100.0}
 			sg, err := NewSignalGenerator(logger, riskData, tt.strategyCfg)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -105,7 +105,7 @@ func TestSignalGenerator_Metadata(t *testing.T) {
 		Type:             repository.StrategyDummy,
 	}
 
-	sg, err := NewSignalGenerator(logger, repository.RiskPairData{RiskPerTrade: 100.0}, strategyCfg)
+	sg, err := NewSignalGenerator(logger, repository.RiskPair{RiskPerTrade: 100.0}, strategyCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -134,7 +134,7 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 		},
 	}
 
-	riskData := repository.RiskPairData{RiskPerTrade: 100.0}
+	riskData := repository.RiskPair{RiskPerTrade: 100.0}
 	sg, err := NewSignalGenerator(logger, riskData, stratCfg)
 	require.NoError(t, err)
 	defer sg.Close()
@@ -156,7 +156,7 @@ func TestSignalGenerator_Sync(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	symbol := "BTC/USD"
 	exchange := "binance"
-	riskData := repository.RiskPairData{RiskPerTrade: 100.0}
+	riskData := repository.RiskPair{RiskPerTrade: 100.0}
 
 	stratCfg := repository.StrategyPair{
 		ExchangeName:     exchange,
@@ -204,7 +204,7 @@ func TestSignalGenerator_Update(t *testing.T) {
 		},
 	}
 
-	riskData := repository.RiskPairData{RiskPerTrade: 100.0}
+	riskData := repository.RiskPair{RiskPerTrade: 100.0}
 
 	sg, err := NewSignalGenerator(logger, riskData, strategyCfg)
 	require.NoError(t, err)
@@ -231,7 +231,7 @@ func TestSignalGenerator_State(t *testing.T) {
 		Type:             repository.StrategyDummy,
 	}
 
-	riskData := repository.RiskPairData{RiskPerTrade: 100.0}
+	riskData := repository.RiskPair{RiskPerTrade: 100.0}
 	sg, err := NewSignalGenerator(logger, riskData, strategyCfg)
 	require.NoError(t, err)
 	defer sg.Close()
@@ -255,7 +255,7 @@ func TestSignalGenerator_Lifecycle(t *testing.T) {
 		Type:             repository.StrategyDummy,
 	}
 
-	riskData := repository.RiskPairData{
+	riskData := repository.RiskPair{
 		RiskPerTrade:    100.0,
 		MaxPositionSize: sql.NullFloat64{Float64: 10.0, Valid: true},
 	}

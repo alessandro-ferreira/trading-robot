@@ -10,4 +10,4 @@ CREATE TABLE IF NOT EXISTS trading.exchanges (
 );
 
 -- Ensure exchange names are unique among active records
-CREATE UNIQUE INDEX idx_exchanges_name_active ON trading.exchanges(name) WHERE active = TRUE;
+CREATE UNIQUE INDEX idx_exchanges_name_active ON trading.exchanges(name) WHERE active;

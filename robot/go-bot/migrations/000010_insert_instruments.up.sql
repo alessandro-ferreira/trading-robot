@@ -12,16 +12,16 @@ DECLARE
     v_created_by TEXT := 'migration_000010';
 BEGIN
     -- Fetch Exchange IDs
-    SELECT id INTO v_binance_id FROM trading.exchanges WHERE name = 'binance' AND active = TRUE;
-    SELECT id INTO v_mb_id FROM trading.exchanges WHERE name = 'mercadobitcoin' AND active = TRUE;
-    SELECT id INTO v_dummy_id FROM trading.exchanges WHERE name = 'dummy' AND active = TRUE;
+    SELECT id INTO v_binance_id FROM trading.exchanges WHERE name = 'binance' AND active;
+    SELECT id INTO v_mb_id FROM trading.exchanges WHERE name = 'mercadobitcoin' AND active;
+    SELECT id INTO v_dummy_id FROM trading.exchanges WHERE name = 'dummy' AND active;
 
     -- Fetch Asset IDs
-    SELECT id INTO v_btc_id FROM trading.assets WHERE symbol = 'BTC' AND active = TRUE;
-    SELECT id INTO v_eth_id FROM trading.assets WHERE symbol = 'ETH' AND active = TRUE;
-    SELECT id INTO v_ltc_id FROM trading.assets WHERE symbol = 'LTC' AND active = TRUE;
-    SELECT id INTO v_usdt_id FROM trading.assets WHERE symbol = 'USDT' AND active = TRUE;
-    SELECT id INTO v_brl_id FROM trading.assets WHERE symbol = 'BRL' AND active = TRUE;
+    SELECT id INTO v_btc_id FROM trading.assets WHERE symbol = 'BTC' AND active;
+    SELECT id INTO v_eth_id FROM trading.assets WHERE symbol = 'ETH' AND active;
+    SELECT id INTO v_ltc_id FROM trading.assets WHERE symbol = 'LTC' AND active;
+    SELECT id INTO v_usdt_id FROM trading.assets WHERE symbol = 'USDT' AND active;
+    SELECT id INTO v_brl_id FROM trading.assets WHERE symbol = 'BRL' AND active;
 
     -- Insert instruments
     INSERT INTO trading.instruments (

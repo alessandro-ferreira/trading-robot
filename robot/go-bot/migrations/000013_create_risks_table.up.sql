@@ -16,4 +16,4 @@ ALTER TABLE trading.risk_pairs ADD CONSTRAINT fk_risk_pairs_exchange FOREIGN KEY
 ALTER TABLE trading.risk_pairs ADD CONSTRAINT fk_risk_pairs_instrument FOREIGN KEY (instrument_id) REFERENCES trading.instruments(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 -- Ensure one active risk configuration per pair per exchange
-CREATE UNIQUE INDEX idx_risk_pairs_unique ON trading.risk_pairs(exchange_id, instrument_id) WHERE active = TRUE;
+CREATE UNIQUE INDEX idx_risk_pairs_unique ON trading.risk_pairs(exchange_id, instrument_id) WHERE active;

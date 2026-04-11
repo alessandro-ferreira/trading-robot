@@ -19,7 +19,7 @@ type SignalGenerator struct {
 }
 
 // NewSignalGenerator creates a new SignalGenerator instance.
-func NewSignalGenerator(logger *slog.Logger, riskData repository.RiskPairData, strategyData repository.StrategyPair) (*SignalGenerator, error) {
+func NewSignalGenerator(logger *slog.Logger, riskData repository.RiskPair, strategyData repository.StrategyPair) (*SignalGenerator, error) {
 	// Map application config to strategy config
 	stratCfg := strategy.StrategyConfig{}
 

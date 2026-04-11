@@ -13,13 +13,13 @@ import (
 
 // Perform initial strategy warm-up and state hydration for all active strategy pairs.
 func (o *Orchestrator) strategyWarmup(ctx context.Context) error {
-	// Load active strategy pairs from database
-	pairs, err := o.repo.Strategies.GetActiveStrategyPairs(ctx, o.db)
+	// Load enabled strategy pairs from database
+	pairs, err := o.repo.Strategies.GetEnabledStrategyPairs(ctx, o.db)
 	if err != nil {
 		return fmt.Errorf("failed to load strategy pairs: %w", err)
 	}
 
-	// Initialize signal generators for each active strategy pair in parallel
+	// Initialize signal generators for each enabled strategy pair in parallel
 	var initWg sync.WaitGroup
 	for _, p := range pairs {
 		initWg.Add(1)

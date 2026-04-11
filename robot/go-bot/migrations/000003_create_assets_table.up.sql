@@ -10,4 +10,4 @@ CREATE TABLE IF NOT EXISTS trading.assets (
     active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-CREATE UNIQUE INDEX idx_assets_symbol_active ON trading.assets(symbol) WHERE active = TRUE;
+CREATE UNIQUE INDEX idx_assets_symbol_active ON trading.assets(symbol) WHERE active;

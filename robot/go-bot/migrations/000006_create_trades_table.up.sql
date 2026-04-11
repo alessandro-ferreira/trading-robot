@@ -30,4 +30,4 @@ ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_fee_asset FOREIGN KEY (fee_a
 CREATE INDEX idx_trades_order_id ON trading.trades(order_id);
 CREATE INDEX idx_trades_timestamp ON trading.trades(trade_timestamp DESC);
 CREATE INDEX idx_trades_active ON trading.trades(active);
-CREATE UNIQUE INDEX idx_trades_exchange_trade_id_active ON trading.trades(exchange_id, exchange_trade_id) WHERE active = TRUE;
+CREATE UNIQUE INDEX idx_trades_exchange_trade_id_active ON trading.trades(exchange_id, exchange_trade_id) WHERE active;

@@ -164,10 +164,14 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 		{
 			name: "Success Update",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				rows := pgxmock.NewRows([]string{"id"}).AddRow(pos.ID)
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
-						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
+						int64(1), int64(10), pos.Quantity,
 						pos.EntryPrice, pos.HighestPrice,
 						pos.StrategyState, DefaultUser,
 					).WillReturnRows(rows)
@@ -176,27 +180,44 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 		{
 			name: "Success Insert (Update fails with NoRows)",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
-						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
+						int64(1), int64(10), pos.Quantity,
 						pos.EntryPrice, pos.HighestPrice,
 						pos.StrategyState, DefaultUser,
 					).WillReturnError(pgx.ErrNoRows)
 
 				mockDB.ExpectExec("INSERT INTO trading.positions").
 					WithArgs(
-						pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
+						int64(1), int64(10), pos.Side, pos.Quantity,
 						pos.EntryPrice, pos.HighestPrice,
 						pos.StrategyState, DefaultUser,
 					).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			},
 		},
 		{
+			name: "Select Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnError(errors.New("select id error"))
+			},
+			expectedErrContains: "failed to resolve exchange and instrument IDs",
+		},
+		{
 			name: "Update Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
-						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
+						int64(1), int64(10), pos.Quantity,
 						pos.EntryPrice, pos.HighestPrice,
 						pos.StrategyState, DefaultUser,
 					).WillReturnError(errors.New("db update error"))
@@ -206,9 +227,13 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 		{
 			name: "Insert Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				mockDB.ExpectQuery("UPDATE trading.positions").
 					WithArgs(
-						pos.ExchangeName, pos.InstrumentSymbol, pos.Quantity,
+						int64(1), int64(10), pos.Quantity,
 						pos.EntryPrice, pos.HighestPrice,
 						pos.StrategyState, DefaultUser,
 					).
@@ -216,7 +241,7 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 
 				mockDB.ExpectExec("INSERT INTO trading.positions").
 					WithArgs(
-						pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
+						int64(1), int64(10), pos.Side, pos.Quantity,
 						pos.EntryPrice, pos.HighestPrice,
 						pos.StrategyState, DefaultUser,
 					).
@@ -251,17 +276,64 @@ func TestPgPositionsRepo_DeletePosition(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
 
-	t.Run("Success", func(t *testing.T) {
-		mockDB, err := pgxmock.NewPool()
-		require.NoError(t, err)
-		defer mockDB.Close()
+	testCases := []struct {
+		name                string
+		setupMock           func(mockDB pgxmock.PgxPoolIface)
+		expectedErrContains string
+	}{
+		{
+			name: "Success",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
 
-		mockDB.ExpectExec("UPDATE trading.positions").
-			WithArgs(pos.ExchangeName, pos.InstrumentSymbol, DefaultUser).
-			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+				mockDB.ExpectExec("UPDATE trading.positions").
+					WithArgs(int64(1), int64(10), DefaultUser).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+			},
+		},
+		{
+			name: "Select Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnError(errors.New("select id error"))
+			},
+			expectedErrContains: "failed to resolve exchange and instrument IDs",
+		},
+		{
+			name: "Update Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
 
-		err = repo.DeletePosition(context.Background(), mockDB, pos.ExchangeName, pos.InstrumentSymbol)
-		require.NoError(t, err)
-		require.NoError(t, mockDB.ExpectationsWereMet())
-	})
+				mockDB.ExpectExec("UPDATE trading.positions").
+					WithArgs(int64(1), int64(10), DefaultUser).
+					WillReturnError(errors.New("db update error"))
+			},
+			expectedErrContains: "failed to delete position",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDB, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tc.setupMock(mockDB)
+
+			err = repo.DeletePosition(context.Background(), mockDB, pos.ExchangeName, pos.InstrumentSymbol)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, mockDB.ExpectationsWereMet())
+		})
+	}
 }

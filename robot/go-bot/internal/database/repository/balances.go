@@ -51,9 +51,9 @@ func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]B
 			b.created_at,
 			b.updated_at
 		FROM trading.balances b
-		INNER JOIN trading.exchanges e ON b.exchange_id = e.id AND e.active = TRUE
-		INNER JOIN trading.assets a ON b.asset_id = a.id AND a.active = TRUE
-		WHERE b.active = TRUE
+		INNER JOIN trading.exchanges e ON e.id = b.exchange_id AND e.active
+		INNER JOIN trading.assets a ON a.id = b.asset_id AND a.active
+		WHERE b.active
 		ORDER BY e.name ASC, a.symbol ASC
 	`
 	rows, err := db.Query(ctx, query)
@@ -95,9 +95,9 @@ func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balan
 			updated_at = NOW(),
 			updated_by = $6
 		WHERE
-			active = TRUE
-			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE)
-			AND asset_id = (SELECT id FROM trading.assets WHERE symbol = $2 AND active = TRUE)
+			active
+			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $1 AND active)
+			AND asset_id = (SELECT id FROM trading.assets WHERE symbol = $2 AND active)
 		RETURNING id
 	`
 	var id int64
@@ -115,8 +115,8 @@ func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balan
 	insertQuery := `
 		INSERT INTO trading.balances (exchange_id, asset_id, free, used, total, created_at, created_by)
 		VALUES (
-			(SELECT id FROM trading.exchanges WHERE name = $1 AND active = TRUE),
-			(SELECT id FROM trading.assets WHERE symbol = $2 AND active = TRUE),
+			(SELECT id FROM trading.exchanges WHERE name = $1 AND active),
+			(SELECT id FROM trading.assets WHERE symbol = $2 AND active),
 			$3, $4, $5, NOW(), $6
 		)
 		RETURNING id

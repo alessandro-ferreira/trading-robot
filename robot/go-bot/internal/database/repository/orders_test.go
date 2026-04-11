@@ -48,10 +48,14 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 			name:          "Success",
 			orderModifier: func(o OrderData) OrderData { return o },
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(order.ExchangeName, order.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(1))
 				mockDB.ExpectQuery("INSERT INTO trading.orders").
 					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, order.ExchangeName, order.InstrumentSymbol,
+						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
 						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
 						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
 						DefaultUser,
@@ -70,10 +74,14 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 				return o
 			},
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(order.ExchangeName, order.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(2))
 				mockDB.ExpectQuery("INSERT INTO trading.orders").
 					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, order.ExchangeName, order.InstrumentSymbol,
+						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
 						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
 						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
 						DefaultUser,
@@ -89,10 +97,14 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 				return o
 			},
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(order.ExchangeName, order.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(3))
 				mockDB.ExpectQuery("INSERT INTO trading.orders").
 					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, order.ExchangeName, order.InstrumentSymbol,
+						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
 						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
 						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
 						DefaultUser,
@@ -101,12 +113,26 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 			expectedID: 3,
 		},
 		{
-			name:          "DB Error",
+			name:          "DB Select Error",
 			orderModifier: func(o OrderData) OrderData { return o },
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(order.ExchangeName, order.InstrumentSymbol).
+					WillReturnError(errors.New("db query error"))
+			},
+			expectedErrContains: "failed to resolve exchange and instrument IDs",
+		},
+		{
+			name:          "DB Insert Error",
+			orderModifier: func(o OrderData) OrderData { return o },
+			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
+				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(order.ExchangeName, order.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+
 				mockDB.ExpectQuery("INSERT INTO trading.orders").
 					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, order.ExchangeName, order.InstrumentSymbol,
+						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
 						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
 						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
 						DefaultUser,

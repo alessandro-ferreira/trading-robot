@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 )
 
@@ -32,10 +33,8 @@ func (r *pgMarketDataRepo) GetMarketDataTicks(ctx context.Context, db DBExecutor
 		FROM (
 			SELECT t.tick_unix_at, t.price
 			FROM trading.market_data_ticks t
-			INNER JOIN trading.exchanges e ON t.exchange_id = e.id
-			INNER JOIN trading.instruments i ON t.instrument_id = i.id AND i.exchange_id = e.id
-			WHERE e.name = $1 AND e.active = TRUE
-			  AND i.name = $2 AND i.active = TRUE
+			INNER JOIN trading.exchanges e ON e.id = t.exchange_id AND e.name = $1 AND e.active
+			INNER JOIN trading.instruments i ON i.id = t.instrument_id AND i.exchange_id = t.exchange_id AND i.name = $2 AND i.active
 			ORDER BY t.tick_unix_at DESC
 			LIMIT $3
 		) sub
@@ -61,35 +60,40 @@ func (r *pgMarketDataRepo) GetMarketDataTicks(ctx context.Context, db DBExecutor
 }
 
 func (r *pgMarketDataRepo) InsertTick(ctx context.Context, db DBExecutor, tick MarketDataTick) error {
-	// Check for existence first to avoid sequence increment and unnecessary overwrites
-	checkQuery := `
-		SELECT 1
-		FROM trading.market_data_ticks t
-		INNER JOIN trading.exchanges e ON t.exchange_id = e.id
-		INNER JOIN trading.instruments i ON t.instrument_id = i.id
-		WHERE e.name = $1 AND i.name = $2 AND t.tick_unix_at = $3
-		  AND e.active = TRUE AND i.active = TRUE
+	// Select exchange_id and instrument_id and check for existence
+	selectQuery := `
+		SELECT i.exchange_id, i.id, t.tick_unix_at
+		FROM trading.instruments i
+		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
+		LEFT JOIN trading.market_data_ticks t ON t.exchange_id = i.exchange_id AND t.instrument_id = i.id AND t.tick_unix_at = $3
+		WHERE i.name = $2 AND i.active
 	`
-	var exists int
-	err := db.QueryRow(ctx, checkQuery, tick.ExchangeName, tick.Symbol, tick.TickUnixAt).Scan(&exists)
-	if err == nil {
-		return nil // Tick already exists at this timestamp
+
+	var exchangeID, instrumentID int64
+	var existingTick sql.NullInt64
+
+	err := db.QueryRow(ctx, selectQuery, tick.ExchangeName, tick.Symbol, tick.TickUnixAt).Scan(
+		&exchangeID,
+		&instrumentID,
+		&existingTick,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve exchange and instrument IDs for market tick: %w", err)
 	}
 
+	if existingTick.Valid {
+		return nil // Tick already exists, skip
+	}
+
+	// Insert new tick
 	insertQuery := `
 		INSERT INTO trading.market_data_ticks (exchange_id, instrument_id, tick_unix_at, price)
-		SELECT i.exchange_id, i.id, $3, $4
-		FROM trading.instruments i
-		INNER JOIN trading.exchanges e ON i.exchange_id = e.id
-		WHERE e.name = $1 AND i.name = $2
-		  AND e.active = TRUE AND i.active = TRUE
+	 	VALUES ($1, $2, $3, $4)
 	`
+	_, err = db.Exec(ctx, insertQuery, exchangeID, instrumentID, tick.TickUnixAt, tick.Price)
+	if err != nil {
+		return fmt.Errorf("failed to insert market data tick: %w", err)
+	}
 
-	_, err = db.Exec(ctx, insertQuery,
-		tick.ExchangeName,
-		tick.Symbol,
-		tick.TickUnixAt,
-		tick.Price,
-	)
-	return err
+	return nil
 }

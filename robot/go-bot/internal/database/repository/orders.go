@@ -90,9 +90,9 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeOrde
 			o.created_at,
 			o.updated_at
 		FROM trading.orders o
-		INNER JOIN trading.exchanges e ON o.exchange_id = e.id AND e.name = $2 AND e.active = TRUE
-		INNER JOIN trading.instruments i ON o.instrument_id = i.id AND i.active = TRUE
-		WHERE o.exchange_order_id = $1 AND o.active = TRUE
+		INNER JOIN trading.exchanges e ON e.id = o.exchange_id AND e.name = $2 AND e.active
+		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id AND i.active
+		WHERE o.exchange_order_id = $1 AND o.active
 	`
 
 	var order OrderData
@@ -146,9 +146,9 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 			o.created_at,
 			o.updated_at
 		FROM trading.orders o
-		INNER JOIN trading.exchanges e ON o.exchange_id = e.id AND e.name = $1 AND e.active = TRUE
-		INNER JOIN trading.instruments i ON o.instrument_id = i.id AND ($2 = '' OR i.name = $2) AND i.active = TRUE
-		WHERE o.active = TRUE
+		INNER JOIN trading.exchanges e ON o.exchange_id = e.id AND e.name = $1 AND e.active
+		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id AND ($2 = '' OR i.name = $2) AND i.active
+		WHERE o.active
 		ORDER BY o.created_at DESC
 		LIMIT $3
 	`
@@ -192,7 +192,24 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 
 // CreateOrder inserts a new order into the database.
 func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error) {
-	query := `
+	// Select exchange_id and instrument_id
+	selectQuery := `
+		SELECT i.exchange_id, i.id
+		FROM trading.instruments i
+		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
+		WHERE i.name = $2 AND i.active
+	`
+	var exchangeID, instrumentID int64
+	err := db.QueryRow(ctx, selectQuery, order.ExchangeName, order.InstrumentSymbol).Scan(
+		&exchangeID,
+		&instrumentID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve exchange and instrument IDs for orders: %w", err)
+	}
+
+	// Insert the order
+	insertQuery := `
 		INSERT INTO trading.orders (
 			exchange_order_id,
 			client_order_id,
@@ -212,20 +229,17 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 			created_at,
 			created_by
 		) VALUES (
-			$1, $2,
-			(SELECT id FROM trading.exchanges WHERE name = $3 AND active = TRUE),
-			(SELECT id FROM trading.instruments WHERE name = $4 AND active = TRUE),
-			$5, $6::trading.order_type, $7, $8, $9, $10, $11, $12, $13::trading.order_status, $14, $15, NOW(), $16
+			$1, $2, $3, $4, $5, $6::trading.order_type, $7, $8, $9, $10, $11, $12, $13::trading.order_status, $14, $15, NOW(), $16
 		)
 		RETURNING id
 	`
 
 	var id int64
-	err := db.QueryRow(ctx, query,
+	err = db.QueryRow(ctx, insertQuery,
 		order.ExchangeOrderID,
 		order.ClientOrderID,
-		order.ExchangeName,
-		order.InstrumentSymbol,
+		exchangeID,
+		instrumentID,
 		order.Side,
 		order.OrderType,
 		order.Price,
@@ -263,7 +277,7 @@ func (r *pgOrdersRepo) UpdateOrder(ctx context.Context, db DBExecutor, order Ord
 			updated_by = $8
 		WHERE
 			exchange_order_id = $9
-			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $10 AND active = TRUE)
+			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $10 AND active)
 		RETURNING id
 	`
 

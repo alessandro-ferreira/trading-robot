@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS trading.strategy_pairs (
     exchange_id BIGINT NOT NULL,
     instrument_id BIGINT NOT NULL,
     strategy_type trading.strategy_type NOT NULL,
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by TEXT,
     updated_at TIMESTAMPTZ,
@@ -23,12 +24,14 @@ CREATE TABLE IF NOT EXISTS trading.strategy_pairs (
 ALTER TABLE trading.strategy_pairs ADD CONSTRAINT fk_strategy_pairs_exchange FOREIGN KEY (exchange_id) REFERENCES trading.exchanges(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 ALTER TABLE trading.strategy_pairs ADD CONSTRAINT fk_strategy_pairs_instrument FOREIGN KEY (instrument_id) REFERENCES trading.instruments(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
--- Ensure an instrument has only one active strategy record per exchange
-CREATE UNIQUE INDEX idx_strategy_pairs_instrument_active ON trading.strategy_pairs(exchange_id, instrument_id) WHERE active = TRUE;
+-- Ensure we have only one active strategy type and only one enabled strategy per exchange/instrument pair
+CREATE UNIQUE INDEX idx_strategy_pairs_exchange_instrument_type_active ON trading.strategy_pairs(exchange_id, instrument_id, strategy_type) WHERE active;
+CREATE UNIQUE INDEX idx_strategy_pairs_exchange_instrument_enabled ON trading.strategy_pairs(exchange_id, instrument_id) WHERE is_enabled AND active;
 
 -- Table to store momentum-specific parameters linked directly to a strategy pair
 CREATE TABLE IF NOT EXISTS trading.strategy_momentum (
     id BIGSERIAL PRIMARY KEY,
+    label TEXT NOT NULL,
     strategy_pair_id BIGINT NOT NULL,
     strategy_type trading.strategy_type NOT NULL,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -48,8 +51,9 @@ CREATE TABLE IF NOT EXISTS trading.strategy_momentum (
 
 ALTER TABLE trading.strategy_momentum ADD CONSTRAINT fk_strategy_momentum_pair FOREIGN KEY (strategy_pair_id) REFERENCES trading.strategy_pairs(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
--- Ensure only one active momentum strategy per strategy pair
-CREATE UNIQUE INDEX idx_strategy_momentum_pair_enabled_active ON trading.strategy_momentum(strategy_pair_id) WHERE is_enabled = TRUE AND active = TRUE;
+-- Ensure we have only one enabled configuration and unique labels per strategy pair and type
+CREATE UNIQUE INDEX idx_strategy_momentum_pair_type_label ON trading.strategy_momentum(strategy_pair_id, strategy_type, label) WHERE active;
+CREATE UNIQUE INDEX idx_strategy_momentum_pair_type_enabled ON trading.strategy_momentum(strategy_pair_id, strategy_type) WHERE is_enabled AND active;
 
 -- Add constraints to ensure consistency of strategy parameters based on the strategy type
 ALTER TABLE trading.strategy_momentum ADD CONSTRAINT check_momentum_type CHECK (strategy_type IN ('momentum_profit', 'momentum_trailing'));
