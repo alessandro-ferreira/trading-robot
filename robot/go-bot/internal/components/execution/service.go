@@ -36,11 +36,11 @@ func NewService(logger *slog.Logger, db *database.DB, client *GatewayClient, rep
 }
 
 // GetTicker fetches the current ticker for a given symbol on a specific exchange.
-func (s *Service) GetTicker(ctx context.Context, symbol, exchangeName string) (*pb.TickerResponse, error) {
+func (s *Service) GetTicker(ctx context.Context, exchangeName, symbol string) (*pb.TickerResponse, error) {
 	s.logger.Info("Fetching ticker from exchange", "exchange", exchangeName, "symbol", symbol)
 
 	// Fetch from Exchange via gRPC
-	resp, err := s.client.GetTicker(ctx, symbol, exchangeName)
+	resp, err := s.client.GetTicker(ctx, exchangeName, symbol)
 	if err != nil {
 		s.logger.Error("Failed to fetch ticker from gateway", "error", err, "exchange", exchangeName, "symbol", symbol)
 		return nil, fmt.Errorf("failed to fetch ticker from gateway: %w", err)
@@ -64,68 +64,62 @@ func (s *Service) GetTicker(ctx context.Context, symbol, exchangeName string) (*
 }
 
 // GetBalance retrieves the balance for a specific asset on a specific exchange.
-func (s *Service) GetBalance(ctx context.Context, exchangeName, assetSymbol string) (*repository.BalanceData, error) {
-	s.logger.Info("Fetching balance from exchange", "exchange", exchangeName, "asset", assetSymbol)
+func (s *Service) GetBalance(ctx context.Context, exchangeName, assetSymbol string) (*pb.BalanceResponse, error) {
+	s.logger.Info("Fetching all balances from exchange", "exchange", exchangeName)
 
-	// Fetch from Exchange via gRPC
-	resp, err := s.client.GetBalance(ctx, assetSymbol, exchangeName)
+	// Fetch from Exchange via gRPC. We pass the assetSymbol but the gateway is now
+	// configured to return all balances regardless of the specific filter.
+	resp, err := s.client.GetBalance(ctx, exchangeName, assetSymbol)
 	if err != nil {
-		s.logger.Error("Failed to fetch balance from gateway", "error", err, "exchange", exchangeName, "asset", assetSymbol)
+		s.logger.Error("Failed to fetch balances from gateway", "error", err, "exchange", exchangeName)
 		return nil, fmt.Errorf("failed to fetch balance from gateway: %w", err)
 	}
 
-	// Extract values (default to 0 if missing)
-	free := resp.Free[assetSymbol]
-	used := resp.Used[assetSymbol]
-	total := resp.Total[assetSymbol]
+	// Iterate through all assets returned by the exchange to update the database
+	for _, b := range resp.Balances {
+		symbol := b.Asset
+		free := b.Free
+		used := b.Used
+		total := b.Total
 
-	// Validate that the numbers add up, accounting for float precision.
-	const epsilon = 1e-9
-	if math.Abs(total-(free+used)) > epsilon {
-		s.logger.Warn(
-			"Balance inconsistency detected from exchange",
-			"asset", assetSymbol,
-			"free", free,
-			"used", used,
-			"total", total,
-			"discrepancy", total-(free+used),
-		)
+		// Validate that the numbers add up, accounting for float precision.
+		const epsilon = 1e-9
+		if math.Abs(total-(free+used)) > epsilon {
+			s.logger.Warn("Balance inconsistency detected from exchange",
+				"asset", symbol, "free", free, "used", used, "total", total, "discrepancy", total-(free+used))
+		}
+
+		balance := repository.BalanceData{
+			ExchangeName: exchangeName,
+			AssetSymbol:  symbol,
+			Free:         free,
+			Used:         used,
+			Total:        total,
+		}
+
+		id, err := s.repo.Balances.UpsertBalance(ctx, s.db, balance)
+		if err != nil {
+			s.logger.Error("Failed to persist balance", "error", err, "exchange", exchangeName, "asset", symbol)
+			continue
+		}
+		balance.ID = id
 	}
 
-	s.logger.Info("Balance received", "asset", assetSymbol, "free", free, "used", used, "total", total)
-
-	// Persist to Database
-	balance := repository.BalanceData{
-		ExchangeName: exchangeName,
-		AssetSymbol:  assetSymbol,
-		Free:         free,
-		Used:         used,
-		Total:        total,
-	}
-	id, err := s.repo.Balances.UpsertBalance(ctx, s.db, balance)
-	if err != nil {
-		s.logger.Error("Failed to persist balance", "error", err, "exchange", exchangeName, "asset", assetSymbol)
-		return nil, fmt.Errorf("failed to persist balance: %w", err)
-	}
-	balance.ID = id
-
-	s.logger.Info("Balance persisted successfully", "internal_id", id, "exchange", exchangeName, "asset", assetSymbol, "total", total)
-
-	return &balance, nil
+	return resp, nil
 }
 
 // CreateOrder places a new order on the exchange and persists it to the database.
-func (s *Service) CreateOrder(ctx context.Context, symbol, side, orderType string, amount, price float64, exchangeName string) (*pb.OrderResponse, error) {
+func (s *Service) CreateOrder(ctx context.Context, exchangeName, symbol, side, orderType string, amount, price float64) (*pb.OrderResponse, error) {
 	s.logger.Info("Creating order", "exchange", exchangeName, "symbol", symbol, "side", side, "type", orderType, "amount", amount, "price", price)
 
 	// Create order on exchange
 	req := &pb.CreateOrderRequest{
+		Exchange: exchangeName,
 		Symbol:   symbol,
 		Side:     side,
 		Type:     orderType,
 		Amount:   amount,
 		Price:    price,
-		Exchange: exchangeName,
 	}
 
 	resp, err := s.client.CreateOrder(ctx, req)
@@ -165,11 +159,11 @@ func (s *Service) CreateOrder(ctx context.Context, symbol, side, orderType strin
 }
 
 // CancelOrder cancels an existing order on the exchange and updates the database.
-func (s *Service) CancelOrder(ctx context.Context, exchangeOrderID, symbol, exchangeName string) error {
+func (s *Service) CancelOrder(ctx context.Context, exchangeName, symbol, exchangeOrderID string) error {
 	s.logger.Info("Canceling order", "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 
 	// Cancel on Exchange
-	_, err := s.client.CancelOrder(ctx, exchangeOrderID, symbol, exchangeName)
+	_, err := s.client.CancelOrder(ctx, exchangeName, symbol, exchangeOrderID)
 	if err != nil {
 		s.logger.Error("Failed to cancel order on gateway", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 		return fmt.Errorf("failed to cancel order on gateway: %w", err)
@@ -177,7 +171,7 @@ func (s *Service) CancelOrder(ctx context.Context, exchangeOrderID, symbol, exch
 
 	// Fetch latest order state from Exchange to ensure we have correct fill amounts
 	//    Cancellation might result in a final fill or partial fill state.
-	orderResp, err := s.client.GetOrder(ctx, exchangeOrderID, symbol, exchangeName)
+	orderResp, err := s.client.GetOrder(ctx, exchangeName, symbol, exchangeOrderID)
 	if err != nil {
 		s.logger.Error("Failed to fetch order details after cancellation", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 		return fmt.Errorf("failed to fetch order details after cancellation: %w", err)
@@ -208,11 +202,11 @@ func (s *Service) CancelOrder(ctx context.Context, exchangeOrderID, symbol, exch
 }
 
 // GetOrder fetches the latest order details from the exchange and updates the database.
-func (s *Service) GetOrder(ctx context.Context, exchangeOrderID, symbol, exchangeName string) (*pb.OrderResponse, error) {
+func (s *Service) GetOrder(ctx context.Context, exchangeName, symbol, exchangeOrderID string) (*pb.OrderResponse, error) {
 	s.logger.Info("Fetching order from exchange", "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 
 	// Fetch latest order state from Exchange
-	orderResp, err := s.client.GetOrder(ctx, exchangeOrderID, symbol, exchangeName)
+	orderResp, err := s.client.GetOrder(ctx, exchangeName, symbol, exchangeOrderID)
 	if err != nil {
 		s.logger.Error("Failed to fetch order from gateway", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 		return nil, fmt.Errorf("failed to fetch order from gateway: %w", err)
@@ -243,10 +237,10 @@ func (s *Service) GetOrder(ctx context.Context, exchangeOrderID, symbol, exchang
 }
 
 // GetOpenOrders fetches all open orders for a symbol from the exchange and updates the database.
-func (s *Service) GetOpenOrders(ctx context.Context, symbol, exchangeName string) (*pb.OpenOrdersResponse, error) {
+func (s *Service) GetOpenOrders(ctx context.Context, exchangeName, symbol string) (*pb.OpenOrdersResponse, error) {
 	s.logger.Info("Fetching open orders from exchange", "exchange", exchangeName, "symbol", symbol)
 
-	resp, err := s.client.GetOpenOrders(ctx, symbol, exchangeName)
+	resp, err := s.client.GetOpenOrders(ctx, exchangeName, symbol)
 	if err != nil {
 		s.logger.Error("Failed to fetch open orders from gateway", "error", err, "exchange", exchangeName, "symbol", symbol)
 		return nil, fmt.Errorf("failed to fetch open orders from gateway: %w", err)

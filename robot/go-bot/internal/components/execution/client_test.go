@@ -268,7 +268,7 @@ func TestGatewayClient_CancelOrder(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.CancelOrder(context.Background(), "123", "BTC/USDT", "binance")
+			resp, err := client.CancelOrder(context.Background(), "binance", "BTC/USDT", "123")
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -315,7 +315,7 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.GetOrder(context.Background(), "123", "BTC/USDT", "binance")
+			resp, err := client.GetOrder(context.Background(), "binance", "BTC/USDT", "123")
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -365,7 +365,7 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.GetOpenOrders(context.Background(), "BTC/USDT", "binance")
+			resp, err := client.GetOpenOrders(context.Background(), "binance", "BTC/USDT")
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -461,7 +461,7 @@ func TestGatewayClient_GetTicker(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.GetTicker(context.Background(), "BTC/USDT", "binance")
+			resp, err := client.GetTicker(context.Background(), "binance", "BTC/USDT")
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -490,8 +490,7 @@ func TestGatewayClient_GetBalance(t *testing.T) {
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
 				s.balanceResponse = &pb.BalanceResponse{
-					Total: map[string]float64{"USDT": 1000.00},
-					Free:  map[string]float64{"USDT": 500.00},
+					Balances: []*pb.BalanceObject{{Asset: "USDT", Free: 500.00, Total: 1000.00}},
 				}
 			},
 			expectedTotal: 1000.00,
@@ -516,7 +515,7 @@ func TestGatewayClient_GetBalance(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.GetBalance(context.Background(), "USDT", "binance")
+			resp, err := client.GetBalance(context.Background(), "binance", "USDT")
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -525,8 +524,8 @@ func TestGatewayClient_GetBalance(t *testing.T) {
 				assert.Equal(t, tc.errorCode, st.Code())
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tc.expectedTotal, resp.Total["USDT"])
-				assert.Equal(t, tc.expectedFree, resp.Free["USDT"])
+				assert.Equal(t, tc.expectedTotal, resp.Balances[0].Total)
+				assert.Equal(t, tc.expectedFree, resp.Balances[0].Free)
 			}
 		})
 	}

@@ -19,10 +19,15 @@ func TestPortfolio_UpdatePosition(t *testing.T) {
 	mockRepo := &MockPositionsRepo{}
 	container := &repository.Container{
 		Positions: mockRepo,
+		Balances:  &MockBalancesRepo{},
 	}
 
 	t.Run("Buy increases quantity and decreases cash", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 1000.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 1000.0}
+		p.mu.Unlock()
+
 		persisted := false
 		mockRepo.UpsertPositionFn = func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error {
 			persisted = true
@@ -31,7 +36,7 @@ func TestPortfolio_UpdatePosition(t *testing.T) {
 
 		err := p.UpdatePosition(context.Background(), "binance", "BTC/USDT", 0.1, 5000.0)
 		require.NoError(t, err)
-		assert.Equal(t, 500.0, p.GetCashBalance())
+		assert.Equal(t, 500.0, p.GetCashBalance("binance", "USDT"))
 		assert.True(t, persisted)
 
 		pos, _ := p.GetPosition("binance", "BTC/USDT")
@@ -40,7 +45,11 @@ func TestPortfolio_UpdatePosition(t *testing.T) {
 	})
 
 	t.Run("Sell decreases quantity and increases cash", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 0.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 0.0}
+		p.mu.Unlock()
+
 		// Setup initial position
 		p.mu.Lock()
 		p.positions["binance|BTC/USDT"] = &Position{
@@ -54,13 +63,17 @@ func TestPortfolio_UpdatePosition(t *testing.T) {
 
 		err := p.UpdatePosition(context.Background(), "binance", "BTC/USDT", -0.5, 120.0)
 		require.NoError(t, err)
-		assert.Equal(t, 60.0, p.GetCashBalance())
+		assert.Equal(t, 60.0, p.GetCashBalance("binance", "USDT"))
 		pos, _ := p.GetPosition("binance", "BTC/USDT")
 		assert.Equal(t, 0.5, pos.Quantity)
 	})
 
 	t.Run("Full sell removes position from memory and deletes from DB", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 0.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 0.0}
+		p.mu.Unlock()
+
 		p.mu.Lock()
 		p.positions["binance|BTC/USDT"] = &Position{
 			Exchange: "binance", Symbol: "BTC/USDT", Quantity: 1.0, EntryPrice: 100.0,
@@ -76,16 +89,20 @@ func TestPortfolio_UpdatePosition(t *testing.T) {
 		err := p.UpdatePosition(context.Background(), "binance", "BTC/USDT", -1.0, 110.0)
 		require.NoError(t, err)
 		assert.True(t, deleted)
-		assert.Equal(t, 110.0, p.GetCashBalance())
+		assert.Equal(t, 110.0, p.GetCashBalance("binance", "USDT"))
 		_, exists := p.GetPosition("binance", "BTC/USDT")
 		assert.False(t, exists)
 	})
 
 	t.Run("Insufficient funds returns error", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 10.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 10.0}
+		p.mu.Unlock()
+
 		err := p.UpdatePosition(context.Background(), "binance", "BTC/USDT", 1.0, 100.0)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "insufficient funds")
+		assert.Contains(t, err.Error(), "insufficient USDT on binance")
 	})
 }
 
@@ -97,15 +114,23 @@ func TestPortfolio_ApplyExecution(t *testing.T) {
 	}
 
 	t.Run("Skips non-closed orders", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 1000.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 1000.0}
+		p.mu.Unlock()
+
 		order := &pb.OrderResponse{Status: "open", Side: "buy", Filled: 1.0}
 		err := p.ApplyExecution(context.Background(), "binance", order)
 		assert.NoError(t, err)
-		assert.Equal(t, 1000.0, p.GetCashBalance())
+		assert.Equal(t, 1000.0, p.GetCashBalance("binance", "USDT"))
 	})
 
 	t.Run("Corrects side for buy", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 1000.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 1000.0}
+		p.mu.Unlock()
+
 		order := &pb.OrderResponse{
 			Status: "closed",
 			Side:   "buy",
@@ -115,17 +140,21 @@ func TestPortfolio_ApplyExecution(t *testing.T) {
 		}
 		err := p.ApplyExecution(context.Background(), "binance", order)
 		require.NoError(t, err)
-		assert.Equal(t, 500.0, p.GetCashBalance())
+		assert.Equal(t, 500.0, p.GetCashBalance("binance", "USDT"))
 	})
 
 	t.Run("Uses average price if available", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container, 1000.0)
+		p := NewPortfolio(logger, nil, container)
+		p.mu.Lock()
+		p.cashBalances["binance|USDT"] = &CashBalance{Exchange: "binance", Asset: "USDT", Free: 1000.0}
+		p.mu.Unlock()
+
 		order := &pb.OrderResponse{
 			Status: "closed", Side: "buy", Symbol: "BTC/USDT",
 			Filled: 1.0, Price: 100.0, Average: 105.0,
 		}
 		err := p.ApplyExecution(context.Background(), "binance", order)
 		require.NoError(t, err)
-		assert.Equal(t, 895.0, p.GetCashBalance()) // 1000 - 105
+		assert.Equal(t, 895.0, p.GetCashBalance("binance", "USDT")) // 1000 - 105
 	})
 }

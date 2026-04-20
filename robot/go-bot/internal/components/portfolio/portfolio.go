@@ -4,12 +4,22 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
 )
+
+// CashBalance represents the available liquidity for a specific asset on an exchange.
+type CashBalance struct {
+	Exchange string
+	Asset    string
+	Free     float64
+	Used     float64
+	Total    float64
+}
 
 // Position represents the current holding of a specific asset.
 type Position struct {
@@ -31,21 +41,21 @@ type Portfolio struct {
 	db     *database.DB
 	repo   *repository.Container
 
-	// cashBalance tracks the quote currency (e.g., USDT) available for trading.
-	cashBalance float64
+	// cashBalances tracks liquid assets per exchange and per currency using key "exchange|asset".
+	cashBalances map[string]*CashBalance
 
-	// positions maps symbol (e.g., "BTC/USD") to the current Position.
+	// positions maps "exchange|symbol" to the current Position.
 	positions map[string]*Position
 }
 
 // NewPortfolio creates a new Portfolio instance.
-func NewPortfolio(logger *slog.Logger, db *database.DB, repo *repository.Container, initialCash float64) *Portfolio {
+func NewPortfolio(logger *slog.Logger, db *database.DB, repo *repository.Container) *Portfolio {
 	return &Portfolio{
-		logger:      logger,
-		db:          db,
-		repo:        repo,
-		cashBalance: initialCash,
-		positions:   make(map[string]*Position),
+		logger:       logger,
+		db:           db,
+		repo:         repo,
+		cashBalances: make(map[string]*CashBalance),
+		positions:    make(map[string]*Position),
 	}
 }
 
@@ -55,11 +65,31 @@ func (p *Portfolio) LoadState(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	// Hydrate liquid cash balances
+	balances, err := p.repo.Balances.GetAllBalances(ctx, p.db)
+	if err != nil {
+		return fmt.Errorf("failed to load balances from repository: %w", err)
+	}
+
+	p.cashBalances = make(map[string]*CashBalance)
+	for _, b := range balances {
+		key := makeKey(b.ExchangeName, b.AssetSymbol)
+		p.cashBalances[key] = &CashBalance{
+			Exchange: b.ExchangeName,
+			Asset:    b.AssetSymbol,
+			Free:     b.Free,
+			Used:     b.Used,
+			Total:    b.Total,
+		}
+	}
+
+	// Hydrate open positions
 	positions, err := p.repo.Positions.GetOpenPositions(ctx, p.db)
 	if err != nil {
 		return fmt.Errorf("failed to load positions from repository: %w", err)
 	}
 
+	p.positions = make(map[string]*Position)
 	for _, posData := range positions {
 		key := makeKey(posData.ExchangeName, posData.InstrumentSymbol)
 		p.positions[key] = &Position{
@@ -77,6 +107,15 @@ func (p *Portfolio) LoadState(ctx context.Context) error {
 // makeKey creates a unique key for the positions map.
 func makeKey(exchange, symbol string) string {
 	return fmt.Sprintf("%s|%s", exchange, symbol)
+}
+
+// splitSymbol extracts base and quote assets from a symbol (e.g., "BTC/USDT" -> "BTC", "USDT").
+func splitSymbol(symbol string) (string, string) {
+	parts := strings.Split(symbol, "/")
+	if len(parts) != 2 {
+		return symbol, ""
+	}
+	return parts[0], parts[1]
 }
 
 func toState(s string) strategy.StrategyState {

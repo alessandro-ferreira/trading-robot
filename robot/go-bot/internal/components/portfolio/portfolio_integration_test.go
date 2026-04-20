@@ -48,8 +48,11 @@ func setupIntegrationTest(t *testing.T) (*Portfolio, *repository.Container, *dat
 	require.NoError(t, err, "Failed to ping database")
 
 	repoContainer := repository.New()
-	// Initialize portfolio with some cash
-	p := NewPortfolio(slog.Default(), db, repoContainer, 100000.0)
+	p := NewPortfolio(slog.Default(), db, repoContainer)
+
+	p.mu.Lock()
+	p.cashBalances["dummy|USDT"] = &CashBalance{Exchange: "dummy", Asset: "USDT", Free: 100000.0}
+	p.mu.Unlock()
 
 	cleanup := func() {
 		cancel()

@@ -59,10 +59,8 @@ func setupOrchestratorIntegrationTest(t *testing.T, maxOpenPositions int) (*Orch
 
 	// Initialize Components
 	repoContainer := repository.New()
+	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer)
 	execSvc := execution.NewService(slog.Default(), db, client, repoContainer)
-
-	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer, 10000.0)
-	require.NoError(t, pf.LoadState(ctx), "Failed to load portfolio state")
 
 	// Define a test-specific configuration
 	cfg := &config.Config{

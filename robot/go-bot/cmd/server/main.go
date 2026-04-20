@@ -70,24 +70,21 @@ func main() {
 	defer gatewayClient.Close()
 	slog.Info("Connected to python-gateway successfully")
 
-	// --- Service Initialization ---
 	repoContainer := repository.New()
 
+	// Initialize portfolio
+	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer)
+	slog.Info("Portfolio initialized")
+
+	// Initialize execution service
 	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
 	slog.Info("Execution service initialized")
-
-	// Initialize Portfolio and load existing positions from DB
-	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer, 100000.0) // Initial cash placeholder
-	if err := pf.LoadState(ctx); err != nil {
-		slog.Error("Failed to load portfolio state", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("Portfolio state loaded successfully")
 
 	// --- Background Tasks ---
 	bgManager := background.NewManager(slog.Default())
 
 	setupHealthMonitor(cfg, execService, bgManager)
+	setupReconciliation(cfg, execService, pf, bgManager)
 
 	bgManager.Start(ctx)
 

@@ -21,21 +21,31 @@ func (p *Portfolio) GetPosition(exchange, symbol string) (*Position, bool) {
 	return &posCopy, true
 }
 
-// GetCashBalance returns the current available cash balance.
-func (p *Portfolio) GetCashBalance() float64 {
+// GetCashBalance returns the available cash balance for a specific exchange and asset.
+func (p *Portfolio) GetCashBalance(exchange, asset string) float64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.cashBalance
+	key := makeKey(exchange, asset)
+	if bal, ok := p.cashBalances[key]; ok {
+		return bal.Free
+	}
+	return 0
 }
 
-// GetTotalValue calculates the total equity of the portfolio.
-func (p *Portfolio) GetTotalValue() float64 {
+// GetTotalValue calculates the total equity of the portfolio grouped by quote currency.
+func (p *Portfolio) GetTotalValue() map[string]float64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	total := p.cashBalance
-	for _, pos := range p.positions {
-		total += pos.CurrentPrice * pos.Quantity
+	totals := make(map[string]float64)
+	for _, bal := range p.cashBalances {
+		totals[bal.Asset] += bal.Free
 	}
-	return total
+	for _, pos := range p.positions {
+		_, quote := splitSymbol(pos.Symbol)
+		if quote != "" {
+			totals[quote] += pos.CurrentPrice * pos.Quantity
+		}
+	}
+	return totals
 }

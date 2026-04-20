@@ -47,11 +47,22 @@ func (p *Portfolio) UpdatePosition(ctx context.Context, exchange, symbol string,
 
 	if quantity > 0 { // BUY
 		cost := quantity * price
-		if p.cashBalance < cost {
-			return fmt.Errorf("insufficient funds: required %.2f, available %.2f", cost, p.cashBalance)
+		_, quote := splitSymbol(symbol)
+		if quote == "" {
+			return fmt.Errorf("invalid symbol format for quote currency: %s", symbol)
 		}
 
-		p.cashBalance -= cost
+		cashKey := makeKey(exchange, quote)
+		bal, ok := p.cashBalances[cashKey]
+		if !ok || bal.Free < cost {
+			available := 0.0
+			if ok {
+				available = bal.Free
+			}
+			return fmt.Errorf("insufficient %s on %s: required %.2f, available %.2f", quote, exchange, cost, available)
+		}
+
+		bal.Free -= cost
 
 		if !exists {
 			pos = &Position{
@@ -88,7 +99,19 @@ func (p *Portfolio) UpdatePosition(ctx context.Context, exchange, symbol string,
 		}
 
 		revenue := sellQuantity * price
-		p.cashBalance += revenue
+		_, quote := splitSymbol(symbol)
+		cashKey := makeKey(exchange, quote)
+		if bal, ok := p.cashBalances[cashKey]; ok {
+			bal.Free += revenue
+		} else {
+			p.cashBalances[cashKey] = &CashBalance{
+				Exchange: exchange,
+				Asset:    quote,
+				Free:     revenue,
+				Total:    revenue,
+			}
+		}
+
 		pos.Quantity -= sellQuantity
 		pos.CurrentPrice = price
 
@@ -122,6 +145,11 @@ func (p *Portfolio) UpdatePosition(ctx context.Context, exchange, symbol string,
 		p.logger.Error("Failed to persist portfolio state", "error", err)
 	}
 
-	p.logger.Info("Portfolio updated", "exchange", exchange, "symbol", symbol, "quantity", quantity, "price", price, "cash", p.cashBalance)
+	_, quote := splitSymbol(symbol)
+	remaining := 0.0
+	if bal, ok := p.cashBalances[makeKey(exchange, quote)]; ok {
+		remaining = bal.Free
+	}
+	p.logger.Info("Portfolio updated", "exchange", exchange, "symbol", symbol, "quantity", quantity, "price", price, "quote", quote, "remaining_cash", remaining)
 	return nil
 }

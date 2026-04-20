@@ -43,25 +43,25 @@ func TestGatewayClient_Integration(t *testing.T) {
 	require.NoError(t, err, "Failed to reset gateway state")
 
 	// Test GetTicker
-	tickerResp, err := client.GetTicker(ctx, "BTC/USDT", "dummy")
+	tickerResp, err := client.GetTicker(ctx, "dummy", "BTC/USDT")
 	require.NoError(t, err, "GetTicker should not error")
 	require.NotNil(t, tickerResp, "GetTicker response should not be nil")
 	t.Logf("Ticker: %s", tickerResp.String())
 
 	// Test GetBalance
-	balanceResp, err := client.GetBalance(ctx, "USDT", "dummy")
+	balanceResp, err := client.GetBalance(ctx, "dummy", "USDT")
 	require.NoError(t, err, "GetBalance should not error")
 	require.NotNil(t, balanceResp, "GetBalance response should not be nil")
 	t.Logf("Balance: %s", balanceResp.String())
 
 	// Test CreateOrder
 	createOrderReq := &pb.CreateOrderRequest{
+		Exchange: "dummy",
 		Symbol:   "BTC/USDT",
 		Side:     repository.OrderSideBuy,
 		Type:     repository.OrderTypeLimit,
 		Amount:   0.01,
 		Price:    20000.0,
-		Exchange: "dummy",
 	}
 	orderResp, err := client.CreateOrder(ctx, createOrderReq)
 	require.NoError(t, err, "CreateOrder should not error")
@@ -69,25 +69,25 @@ func TestGatewayClient_Integration(t *testing.T) {
 	t.Logf("Order: %s", orderResp.String())
 
 	// Test CancelOrder
-	cancelResp, err := client.CancelOrder(ctx, "order-id-123", "BTC/USDT", "dummy")
+	cancelResp, err := client.CancelOrder(ctx, "dummy", "BTC/USDT", "order-id-123")
 	require.NoError(t, err, "CancelOrder should not error")
 	require.NotNil(t, cancelResp, "CancelOrder response should not be nil")
 	t.Logf("Cancel: %s", cancelResp.String())
 
 	// Test GetOrder
-	getOrderResp, err := client.GetOrder(ctx, "order-id-123", "BTC/USDT", "dummy")
+	getOrderResp, err := client.GetOrder(ctx, "dummy", "BTC/USDT", "order-id-123")
 	require.NoError(t, err, "GetOrder should not error")
 	require.NotNil(t, getOrderResp, "GetOrder response should not be nil")
 	t.Logf("Get: %s", getOrderResp.String())
 
 	// Test GetOpenOrders
-	openOrdersResp, err := client.GetOpenOrders(ctx, "BTC/USDT", "dummy")
+	openOrdersResp, err := client.GetOpenOrders(ctx, "dummy", "BTC/USDT")
 	require.NoError(t, err, "GetOpenOrders should not error")
 	require.NotNil(t, openOrdersResp, "GetOpenOrders response should not be nil")
 	t.Logf("OpenOrders: %s", openOrdersResp.String())
 
 	// Test Exchange not configured error
-	_, err = client.GetTicker(ctx, "BTC/USDT", "nonexistent_exchange")
+	_, err = client.GetTicker(ctx, "nonexistent_exchange", "BTC/USDT")
 	require.Error(t, err, "Expected error for nonexistent exchange")
 	t.Logf("Error: %s", err.Error())
 }

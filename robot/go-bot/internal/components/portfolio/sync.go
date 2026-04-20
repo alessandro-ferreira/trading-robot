@@ -7,6 +7,48 @@ import (
 	"trading/robot/go-bot/internal/strategy"
 )
 
+// RefreshState reloads specific balance and position data from the database.
+func (p *Portfolio) RefreshState(ctx context.Context, exchange, symbol string, syncBalance, syncPosition bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if syncBalance {
+		if balances, err := p.repo.Balances.GetAllBalances(ctx, p.db); err == nil {
+			for _, b := range balances {
+				if b.ExchangeName == exchange {
+					key := makeKey(exchange, b.AssetSymbol)
+					p.cashBalances[key] = &CashBalance{
+						Exchange: b.ExchangeName,
+						Asset:    b.AssetSymbol,
+						Free:     b.Free,
+						Used:     b.Used,
+						Total:    b.Total,
+					}
+				}
+			}
+		}
+	}
+
+	if syncPosition {
+		posData, err := p.repo.Positions.GetPosition(ctx, p.db, exchange, symbol)
+		key := makeKey(exchange, symbol)
+		if err != nil {
+			delete(p.positions, key)
+		} else {
+			p.positions[key] = &Position{
+				Exchange:      posData.ExchangeName,
+				Symbol:        posData.InstrumentSymbol,
+				Quantity:      posData.Quantity,
+				EntryPrice:    posData.EntryPrice,
+				HighestPrice:  posData.HighestPrice,
+				StrategyState: toState(posData.StrategyState),
+			}
+		}
+	}
+
+	return nil
+}
+
 // UpdatePrice updates the current price and unrealized P&L for a specific symbol.
 func (p *Portfolio) UpdatePrice(ctx context.Context, exchange, symbol string, price float64) {
 	p.mu.Lock()

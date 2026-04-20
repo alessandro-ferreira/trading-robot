@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"trading/robot/go-bot/internal/background"
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/health"
+	"trading/robot/go-bot/internal/components/portfolio"
 	"trading/robot/go-bot/internal/config"
 )
 
+// setupHealthMonitor configures a periodic health check for the specified exchanges.
 func setupHealthMonitor(cfg *config.Config, execService *execution.Service, bgManager *background.Manager) {
 	var exchangeNames []string
 	for _, ex := range cfg.Exchanges {
@@ -37,4 +40,23 @@ func setupHealthMonitor(cfg *config.Config, execService *execution.Service, bgMa
 		return healthMonitor.CheckHealth(ctx, checkMethod)
 	})
 	bgManager.Add(healthTask)
+}
+
+// setupReconciliation configures a background task to refresh the portfolio state from the database.
+func setupReconciliation(cfg *config.Config, exec *execution.Service, pf *portfolio.Portfolio, bgManager *background.Manager) {
+	reconTask := background.NewPeriodicTask("portfolio-reconciliation", 1*time.Minute, false, func(ctx context.Context) error {
+		// Refresh balances and open orders for all configured exchanges.
+		for _, ex := range cfg.Exchanges {
+			if _, err := exec.GetBalance(ctx, ex.Name, ""); err != nil {
+				slog.Warn("Reconciliation: Failed to sync balance from exchange", "exchange", ex.Name, "error", err)
+			}
+			if _, err := exec.GetOpenOrders(ctx, ex.Name, ""); err != nil {
+				slog.Warn("Reconciliation: Failed to sync open orders from exchange", "exchange", ex.Name, "error", err)
+			}
+		}
+
+		// Reload internal state from updated database
+		return pf.LoadState(ctx)
+	})
+	bgManager.Add(reconTask)
 }

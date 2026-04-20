@@ -82,7 +82,7 @@ func TestService_GetTicker(t *testing.T) {
 			svc := NewService(slog.Default(), nil, client, container)
 
 			// Act
-			resp, err := svc.GetTicker(context.Background(), "BTC/USDT", "binance")
+			resp, err := svc.GetTicker(context.Background(), "binance", "BTC/USDT")
 
 			// Assert
 			if tc.expectedErrContains != "" {
@@ -128,9 +128,7 @@ func TestService_GetBalance(t *testing.T) {
 			name: "Success",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceResponse = &pb.BalanceResponse{
-					Free:  map[string]float64{"BTC": 1.5},
-					Used:  map[string]float64{"BTC": 0.5},
-					Total: map[string]float64{"BTC": 2.0},
+					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.5, Used: 0.5, Total: 2.0}},
 				}
 			},
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
@@ -138,7 +136,6 @@ func TestService_GetBalance(t *testing.T) {
 					return b.AssetSymbol == "BTC" && b.Free == 1.5 && b.Used == 0.5 && b.Total == 2.0
 				})).Return(int64(1), nil)
 			},
-			expectedBalanceID: 1,
 		},
 		{
 			name: "Gateway Error",
@@ -152,29 +149,25 @@ func TestService_GetBalance(t *testing.T) {
 			name: "DB Persistence Error",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceResponse = &pb.BalanceResponse{
-					Free:  map[string]float64{"BTC": 1.0},
-					Used:  map[string]float64{"BTC": 0.0},
-					Total: map[string]float64{"BTC": 1.0},
+					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.0, Used: 0.0, Total: 1.0}},
 				}
 			},
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
 				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), errors.New("db error"))
 			},
-			expectedErrContains: "failed to persist balance",
+			// We don't error the whole call if one asset fails to persist, we log and continue
+			expectedErrContains: "",
 		},
 		{
 			name: "Success with balance inconsistency warning",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceResponse = &pb.BalanceResponse{
-					Free:  map[string]float64{"BTC": 1.0},
-					Used:  map[string]float64{"BTC": 1.0},
-					Total: map[string]float64{"BTC": 2.000000001}, // total > free + used, triggers warning
+					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.0, Used: 1.0, Total: 2.000000001}},
 				}
 			},
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
 				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(1), nil)
 			},
-			expectedBalanceID: 1,
 			assertLogs: func(t *testing.T, logBuffer *bytes.Buffer) {
 				assert.Contains(t, logBuffer.String(), "Balance inconsistency detected")
 			},
@@ -199,17 +192,17 @@ func TestService_GetBalance(t *testing.T) {
 			svc := NewService(logger, nil, client, container)
 
 			// Act
-			balance, err := svc.GetBalance(context.Background(), "binance", "BTC")
+			resp, err := svc.GetBalance(context.Background(), "binance", "BTC")
 
 			// Assert
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
-				assert.Nil(t, balance)
+				assert.Nil(t, resp)
 			} else {
 				require.NoError(t, err)
-				require.NotNil(t, balance)
-				assert.Equal(t, tc.expectedBalanceID, balance.ID)
+				require.NotNil(t, resp)
+				assert.NotEmpty(t, resp.Balances)
 			}
 
 			if tc.assertLogs != nil {
@@ -315,7 +308,7 @@ func TestService_CreateOrder(t *testing.T) {
 			container := &repository.Container{Orders: mockRepo}
 			svc := NewService(slog.Default(), nil, client, container)
 
-			resp, err := svc.CreateOrder(context.Background(), "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeLimit, 1.5, 50000.0, "binance")
+			resp, err := svc.CreateOrder(context.Background(), "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeLimit, 1.5, 50000.0)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -408,7 +401,7 @@ func TestService_CancelOrder(t *testing.T) {
 			container := &repository.Container{Orders: mockRepo}
 			svc := NewService(slog.Default(), nil, client, container)
 
-			err := svc.CancelOrder(context.Background(), "order-123", "BTC/USDT", "binance")
+			err := svc.CancelOrder(context.Background(), "binance", "BTC/USDT", "order-123")
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -486,7 +479,7 @@ func TestService_GetOrder(t *testing.T) {
 			container := &repository.Container{Orders: mockRepo}
 			svc := NewService(slog.Default(), nil, client, container)
 
-			resp, err := svc.GetOrder(context.Background(), "order-123", "BTC/USDT", "binance")
+			resp, err := svc.GetOrder(context.Background(), "binance", "BTC/USDT", "order-123")
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -568,7 +561,7 @@ func TestService_GetOpenOrders(t *testing.T) {
 			container := &repository.Container{Orders: mockRepo}
 			svc := NewService(slog.Default(), nil, client, container)
 
-			resp, err := svc.GetOpenOrders(context.Background(), "BTC/USDT", "binance")
+			resp, err := svc.GetOpenOrders(context.Background(), "binance", "BTC/USDT")
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)

@@ -101,7 +101,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	symbol := sig.Symbol()
 
 	// Fetch latest market data
-	ticker, err := o.exec.GetTicker(ctx, symbol, exchange)
+	ticker, err := o.exec.GetTicker(ctx, exchange, symbol)
 	if err != nil {
 		o.logger.Error("Failed to fetch ticker", "symbol", symbol, "error", err)
 		return
@@ -119,7 +119,25 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	}
 	o.logger.Debug("Received signal", "exchange", exchange, "symbol", symbol, "signal", signal.String())
 
-	// Get current position from portfolio for reconciliation
+	// JIT Sync: verify balance and open orders with Exchange and update them in the DB before making any decisions.
+	var openOrdersCount int
+	if signal != strategy.SignalSearchingEntry && signal != strategy.SignalInvalid {
+		syncBalance := (signal == strategy.SignalBuy || signal == strategy.SignalSell)
+		if syncBalance {
+			if _, err := o.exec.GetBalance(ctx, exchange, ""); err == nil {
+				o.logger.Debug("Synced all balances for exchange", "exchange", exchange)
+			}
+		}
+
+		if resp, err := o.exec.GetOpenOrders(ctx, exchange, symbol); err == nil {
+			openOrdersCount = len(resp.Orders)
+		}
+
+		// Refresh Portfolio state from DB
+		_ = o.portfolio.RefreshState(ctx, exchange, symbol, syncBalance, true)
+	}
+
+	// Fetch latest position state from memory for decision handling
 	pos, exists := o.portfolio.GetPosition(exchange, symbol)
 
 	// Decision and Risk Handling
@@ -145,14 +163,8 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 		// Pending Order Protection: check for existing "open" orders to prevent double-entry
-		openOrders, err := o.exec.GetOpenOrders(ctx, symbol, exchange)
-		if err != nil {
-			o.logger.Error("Failed to check open orders", "symbol", symbol, "error", err)
-			return
-		}
-		if len(openOrders.Orders) > 0 {
+		if openOrdersCount > 0 {
 			o.logger.Debug("Skipping BUY signal: open orders already exist, strategy will wait", "symbol", symbol)
-			// We do NOT cancel here; let the strategy stay in SignalWaitingBuyFill
 			return
 		}
 
@@ -167,7 +179,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 		o.logger.Info("Placing BUY order", "symbol", symbol, "qty", eval.ApprovedSize, "price", price)
-		order, err := o.exec.CreateOrder(ctx, symbol, "buy", "limit", eval.ApprovedSize, price, exchange)
+		order, err := o.exec.CreateOrder(ctx, exchange, symbol, "buy", "limit", eval.ApprovedSize, price)
 		if err != nil {
 			o.logger.Error("Failed to place BUY order", "symbol", symbol, "error", err)
 			// RECOVERY: If order placement failed, revert to IDLE so the strategy can try again on the next tick.
@@ -188,8 +200,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 			sig.Confirm(strategy.SignalBuy, pos.EntryPrice)
 		} else {
 			// Check if the order still exists on the exchange.
-			openOrders, _ := o.exec.GetOpenOrders(ctx, symbol, exchange)
-			if len(openOrders.Orders) == 0 {
+			if openOrdersCount == 0 {
 				// RECOVERY: If the order is gone but we have no position, the buy likely failed or was canceled externally,
 				// so we reset the strategy to IDLE.
 				o.logger.Warn("Reconciliation: Pending BUY but no order found, unlocking strategy", "symbol", symbol)
@@ -207,19 +218,13 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 		// Pending Order Protection: prevent sending another SELL if one is already open
-		openOrders, err := o.exec.GetOpenOrders(ctx, symbol, exchange)
-		if err != nil {
-			o.logger.Error("Failed to check open orders", "symbol", symbol, "error", err)
-			return
-		}
-		if len(openOrders.Orders) > 0 {
+		if openOrdersCount > 0 {
 			o.logger.Debug("Skipping SELL signal: open orders already exist, strategy will wait", "symbol", symbol)
-			// We do NOT cancel here; let the strategy stay in SignalWaitingSellFill
 			return
 		}
 
 		o.logger.Info("Placing SELL order", "symbol", symbol, "qty", pos.Quantity, "price", price)
-		order, err := o.exec.CreateOrder(ctx, symbol, "sell", "limit", pos.Quantity, price, exchange)
+		order, err := o.exec.CreateOrder(ctx, exchange, symbol, "sell", "limit", pos.Quantity, price)
 		if err != nil {
 			o.logger.Error("Failed to place SELL order", "symbol", symbol, "error", err)
 			// RECOVERY: If order placement failed, revert to ACTIVE so the exit rule can trigger again on the next tick.
@@ -240,8 +245,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 			sig.Confirm(strategy.SignalSell, price)
 		} else {
 			// Check if the sell order still exists.
-			openOrders, _ := o.exec.GetOpenOrders(ctx, symbol, exchange)
-			if len(openOrders.Orders) == 0 {
+			if openOrdersCount == 0 {
 				// RECOVERY: If the position still exists but no sell order found, we should revert to ACTIVE.
 				o.logger.Warn("Reconciliation: Pending SELL but no order found, reverting to tracking", "symbol", symbol)
 				sig.Cancel(strategy.SignalSell)
