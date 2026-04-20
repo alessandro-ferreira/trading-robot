@@ -17,12 +17,12 @@ class PingResponse(_message.Message):
     def __init__(self, message: _Optional[str] = ...) -> None: ...
 
 class GetTickerRequest(_message.Message):
-    __slots__ = ("symbol", "exchange")
-    SYMBOL_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("exchange", "symbol")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
-    symbol: str
+    SYMBOL_FIELD_NUMBER: _ClassVar[int]
     exchange: str
-    def __init__(self, symbol: _Optional[str] = ..., exchange: _Optional[str] = ...) -> None: ...
+    symbol: str
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
 
 class TickerResponse(_message.Message):
     __slots__ = ("symbol", "price")
@@ -33,59 +33,46 @@ class TickerResponse(_message.Message):
     def __init__(self, symbol: _Optional[str] = ..., price: _Optional[float] = ...) -> None: ...
 
 class GetBalanceRequest(_message.Message):
-    __slots__ = ("currency", "exchange")
-    CURRENCY_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("exchange", "currency")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
-    currency: str
+    CURRENCY_FIELD_NUMBER: _ClassVar[int]
     exchange: str
-    def __init__(self, currency: _Optional[str] = ..., exchange: _Optional[str] = ...) -> None: ...
+    currency: str
+    def __init__(self, exchange: _Optional[str] = ..., currency: _Optional[str] = ...) -> None: ...
 
-class BalanceResponse(_message.Message):
-    __slots__ = ("free", "used", "total")
-    class FreeEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: float
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
-    class UsedEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: float
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
-    class TotalEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: float
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[float] = ...) -> None: ...
+class BalanceObject(_message.Message):
+    __slots__ = ("asset", "free", "used", "total")
+    ASSET_FIELD_NUMBER: _ClassVar[int]
     FREE_FIELD_NUMBER: _ClassVar[int]
     USED_FIELD_NUMBER: _ClassVar[int]
     TOTAL_FIELD_NUMBER: _ClassVar[int]
-    free: _containers.ScalarMap[str, float]
-    used: _containers.ScalarMap[str, float]
-    total: _containers.ScalarMap[str, float]
-    def __init__(self, free: _Optional[_Mapping[str, float]] = ..., used: _Optional[_Mapping[str, float]] = ..., total: _Optional[_Mapping[str, float]] = ...) -> None: ...
+    asset: str
+    free: float
+    used: float
+    total: float
+    def __init__(self, asset: _Optional[str] = ..., free: _Optional[float] = ..., used: _Optional[float] = ..., total: _Optional[float] = ...) -> None: ...
+
+class BalanceResponse(_message.Message):
+    __slots__ = ("balances",)
+    BALANCES_FIELD_NUMBER: _ClassVar[int]
+    balances: _containers.RepeatedCompositeFieldContainer[BalanceObject]
+    def __init__(self, balances: _Optional[_Iterable[_Union[BalanceObject, _Mapping]]] = ...) -> None: ...
 
 class CreateOrderRequest(_message.Message):
-    __slots__ = ("symbol", "side", "type", "amount", "price", "exchange")
+    __slots__ = ("exchange", "symbol", "side", "type", "amount", "price")
+    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     SIDE_FIELD_NUMBER: _ClassVar[int]
     TYPE_FIELD_NUMBER: _ClassVar[int]
     AMOUNT_FIELD_NUMBER: _ClassVar[int]
     PRICE_FIELD_NUMBER: _ClassVar[int]
-    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
+    exchange: str
     symbol: str
     side: str
     type: str
     amount: float
     price: float
-    exchange: str
-    def __init__(self, symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., exchange: _Optional[str] = ...) -> None: ...
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ...) -> None: ...
 
 class OrderResponse(_message.Message):
     __slots__ = ("id", "symbol", "side", "type", "amount", "price", "status", "filled", "remaining", "cost", "average", "client_order_id", "timestamp")
@@ -118,14 +105,14 @@ class OrderResponse(_message.Message):
     def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., status: _Optional[str] = ..., filled: _Optional[float] = ..., remaining: _Optional[float] = ..., cost: _Optional[float] = ..., average: _Optional[float] = ..., client_order_id: _Optional[str] = ..., timestamp: _Optional[int] = ...) -> None: ...
 
 class CancelOrderRequest(_message.Message):
-    __slots__ = ("id", "symbol", "exchange")
+    __slots__ = ("exchange", "id", "symbol")
+    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     ID_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
-    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
+    exchange: str
     id: str
     symbol: str
-    exchange: str
-    def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., exchange: _Optional[str] = ...) -> None: ...
+    def __init__(self, exchange: _Optional[str] = ..., id: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
 
 class CancelOrderResponse(_message.Message):
     __slots__ = ("id", "status")
@@ -136,22 +123,22 @@ class CancelOrderResponse(_message.Message):
     def __init__(self, id: _Optional[str] = ..., status: _Optional[str] = ...) -> None: ...
 
 class GetOrderRequest(_message.Message):
-    __slots__ = ("id", "symbol", "exchange")
+    __slots__ = ("exchange", "id", "symbol")
+    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     ID_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
-    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
+    exchange: str
     id: str
     symbol: str
-    exchange: str
-    def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., exchange: _Optional[str] = ...) -> None: ...
+    def __init__(self, exchange: _Optional[str] = ..., id: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
 
 class GetOpenOrdersRequest(_message.Message):
-    __slots__ = ("symbol", "exchange")
-    SYMBOL_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("exchange", "symbol")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
-    symbol: str
+    SYMBOL_FIELD_NUMBER: _ClassVar[int]
     exchange: str
-    def __init__(self, symbol: _Optional[str] = ..., exchange: _Optional[str] = ...) -> None: ...
+    symbol: str
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
 
 class OpenOrdersResponse(_message.Message):
     __slots__ = ("orders",)

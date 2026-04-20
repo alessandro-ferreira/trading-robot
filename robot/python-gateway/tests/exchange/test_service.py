@@ -84,7 +84,7 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(response.message, "Pong from Python gateway!")
 
     def test_get_ticker(self):
-        request = exchange_pb2.GetTickerRequest(symbol="BTC/USDT", exchange="binance")
+        request = exchange_pb2.GetTickerRequest(exchange="binance", symbol="BTC/USDT")
         response = self.service.GetTicker(request, self.context)
         self.assertEqual(response.symbol, "BTC/USDT")
         self.assertGreater(response.price, 0)
@@ -94,7 +94,7 @@ class TestExchangeService(unittest.TestCase):
             "Exchange not configured: testex"
         )
         self.context.abort.side_effect = Exception("Exchange not configured: testex")
-        request = exchange_pb2.GetTickerRequest(symbol="BTC/USDT", exchange="testex")
+        request = exchange_pb2.GetTickerRequest(exchange="testex", symbol="BTC/USDT")
         with self.assertRaises(Exception) as cm:
             self.service.GetTicker(request, self.context)
         self.assertIn("Exchange not configured", str(cm.exception))
@@ -104,7 +104,7 @@ class TestExchangeService(unittest.TestCase):
     def test_get_ticker_internal_error(self):
         self.mock_exchange.fetch_ticker.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
-        request = exchange_pb2.GetTickerRequest(symbol="BTC/USDT", exchange="binance")
+        request = exchange_pb2.GetTickerRequest(exchange="binance", symbol="BTC/USDT")
         with self.assertRaises(Exception) as cm:
             self.service.GetTicker(request, self.context)
         self.assertIn("Internal error", str(cm.exception))
@@ -114,7 +114,7 @@ class TestExchangeService(unittest.TestCase):
     def test_get_ticker_network_error(self):
         self.mock_exchange.fetch_ticker.side_effect = ccxt.NetworkError("Timeout")
         self.context.abort.side_effect = Exception("Aborted")
-        request = exchange_pb2.GetTickerRequest(symbol="BTC/USDT", exchange="binance")
+        request = exchange_pb2.GetTickerRequest(exchange="binance", symbol="BTC/USDT")
         with self.assertRaises(Exception):
             self.service.GetTicker(request, self.context)
         self.context.abort.assert_called_with(
@@ -122,15 +122,17 @@ class TestExchangeService(unittest.TestCase):
         )
 
     def test_get_balance(self):
-        request = exchange_pb2.GetBalanceRequest(currency="USDT", exchange="binance")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
         response = self.service.GetBalance(request, self.context)
-        self.assertEqual(response.free["USDT"], 1000.0)
-        self.assertEqual(response.total["USDT"], 1000.0)
+        self.assertEqual(len(response.balances), 1)
+        self.assertEqual(response.balances[0].asset, "USDT")
+        self.assertEqual(response.balances[0].free, 1000.0)
+        self.assertEqual(response.balances[0].total, 1000.0)
 
     def test_get_balance_internal_error(self):
         self.mock_exchange.fetch_balance.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
-        request = exchange_pb2.GetBalanceRequest(currency="USDT", exchange="binance")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
         with self.assertRaises(Exception) as cm:
             self.service.GetBalance(request, self.context)
         self.assertIn("Internal error", str(cm.exception))
@@ -142,7 +144,7 @@ class TestExchangeService(unittest.TestCase):
             "Invalid API Key"
         )
         self.context.abort.side_effect = Exception("Aborted")
-        request = exchange_pb2.GetBalanceRequest(currency="USDT", exchange="binance")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
         with self.assertRaises(Exception):
             self.service.GetBalance(request, self.context)
         self.context.abort.assert_called_with(
@@ -152,12 +154,12 @@ class TestExchangeService(unittest.TestCase):
 
     def test_create_order(self):
         request = exchange_pb2.CreateOrderRequest(
+            exchange="binance",
             symbol="BTC/USDT",
             side="buy",
             type="limit",
             amount=1.0,
             price=50000.0,
-            exchange="binance",
         )
         response = self.service.CreateOrder(request, self.context)
         self.assertEqual(response.id, "12345")
@@ -168,12 +170,12 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.create_order.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
         request = exchange_pb2.CreateOrderRequest(
+            exchange="binance",
             symbol="BTC/USDT",
             side="buy",
             type="limit",
             amount=1.0,
             price=50000.0,
-            exchange="binance",
         )
         with self.assertRaises(Exception) as cm:
             self.service.CreateOrder(request, self.context)
@@ -185,12 +187,12 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.create_order.side_effect = ccxt.InsufficientFunds("No money")
         self.context.abort.side_effect = Exception("Aborted")
         request = exchange_pb2.CreateOrderRequest(
+            exchange="binance",
             symbol="BTC/USDT",
             side="buy",
             type="limit",
             amount=1.0,
             price=50000.0,
-            exchange="binance",
         )
         with self.assertRaises(Exception):
             self.service.CreateOrder(request, self.context)
@@ -204,12 +206,12 @@ class TestExchangeService(unittest.TestCase):
         )
         self.context.abort.side_effect = Exception("Aborted")
         request = exchange_pb2.CreateOrderRequest(
+            exchange="binance",
             symbol="BTC/USDT",
             side="buy",
             type="limit",
             amount=0.0001,
             price=50000.0,
-            exchange="binance",
         )
         with self.assertRaises(Exception):
             self.service.CreateOrder(request, self.context)
@@ -220,7 +222,7 @@ class TestExchangeService(unittest.TestCase):
 
     def test_cancel_order(self):
         request = exchange_pb2.CancelOrderRequest(
-            id="12345", symbol="BTC/USDT", exchange="binance"
+            exchange="binance", id="12345", symbol="BTC/USDT"
         )
         response = self.service.CancelOrder(request, self.context)
         self.assertEqual(response.id, "12345")
@@ -230,7 +232,7 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.cancel_order.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
         request = exchange_pb2.CancelOrderRequest(
-            id="12345", symbol="BTC/USDT", exchange="binance"
+            exchange="binance", id="12345", symbol="BTC/USDT"
         )
         with self.assertRaises(Exception) as cm:
             self.service.CancelOrder(request, self.context)
@@ -240,7 +242,7 @@ class TestExchangeService(unittest.TestCase):
 
     def test_get_order(self):
         request = exchange_pb2.GetOrderRequest(
-            id="12345", symbol="BTC/USDT", exchange="binance"
+            exchange="binance", id="12345", symbol="BTC/USDT"
         )
         response = self.service.GetOrder(request, self.context)
         self.assertEqual(response.id, "12345")
@@ -251,7 +253,7 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.fetch_order.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
         request = exchange_pb2.GetOrderRequest(
-            id="12345", symbol="BTC/USDT", exchange="binance"
+            exchange="binance", id="12345", symbol="BTC/USDT"
         )
         with self.assertRaises(Exception) as cm:
             self.service.GetOrder(request, self.context)
@@ -261,7 +263,7 @@ class TestExchangeService(unittest.TestCase):
 
     def test_get_open_orders(self):
         request = exchange_pb2.GetOpenOrdersRequest(
-            symbol="BTC/USDT", exchange="binance"
+            exchange="binance", symbol="BTC/USDT"
         )
         response = self.service.GetOpenOrders(request, self.context)
         self.assertEqual(len(response.orders), 1)
@@ -272,7 +274,7 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.fetch_open_orders.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
         request = exchange_pb2.GetOpenOrdersRequest(
-            symbol="BTC/USDT", exchange="binance"
+            exchange="binance", symbol="BTC/USDT"
         )
         with self.assertRaises(Exception) as cm:
             self.service.GetOpenOrders(request, self.context)

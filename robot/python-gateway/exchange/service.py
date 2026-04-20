@@ -14,6 +14,23 @@ from exchange.factory import (
 from exchange.exchanges.base import Exchange
 from core.config import Config
 
+# Whitelist of assets supported by the system's database schema.
+SUPPORTED_ASSETS = {
+    "BTC",
+    "ETH",
+    "LTC",
+    "XRP",
+    "BCH",
+    "ADA",
+    "DOGE",
+    "SOL",
+    "LINK",
+    "XLM",
+    "USDT",
+    "BRL",
+    "USD",
+}
+
 
 class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     """
@@ -26,9 +43,6 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         """Initializes the service with configuration and exchange factory."""
         self.cfg = cfg
         self.factory = factory
-        self.default_exchange = (
-            self.cfg.exchanges[0].name if self.cfg.exchanges else None
-        )
         # initialize all exchanges at startup to catch configuration errors early
         for exchange in self.cfg.exchanges:
             try:
@@ -38,8 +52,10 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 logging.exception(f"Failed to initialize exchange {exchange.name}: {e}")
 
     def _getExchange(self, request: Any, context: grpc.ServicerContext) -> Exchange:
-        """Helper method to retrieve the exchange instance based on the request or default."""
-        ex_name = request.exchange or self.default_exchange
+        """Helper method to retrieve the exchange instance based on the request."""
+        ex_name = request.exchange
+        if not ex_name:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Exchange name is required")
         try:
             exchange = self.factory.get(ex_name)
         except ExchangeNotConfigured as e:
@@ -102,25 +118,34 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.BalanceResponse:
         """Handles the GetBalance RPC."""
-        logging.info(
-            f"Received GetBalance request for exchange: {request.exchange}, currency: {request.currency}"
-        )
+        logging.info(f"Received GetBalance request for exchange: {request.exchange}")
 
         exchange = self._getExchange(request, context)
         try:
             balance = exchange.fetch_balance()
-            free = balance.get("free", {})
-            used = balance.get("used", {})
-            total = balance.get("total", {})
-            if request.currency:
-                currency = request.currency
-                free = {currency: free.get(currency, 0)}
-                used = {currency: used.get(currency, 0)}
-                total = {currency: total.get(currency, 0)}
+            free_map = balance.get("free", {})
+            used_map = balance.get("used", {})
+            total_map = balance.get("total", {})
+
+            balances = []
+            # Use the total map as the source of truth for assets returned by the exchange
+            for asset, total_val in total_map.items():
+                if asset not in SUPPORTED_ASSETS:
+                    continue
+
+                f = float(free_map.get(asset, 0.0))
+                u = float(used_map.get(asset, 0.0))
+                t = float(total_val)
+
+                # Only return assets with a non-zero balance to keep the payload lean
+                if t > 0 or f > 0 or u > 0:
+                    balances.append(
+                        exchange_pb2.BalanceObject(asset=asset, free=f, used=u, total=t)
+                    )
         except Exception as e:
             self._handle_exchange_error(context, e, "fetching balance")
 
-        return exchange_pb2.BalanceResponse(free=free, used=used, total=total)
+        return exchange_pb2.BalanceResponse(balances=balances)
 
     def CreateOrder(
         self, request: Any, context: grpc.ServicerContext
@@ -216,7 +241,8 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
 
         exchange = self._getExchange(request, context)
         try:
-            orders = exchange.fetch_open_orders(request.symbol)
+            symbol = request.symbol if request.symbol else None
+            orders = exchange.fetch_open_orders(symbol)
         except Exception as e:
             self._handle_exchange_error(context, e, "fetching open orders")
 
