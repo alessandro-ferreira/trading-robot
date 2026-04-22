@@ -205,11 +205,14 @@ class Exchange(ABC):
 
         return self._ccxt.fetch_order(id, symbol)
 
-    def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def fetch_open_orders(
+        self, symbol: Optional[str] = None, limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         Fetches open orders for the given symbol.
 
         :param symbol: The symbol to filter by (optional).
+        :param limit: The maximum number of orders to fetch (optional).
         :return: A list of open orders.
         """
         if not self._cfg or not self._cfg.ccxt:
@@ -217,4 +220,35 @@ class Exchange(ABC):
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
 
-        return self._ccxt.fetch_open_orders(symbol)
+        return self._ccxt.fetch_open_orders(symbol, limit=limit)
+
+    def fetch_my_trades(
+        self,
+        symbol: Optional[str] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetches the user's trades (executions) for the given symbol.
+
+        :param symbol: The symbol to filter by (optional).
+        :param since: Millisecond timestamp for pagination (optional).
+        :param limit: The maximum number of trades to fetch (optional).
+        :return: A list of trade details.
+        """
+        if not self._cfg or not self._cfg.ccxt:
+            raise NotImplementedError("fetch_my_trades not implemented")
+        if not self._ccxt:
+            raise ExchangeError("Underlying exchange not available")
+
+        try:
+            return self._ccxt.fetch_my_trades(symbol, since=since, limit=limit)
+        except Exception as e:
+            # Many CCXT implementations (like Binance) require a symbol for private trade history.
+            # If no symbol is provided, we log a warning and return an empty list instead of raising an error.
+            if not symbol:
+                logging.warning(
+                    f"Exchange {self._cfg.name} does not support fetch_my_trades without symbol: {e}"
+                )
+                return []
+            raise

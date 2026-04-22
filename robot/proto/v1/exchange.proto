@@ -31,7 +31,10 @@ service ExchangeService {
   rpc GetOrder(GetOrderRequest) returns (OrderResponse) {}
 
   // GetOpenOrders fetches all open orders for a symbol.
-  rpc GetOpenOrders(GetOpenOrdersRequest) returns (OpenOrdersResponse) {}
+  rpc GetOpenOrders(GetOrdersRequest) returns (OrdersResponse) {}
+
+  // GetRecentTrades fetches recent execution history for a symbol.
+  rpc GetRecentTrades(GetOrdersRequest) returns (OrdersResponse) {}
 
   // ResetState resets the state of the exchange.
   // WARN: This method is intended for testing purposes only.
@@ -125,13 +128,15 @@ message GetOrderRequest {
 }
 
 // GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC.
-message GetOpenOrdersRequest {
+message GetOrdersRequest {
   string exchange = 1;
   string symbol = 2; // Optional: if empty, fetches all open orders for the exchange
+  int64 since = 3; // Optional: millisecond timestamp for date-based pagination
+  int32 limit = 4; // Optional: limit the number of results returned
 }
 
 // OpenOrdersResponse is the message returned from the GetOpenOrders RPC.
-message OpenOrdersResponse {
+message OrdersResponse {
   repeated OrderResponse orders = 1;
 }
 

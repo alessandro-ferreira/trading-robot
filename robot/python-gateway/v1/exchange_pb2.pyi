@@ -132,15 +132,19 @@ class GetOrderRequest(_message.Message):
     symbol: str
     def __init__(self, exchange: _Optional[str] = ..., id: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
 
-class GetOpenOrdersRequest(_message.Message):
-    __slots__ = ("exchange", "symbol")
+class GetOrdersRequest(_message.Message):
+    __slots__ = ("exchange", "symbol", "since", "limit")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
+    SINCE_FIELD_NUMBER: _ClassVar[int]
+    LIMIT_FIELD_NUMBER: _ClassVar[int]
     exchange: str
     symbol: str
-    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
+    since: int
+    limit: int
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., since: _Optional[int] = ..., limit: _Optional[int] = ...) -> None: ...
 
-class OpenOrdersResponse(_message.Message):
+class OrdersResponse(_message.Message):
     __slots__ = ("orders",)
     ORDERS_FIELD_NUMBER: _ClassVar[int]
     orders: _containers.RepeatedCompositeFieldContainer[OrderResponse]

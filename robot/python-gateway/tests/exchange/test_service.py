@@ -69,6 +69,18 @@ class TestExchangeService(unittest.TestCase):
                 "average": 0.0,
             }
         ]
+        self.mock_exchange.fetch_my_trades.return_value = [
+            {
+                "id": "t1",
+                "order": "101",
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "price": 20000.0,
+                "amount": 0.5,
+                "cost": 10000.0,
+                "timestamp": 1672531200000,
+            }
+        ]
 
         # Mock factory to return the mock exchange
         self.mock_factory = MagicMock()
@@ -262,25 +274,35 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.fetch_order.side_effect = None
 
     def test_get_open_orders(self):
-        request = exchange_pb2.GetOpenOrdersRequest(
-            exchange="binance", symbol="BTC/USDT"
+        request = exchange_pb2.GetOrdersRequest(
+            exchange="binance", symbol="BTC/USDT", limit=1
         )
         response = self.service.GetOpenOrders(request, self.context)
         self.assertEqual(len(response.orders), 1)
         self.assertEqual(response.orders[0].id, "101")
         self.assertEqual(response.orders[0].symbol, "BTC/USDT")
+        self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT", limit=1)
 
     def test_get_open_orders_internal_error(self):
         self.mock_exchange.fetch_open_orders.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
-        request = exchange_pb2.GetOpenOrdersRequest(
-            exchange="binance", symbol="BTC/USDT"
-        )
+        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="BTC/USDT")
         with self.assertRaises(Exception) as cm:
             self.service.GetOpenOrders(request, self.context)
         self.assertIn("Internal error", str(cm.exception))
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_open_orders.side_effect = None
+
+    def test_get_recent_trades(self):
+        request = exchange_pb2.GetOrdersRequest(
+            exchange="binance", symbol="BTC/USDT", since=1672531200000, limit=5
+        )
+        response = self.service.GetRecentTrades(request, self.context)
+        self.assertEqual(len(response.orders), 1)
+        self.assertEqual(response.orders[0].id, "101")
+        self.mock_exchange.fetch_my_trades.assert_called_with(
+            "BTC/USDT", since=1672531200000, limit=5
+        )
 
     def test_reset_state(self):
         request = exchange_pb2.ResetStateRequest()

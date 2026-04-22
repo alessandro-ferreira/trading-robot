@@ -37,6 +37,8 @@ class TestBaseExchange(unittest.TestCase):
             exchange.fetch_order("1", symbol="BTC/USDT")
         with self.assertRaises(ExchangeError):
             exchange.fetch_open_orders("BTC/USDT")
+        with self.assertRaises(ExchangeError):
+            exchange.fetch_my_trades("BTC/USDT")
 
 
 # To run this test directly, use:

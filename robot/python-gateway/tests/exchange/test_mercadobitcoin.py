@@ -282,7 +282,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         ]
         mock_request.return_value = mock_response
 
-        orders = self.exchange.fetch_open_orders("BTC/BRL")
+        orders = self.exchange.fetch_open_orders("BTC/BRL", limit=5)
 
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["id"], "ord_1")
@@ -292,6 +292,8 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(args[0], "GET")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders", args[1])
         self.assertEqual(kwargs["params"]["status"], "created,working")
+        # Verify 'size' is NOT passed for symbol-specific path as per MB doc
+        self.assertNotIn("size", kwargs.get("params", {}))
 
     @patch("requests.request")
     def test_fetch_open_orders_all_success(self, mock_request):
@@ -315,7 +317,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         }
         mock_request.return_value = mock_response
 
-        orders = self.exchange.fetch_open_orders()
+        orders = self.exchange.fetch_open_orders(limit=10)
 
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["id"], "ord_2")
@@ -325,6 +327,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(args[0], "GET")
         self.assertIn("/accounts/acc_123/orders", args[1])
         self.assertEqual(kwargs["params"]["status"], "created,working")
+        self.assertEqual(kwargs["params"]["size"], 10)
 
     @patch("requests.request")
     def test_fetch_open_orders_api_failure(self, mock_request):
@@ -340,6 +343,44 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         with self.assertRaises(ExchangeError) as cm:
             self.exchange.fetch_open_orders("BTC/BRL")
         self.assertIn("MercadoBitcoin API Error: 500", str(cm.exception))
+
+    @patch("requests.request")
+    def test_fetch_my_trades_success(self, mock_request):
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        # Mock order with nested executions
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.OK
+        mock_response.json.return_value = [
+            {
+                "id": "parent_ord",
+                "instrument": "BTC-BRL",
+                "executions": [
+                    {
+                        "id": "exec_1",
+                        "side": "buy",
+                        "qty": "0.05",
+                        "price": "190000.0",
+                        "executed_at": 1672531200,
+                    }
+                ],
+            }
+        ]
+        mock_request.return_value = mock_response
+
+        trades = self.exchange.fetch_my_trades("BTC/BRL", limit=5)
+
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0]["id"], "exec_1")
+        self.assertEqual(trades[0]["order"], "parent_ord")
+        self.assertEqual(trades[0]["amount"], 0.05)
+
+        args, kwargs = mock_request.call_args
+        self.assertEqual(kwargs["params"]["has_executions"], "true")
+        # Verify 'size' is NOT passed for symbol-specific path as per MB doc
+        self.assertNotIn("size", kwargs.get("params", {}))
 
 
 # To run this test directly, use:

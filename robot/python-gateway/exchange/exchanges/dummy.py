@@ -61,9 +61,10 @@ class DummyExchange(Exchange):
     ) -> Dict[str, Any]:
         """Simulates creating an order and stores it in memory."""
         self._order_id_counter += 1
-        # Use millisecond timestamp to ensure unique IDs across resets and test runs
-        order_id = f"dummy-{int(time.time() * 1000)}-{self._order_id_counter}"
-        timestamp = int(time.time() * 1000)
+        # Use millisecond timestamp + counter to ensure unique, strictly increasing timestamps
+        # even when called in rapid succession during tests.
+        timestamp = int(time.time() * 1000) + self._order_id_counter
+        order_id = f"dummy-{timestamp}-{self._order_id_counter}"
 
         # For simplicity, limit orders are 'open', market orders are 'closed'
         status = "open" if type == "limit" else "closed"
@@ -90,6 +91,7 @@ class DummyExchange(Exchange):
                     "amount": amount,
                     "cost": cost,
                     "fee": fee,
+                    "order": order_id,
                 }
             ]
 
@@ -149,11 +151,34 @@ class DummyExchange(Exchange):
             }
         return order
 
-    def fetch_open_orders(self, symbol: Optional[str] = None) -> list:
-        """Returns a list of open orders from the in-memory store."""
+    def fetch_open_orders(
+        self, symbol: Optional[str] = None, limit: Optional[int] = None
+    ) -> list:
+        """
+        Returns a list of open orders from the in-memory store.
+        """
         open_orders = []
         for order in self._orders.values():
             if order["status"] == "open":
                 if symbol is None or order["symbol"] == symbol:
                     open_orders.append(order)
-        return open_orders
+
+        return open_orders[:limit] if limit else open_orders
+
+    def fetch_my_trades(
+        self, symbol: Optional[str] = None, limit: Optional[int] = None
+    ) -> list:
+        """
+        Returns a list of trades from the in-memory store.
+        """
+        trades = []
+        # In DummyExchange, trades are stored within the simulated order object.
+        for order in self._orders.values():
+            for t in order.get("trades", []):
+                if symbol is None or t["symbol"] == symbol:
+                    trades.append(t)
+
+        # Sort trades by timestamp descending (newest first)
+        trades.sort(key=lambda x: x["timestamp"], reverse=True)
+
+        return trades[:limit] if limit else trades

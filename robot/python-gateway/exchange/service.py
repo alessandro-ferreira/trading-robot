@@ -90,6 +90,33 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         else:
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
+    def _map_order(self, order: dict, req: Any = None) -> exchange_pb2.OrderResponse:
+        """Helper to map a CCXT order or trade dictionary to a gRPC OrderResponse."""
+        if not order:
+            return exchange_pb2.OrderResponse()
+
+        # Prefer 'order' (parent ID) over 'id' (specific execution ID).
+        oid = str(order.get("order") or order.get("id") or "")
+
+        # Trades are implicitly closed. Orders have an explicit status.
+        status = order.get("status", "closed" if "order" in order else "")
+
+        return exchange_pb2.OrderResponse(
+            id=oid,
+            symbol=order.get("symbol", getattr(req, "symbol", "")),
+            side=order.get("side", getattr(req, "side", "")),
+            type=order.get("type", getattr(req, "type", "")),
+            amount=float(order.get("amount") or getattr(req, "amount", 0.0)),
+            price=float(order.get("price") or getattr(req, "price", 0.0)),
+            status=status,
+            filled=float(order.get("filled") or order.get("amount") or 0.0),
+            remaining=float(order.get("remaining") or 0.0),
+            cost=float(order.get("cost") or 0.0),
+            average=float(order.get("average") or order.get("price") or 0.0),
+            client_order_id=str(order.get("clientOrderId") or ""),
+            timestamp=int(order.get("timestamp") or 0),
+        )
+
     def Ping(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.PingResponse:
@@ -106,6 +133,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         )
 
         exchange = self._getExchange(request, context)
+        ticker, price = None, None
         try:
             ticker = exchange.fetch_ticker(request.symbol)
             price = float(ticker.last)
@@ -121,6 +149,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         logging.info(f"Received GetBalance request for exchange: {request.exchange}")
 
         exchange = self._getExchange(request, context)
+        balances = []
         try:
             balance = exchange.fetch_balance()
             free_map = balance.get("free", {})
@@ -156,6 +185,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         )
 
         exchange = self._getExchange(request, context)
+        order = None
         try:
             order = exchange.create_order(
                 symbol=request.symbol,
@@ -167,21 +197,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         except Exception as e:
             self._handle_exchange_error(context, e, "creating order")
 
-        return exchange_pb2.OrderResponse(
-            id=str(order.get("id", "")),
-            symbol=order.get("symbol", request.symbol),
-            side=order.get("side", request.side),
-            type=order.get("type", request.type),
-            amount=order.get("amount", request.amount),
-            price=order.get("price", request.price),
-            status=order.get("status", ""),
-            filled=order.get("filled", 0.0),
-            remaining=order.get("remaining", 0.0),
-            cost=order.get("cost", 0.0),
-            average=order.get("average", 0.0),
-            client_order_id=str(order.get("clientOrderId") or ""),
-            timestamp=int(order.get("timestamp") or 0),
-        )
+        return self._map_order(order, request)
 
     def CancelOrder(
         self, request: Any, context: grpc.ServicerContext
@@ -192,6 +208,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         )
 
         exchange = self._getExchange(request, context)
+        result = {}
         try:
             result = exchange.cancel_order(request.id, symbol=request.symbol)
         except Exception as e:
@@ -210,61 +227,52 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         )
 
         exchange = self._getExchange(request, context)
+        order = None
         try:
             order = exchange.fetch_order(request.id, symbol=request.symbol)
         except Exception as e:
             self._handle_exchange_error(context, e, "fetching order")
 
-        return exchange_pb2.OrderResponse(
-            id=str(order.get("id", request.id)),
-            symbol=order.get("symbol", request.symbol),
-            side=order.get("side", ""),
-            type=order.get("type", ""),
-            amount=order.get("amount", 0.0),
-            price=order.get("price", 0.0),
-            status=order.get("status", ""),
-            filled=order.get("filled", 0.0),
-            remaining=order.get("remaining", 0.0),
-            cost=order.get("cost", 0.0),
-            average=order.get("average", 0.0),
-            client_order_id=str(order.get("clientOrderId") or ""),
-            timestamp=int(order.get("timestamp") or 0),
-        )
+        return self._map_order(order, request)
 
     def GetOpenOrders(
         self, request: Any, context: grpc.ServicerContext
-    ) -> exchange_pb2.OpenOrdersResponse:
+    ) -> exchange_pb2.OrdersResponse:
         """Handles the GetOpenOrders RPC."""
         logging.info(
             f"Received GetOpenOrders request for exchange: {request.exchange}, symbol: {request.symbol}"
         )
 
         exchange = self._getExchange(request, context)
+        orders = []
         try:
             symbol = request.symbol if request.symbol else None
-            orders = exchange.fetch_open_orders(symbol)
+            limit = request.limit if request.limit > 0 else None
+            orders = exchange.fetch_open_orders(symbol, limit=limit)
         except Exception as e:
             self._handle_exchange_error(context, e, "fetching open orders")
 
-        resp_orders = [
-            exchange_pb2.OrderResponse(
-                id=str(order.get("id", "")),
-                symbol=order.get("symbol", request.symbol),
-                side=order.get("side", ""),
-                type=order.get("type", ""),
-                amount=order.get("amount", 0.0),
-                price=order.get("price", 0.0),
-                status=order.get("status", ""),
-                filled=order.get("filled", 0.0),
-                remaining=order.get("remaining", 0.0),
-                cost=order.get("cost", 0.0),
-                average=order.get("average", 0.0),
-                client_order_id=str(order.get("clientOrderId") or ""),
-                timestamp=int(order.get("timestamp") or 0),
-            )
-            for order in orders
-        ]
-        return exchange_pb2.OpenOrdersResponse(orders=resp_orders)
+        return exchange_pb2.OrdersResponse(
+            orders=[self._map_order(o, request) for o in orders]
+        )
+
+    def GetRecentTrades(
+        self, request: Any, context: grpc.ServicerContext
+    ) -> exchange_pb2.OrdersResponse:
+        """Handles the GetRecentTrades RPC. Fetches historical executions."""
+        exchange = self._getExchange(request, context)
+        trades = []
+        try:
+            symbol = request.symbol if request.symbol else None
+            since = request.since if request.since > 0 else None
+            limit = request.limit if request.limit > 0 else None
+            trades = exchange.fetch_my_trades(symbol, since=since, limit=limit)
+        except Exception as e:
+            self._handle_exchange_error(context, e, "fetching recent trades")
+
+        return exchange_pb2.OrdersResponse(
+            orders=[self._map_order(t, request) for t in trades]
+        )
 
     def ResetState(
         self, request: Any, context: grpc.ServicerContext

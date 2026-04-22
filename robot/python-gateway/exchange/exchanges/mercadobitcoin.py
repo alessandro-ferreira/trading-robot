@@ -330,11 +330,14 @@ class MercadoBitcoinExchange(Exchange):
             "info": response,
         }
 
-    def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def fetch_open_orders(
+        self, symbol: Optional[str] = None, limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         Fetches open orders for the given symbol.
 
         :param symbol: The symbol to filter by (optional).
+        :param limit: The maximum number of orders to fetch (optional).
         :return: A list of open orders.
         """
         account_id = self._get_account_id()
@@ -342,12 +345,16 @@ class MercadoBitcoinExchange(Exchange):
 
         if symbol:
             pair = self._normalize_symbol(symbol)
-            # Use the specific market endpoint
+            # Use the market-specific endpoint for higher rate limits (10 req/s).
+            # Note: MB v4 documentation does not list 'size' as a parameter for this path.
             path = self.PATH_ORDERS_SYMBOL.format(account_id, pair)
             response = self._request("GET", path, data=params)
             # Endpoint 1 returns a list directly
             orders_data = response
         else:
+            # The account-wide endpoint (3 req/s) supports 'size' for limiting results.
+            if limit:
+                params["size"] = limit
             # Use the all orders endpoint
             path = self.PATH_ORDERS_ALL.format(account_id)
             response = self._request("GET", path, data=params)
@@ -415,4 +422,79 @@ class MercadoBitcoinExchange(Exchange):
                 }
             )
 
-        return result
+        return result[:limit] if limit else result
+
+    def fetch_my_trades(
+        self,
+        symbol: Optional[str] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetches the user's trades (executions) by listing orders with executions.
+        Since there is no dedicated executions endpoint in MB v4, we extract
+        nested executions from the orders list.
+
+        :param symbol: The symbol to filter by (optional).
+        :param since: Millisecond timestamp for pagination (optional).
+        :param limit: The maximum number of trades to fetch (optional).
+        :return: A list of trade details mapped to standard format.
+        """
+        account_id = self._get_account_id()
+        # Filter for orders that have associated executions
+        params = {"has_executions": "true"}
+        if since:
+            # Map CCXT millisecond 'since' to MB v4 'created_at_from' (seconds)
+            params["created_at_from"] = int(since / 1000)
+
+        if symbol:
+            pair = self._normalize_symbol(symbol)
+            # Use market-specific endpoint for better performance.
+            # Server-side 'size' (limit) is not supported on this path per documentation.
+            path = self.PATH_ORDERS_SYMBOL.format(account_id, pair)
+            # List orders from specific market returns an Array directly.
+            orders_data = self._request("GET", path, data=params)
+        else:
+            # Account-wide endpoint supports 'size' for server-side limiting.
+            if limit:
+                params["size"] = limit
+            path = self.PATH_ORDERS_ALL.format(account_id)
+            response = self._request("GET", path, data=params)
+            # List all orders returns a dictionary containing 'items'.
+            orders_data = response.get("items", [])
+
+        result = []
+        for order in orders_data:
+            # In the orders list view (with has_executions=true), executions are
+            # returned as a nested array within each order object.
+            executions = order.get("executions", [])
+            for ex in executions:
+                # MB v4 uses Unix seconds for timestamps.
+                ts_raw = ex.get("executed_at") or ex.get("created_at")
+                timestamp = int(ts_raw) * 1000 if ts_raw else None
+                dt = (
+                    datetime.fromtimestamp(timestamp / 1000, timezone.utc).isoformat()
+                    if timestamp
+                    else None
+                )
+
+                result.append(
+                    {
+                        "id": str(ex.get("id")),
+                        "order": str(order.get("id")),  # Link back to parent order
+                        "symbol": symbol
+                        if symbol
+                        else ex.get("instrument", "").replace("-", "/"),
+                        "side": ex.get("side"),
+                        "price": float(ex.get("price") or 0.0),
+                        "amount": float(ex.get("qty") or 0.0),
+                        "cost": float(ex.get("cost") or 0.0),
+                        "timestamp": timestamp,
+                        "datetime": dt,
+                        "info": ex,
+                    }
+                )
+
+        # Aggregated executions from different orders must be re-sorted by execution time (descending).
+        result.sort(key=lambda x: x["timestamp"] or 0, reverse=True)
+        return result[:limit] if limit else result

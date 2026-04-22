@@ -56,10 +56,26 @@ class TestDummyExchange(unittest.TestCase):
 
     def test_fetch_open_orders(self):
         self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
-        open_orders = self.exchange.fetch_open_orders("BTC/USDT")
-        self.assertIsInstance(open_orders, list)
-        self.assertGreaterEqual(len(open_orders), 1)
-        self.assertEqual(open_orders[0]["symbol"], "BTC/USDT")
+        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 21000)
+
+        all_orders = self.exchange.fetch_open_orders("BTC/USDT")
+        self.assertGreaterEqual(len(all_orders), 2)
+
+        limited_orders = self.exchange.fetch_open_orders("BTC/USDT", limit=1)
+        self.assertEqual(len(limited_orders), 1)
+
+    def test_fetch_my_trades(self):
+        # Market orders in dummy exchange create trades immediately
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.05, 40000)
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.10, 41000)
+
+        all_trades = self.exchange.fetch_my_trades("BTC/USDT")
+        self.assertGreaterEqual(len(all_trades), 2)
+
+        limited_trades = self.exchange.fetch_my_trades("BTC/USDT", limit=1)
+        self.assertEqual(len(limited_trades), 1)
+        self.assertEqual(limited_trades[0]["amount"], 0.10)  # sorted by timestamp desc
+        self.assertIn("order", limited_trades[0])  # Verify ID mapping
 
 
 # To run this test directly, use:

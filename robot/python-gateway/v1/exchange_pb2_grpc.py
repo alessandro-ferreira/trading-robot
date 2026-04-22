@@ -67,8 +67,13 @@ class ExchangeServiceStub(object):
                 _registered_method=True)
         self.GetOpenOrders = channel.unary_unary(
                 '/v1.ExchangeService/GetOpenOrders',
-                request_serializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
-                response_deserializer=v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
+                request_serializer=v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
+                _registered_method=True)
+        self.GetRecentTrades = channel.unary_unary(
+                '/v1.ExchangeService/GetRecentTrades',
+                request_serializer=v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
                 _registered_method=True)
         self.ResetState = channel.unary_unary(
                 '/v1.ExchangeService/ResetState',
@@ -131,6 +136,13 @@ class ExchangeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetRecentTrades(self, request, context):
+        """GetRecentTrades fetches recent execution history for a symbol.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ResetState(self, request, context):
         """ResetState resets the state of the exchange.
         WARN: This method is intended for testing purposes only.
@@ -174,8 +186,13 @@ def add_ExchangeServiceServicer_to_server(servicer, server):
             ),
             'GetOpenOrders': grpc.unary_unary_rpc_method_handler(
                     servicer.GetOpenOrders,
-                    request_deserializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.FromString,
-                    response_serializer=v1_dot_exchange__pb2.OpenOrdersResponse.SerializeToString,
+                    request_deserializer=v1_dot_exchange__pb2.GetOrdersRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
+            ),
+            'GetRecentTrades': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRecentTrades,
+                    request_deserializer=v1_dot_exchange__pb2.GetOrdersRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
             ),
             'ResetState': grpc.unary_unary_rpc_method_handler(
                     servicer.ResetState,
@@ -371,8 +388,35 @@ class ExchangeService(object):
             request,
             target,
             '/v1.ExchangeService/GetOpenOrders',
-            v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
-            v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
+            v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+            v1_dot_exchange__pb2.OrdersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetRecentTrades(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/GetRecentTrades',
+            v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+            v1_dot_exchange__pb2.OrdersResponse.FromString,
             options,
             channel_credentials,
             insecure,
