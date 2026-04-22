@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from core.config import ExchangeConfig
 from .exchanges.base import Exchange
@@ -39,13 +39,19 @@ class ExchangeFactory:
                 f"Exchange '{name}' is not configured or unknown"
             )
 
-        # Check if exchange is registered
-        if cfg.name not in REGISTRY:
-            logging.error(f"Exchange '{cfg.name}' is not registered")
-            raise ExchangeNotConfigured(f"Exchange '{cfg.name}' is not registered")
+        # if 'ccxt' is enabled in config, use the generic CCXT implementation.
+        # Otherwise, look for a custom native implementation in the registry.
+        if cfg.ccxt:
+            provider_cls = REGISTRY.get("ccxt")
+        else:
+            provider_cls = REGISTRY.get(cfg.name)
 
-        # Instantiate provider from registry
-        provider_cls = REGISTRY[cfg.name]
+        if not provider_cls:
+            logging.error(
+                f"Exchange implementation not found for '{cfg.name}' (ccxt={cfg.ccxt})"
+            )
+            raise ExchangeNotConfigured(f"No provider found for exchange '{cfg.name}'")
+
         try:
             provider = provider_cls(cfg)
         except Exception as e:
@@ -66,7 +72,7 @@ class ExchangeFactory:
 
         return provider
 
-    def list_exchanges(self):
+    def list_exchanges(self) -> List[str]:
         """Returns a list of configured exchange names."""
         return list(self._configs.keys())
 
@@ -80,7 +86,3 @@ class ExchangeFactory:
             except (ExchangeNotConfigured, ExchangeConfigurationError):
                 raise
         return self._instances[name]
-
-    def get_default(self) -> Optional[str]:
-        """Returns the name of the default exchange (the first configured one), or None if none are configured."""
-        return next(iter(self._configs.keys()), None)

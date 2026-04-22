@@ -1,44 +1,55 @@
-import os
 import unittest
-from core import config
-from exchange.exchanges.base import Exchange, Ticker, ExchangeError
-
-TEST_DATA_DIR = "tests/exchange/testdata"
+from exchange.exchanges.base import Exchange, ExchangeConfig, OrderType
+from exchange.exchanges.ccxt import CCXTExchange
 
 
-class TestBaseExchange(unittest.TestCase):
+class TestExchangeBase(unittest.TestCase):
     def setUp(self):
-        cfg = config.load(os.path.join(TEST_DATA_DIR, "config.toml"))
-        self.ex_cfg = cfg.exchanges[0]  # Use the first exchange config for testing
-        self.exchange = Exchange(self.ex_cfg)
+        """Initialize shared configuration for base exchange tests."""
+        self.base_cfg = ExchangeConfig(name="binance", ccxt=True)
 
-    def test_ticker_dataclass(self):
-        ticker = Ticker(symbol="BTC/USDT", last=50000.0)
-        self.assertEqual(ticker.symbol, "BTC/USDT")
-        self.assertEqual(ticker.last, 50000.0)
-        self.assertIsNone(ticker.bid)
-        self.assertIsNone(ticker.ask)
-        self.assertIsNone(ticker.timestamp)
-        self.assertIsNone(ticker.info)
+    def test_interface_not_implemented(self):
+        """Verify that all virtual methods in the base Exchange class enforce the interface contract."""
+        ex = Exchange()
 
-    def test_error_on_invalid_exchange_name(self):
-        invalidCfg = self.ex_cfg
-        invalidCfg.name = "exchange_not_in_ccxt"
-        exchange = Exchange(invalidCfg)
-        with self.assertRaises(ExchangeError):
-            exchange.fetch_ticker("BTC/USDT")
-        with self.assertRaises(ExchangeError):
-            exchange.fetch_balance()
-        with self.assertRaises(ExchangeError):
-            exchange.create_order("BTC/USDT", "limit", "buy", 1.0, 50000.0)
-        with self.assertRaises(ExchangeError):
-            exchange.cancel_order("1", symbol="BTC/USDT")
-        with self.assertRaises(ExchangeError):
-            exchange.fetch_order("1", symbol="BTC/USDT")
-        with self.assertRaises(ExchangeError):
-            exchange.fetch_open_orders("BTC/USDT")
-        with self.assertRaises(ExchangeError):
-            exchange.fetch_my_trades("BTC/USDT")
+        with self.assertRaises(NotImplementedError):
+            ex.set_sandbox_mode(True)
+        with self.assertRaises(NotImplementedError):
+            ex.fetch_ticker("BTC/USDT")
+        with self.assertRaises(NotImplementedError):
+            ex.fetch_balance()
+        with self.assertRaises(NotImplementedError):
+            ex.create_order("BTC/USDT", OrderType.LIMIT, "buy", 1.0, 50000.0)
+        with self.assertRaises(NotImplementedError):
+            ex.cancel_order("order_id", "BTC/USDT")
+        with self.assertRaises(NotImplementedError):
+            ex.fetch_order("order_id", "BTC/USDT")
+        with self.assertRaises(NotImplementedError):
+            ex.fetch_open_orders("BTC/USDT")
+        with self.assertRaises(NotImplementedError):
+            ex.fetch_my_trades("BTC/USDT")
+
+    def test_base_init_ccxt_mapping(self):
+        """
+        Verify that the base constructor correctly handles CCXT flag and instantiation.
+
+        This ensures that the shared logic in the base class correctly maps configuration
+        to the internal _ccxt attribute.
+        """
+        # Test with CCXT enabled
+        ex = CCXTExchange(self.base_cfg)
+        self.assertIsNotNone(ex._ccxt)
+
+        # Test with CCXT disabled (native)
+        native_cfg = ExchangeConfig(name="mercadobitcoin", ccxt=False)
+        ex_native = Exchange(native_cfg)
+        self.assertIsNone(ex_native._ccxt)
+
+    def test_base_init_invalid_ccxt_name(self):
+        """Verify that base constructor handles invalid CCXT names without crashing (logs a warning)."""
+        invalid_cfg = ExchangeConfig(name="invalid_exchange_name", ccxt=True)
+        ex = Exchange(invalid_cfg)
+        self.assertIsNone(ex._ccxt)
 
 
 # To run this test directly, use:

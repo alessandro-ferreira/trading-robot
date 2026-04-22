@@ -40,7 +40,7 @@ class ExchangeConfig:
     api_key: str = ""
     secret: str = ""
     sandbox_mode: bool = False
-    ccxt: bool = False  # Indicates if this exchange should be handled by ccxt
+    ccxt: bool = True  # Indicates if this exchange should be handled by ccxt
 
 
 @dataclass

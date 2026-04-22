@@ -77,78 +77,23 @@ class Exchange(ABC):
             raise
 
     def set_sandbox_mode(self, enabled: bool):
-        """
-        Enables or disables sandbox mode if supported by the exchange.
-
-        :param enabled: True to enable sandbox mode, False to disable.
-        """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("set_sandbox_mode not implemented")
-        if not self._ccxt:
-            raise ExchangeError(
-                "Underlying ccxt exchange not available to set sandbox mode"
-            )
-
-        try:
-            self._ccxt.set_sandbox_mode(enabled)
-        except Exception as e:
-            raise ExchangeError(str(e))
+        """Enables or disables sandbox mode if supported by the exchange."""
+        raise NotImplementedError("set_sandbox_mode not implemented for this exchange")
 
     def fetch_ticker(self, symbol: str) -> Ticker:
         """
         Fetches the ticker for the given symbol.
-
         :param symbol: The symbol to fetch (e.g., 'BTC/USDT').
         :return: A Ticker object containing market data.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("fetch_ticker not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available to fetch ticker")
-
-        raw = self._ccxt.fetch_ticker(symbol)
-        # normalization: prefer last -> close -> derived from info
-        last = None
-        for key in ("last", "close"):
-            if key in raw and raw[key] is not None:
-                last = raw[key]
-                break
-        if last is None and isinstance(raw.get("info"), dict):
-            info = raw["info"]
-            for fk in ("price", "last", "close"):
-                if fk in info:
-                    last = info[fk]
-                    break
-        if last is None:
-            raise ExchangeError(f"No price available in ticker for {symbol}")
-        try:
-            last_f = float(last)
-        except Exception as e:
-            raise ExchangeError(f"Invalid price format for {symbol}: {e}")
-        bid = raw.get("bid")
-        ask = raw.get("ask")
-        timestamp = raw.get("timestamp")
-        return Ticker(
-            symbol=symbol,
-            last=last_f,
-            bid=(float(bid) if bid is not None else None),
-            ask=(float(ask) if ask is not None else None),
-            timestamp=timestamp,
-            info=raw.get("info", {}),
-        )
+        raise NotImplementedError("fetch_ticker not implemented for this exchange")
 
     def fetch_balance(self) -> Dict[str, Dict[str, float]]:
         """
         Fetches the account balance.
-
         :return: A dictionary containing 'free', 'used', and 'total' balances.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("fetch_balance not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        return self._ccxt.fetch_balance()
+        raise NotImplementedError("fetch_balance not implemented for this exchange")
 
     def create_order(
         self,
@@ -160,7 +105,6 @@ class Exchange(ABC):
     ) -> Dict[str, Any]:
         """
         Creates a new order.
-
         :param symbol: The symbol to trade (e.g., 'BTC/USDT').
         :param type: The order type ('market' or 'limit').
         :param side: The order side ('buy' or 'sell').
@@ -168,59 +112,36 @@ class Exchange(ABC):
         :param price: The price per unit (required for limit orders).
         :return: A dictionary containing the order details.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("create_order not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        return self._ccxt.create_order(symbol, type, side, amount, price)
+        raise NotImplementedError("create_order not implemented for this exchange")
 
     def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
         Cancels an existing order.
-
         :param id: The order ID.
         :param symbol: The symbol of the order (optional but recommended).
         :return: A dictionary containing the cancellation details.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("cancel_order not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        return self._ccxt.cancel_order(id, symbol)
+        raise NotImplementedError("cancel_order not implemented for this exchange")
 
     def fetch_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """
-        Fetches an existing order.
-
+        Fetches an existing order's details.
         :param id: The order ID.
         :param symbol: The symbol of the order (optional but recommended).
         :return: A dictionary containing the order details.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("fetch_order not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        return self._ccxt.fetch_order(id, symbol)
+        raise NotImplementedError("fetch_order not implemented for this exchange")
 
     def fetch_open_orders(
         self, symbol: Optional[str] = None, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Fetches open orders for the given symbol.
-
         :param symbol: The symbol to filter by (optional).
         :param limit: The maximum number of orders to fetch (optional).
         :return: A list of open orders.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("fetch_open_orders not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        return self._ccxt.fetch_open_orders(symbol, limit=limit)
+        raise NotImplementedError("fetch_open_orders not implemented for this exchange")
 
     def fetch_my_trades(
         self,
@@ -230,25 +151,9 @@ class Exchange(ABC):
     ) -> List[Dict[str, Any]]:
         """
         Fetches the user's trades (executions) for the given symbol.
-
         :param symbol: The symbol to filter by (optional).
         :param since: Millisecond timestamp for pagination (optional).
         :param limit: The maximum number of trades to fetch (optional).
         :return: A list of trade details.
         """
-        if not self._cfg or not self._cfg.ccxt:
-            raise NotImplementedError("fetch_my_trades not implemented")
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        try:
-            return self._ccxt.fetch_my_trades(symbol, since=since, limit=limit)
-        except Exception as e:
-            # Many CCXT implementations (like Binance) require a symbol for private trade history.
-            # If no symbol is provided, we log a warning and return an empty list instead of raising an error.
-            if not symbol:
-                logging.warning(
-                    f"Exchange {self._cfg.name} does not support fetch_my_trades without symbol: {e}"
-                )
-                return []
-            raise
+        raise NotImplementedError("fetch_my_trades not implemented for this exchange")

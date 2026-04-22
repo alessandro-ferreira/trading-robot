@@ -11,25 +11,9 @@ from exchange.factory import (
     ExchangeFactory,
     ExchangeNotConfigured,
 )
-from exchange.exchanges.base import Exchange
 from core.config import Config
-
-# Whitelist of assets supported by the system's database schema.
-SUPPORTED_ASSETS = {
-    "BTC",
-    "ETH",
-    "LTC",
-    "XRP",
-    "BCH",
-    "ADA",
-    "DOGE",
-    "SOL",
-    "LINK",
-    "XLM",
-    "USDT",
-    "BRL",
-    "USD",
-}
+from .exchanges.base import Exchange
+from .exchanges import SUPPORTED_ASSETS
 
 
 class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
@@ -90,16 +74,24 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         else:
             context.abort(grpc.StatusCode.INTERNAL, str(e))
 
-    def _map_order(self, order: dict, req: Any = None) -> exchange_pb2.OrderResponse:
+    def _map_order(
+        self, order: dict, req: Any = None, is_trade: bool = False
+    ) -> exchange_pb2.OrderResponse:
         """Helper to map a CCXT order or trade dictionary to a gRPC OrderResponse."""
         if not order:
             return exchange_pb2.OrderResponse()
 
         # Prefer 'order' (parent ID) over 'id' (specific execution ID).
-        oid = str(order.get("order") or order.get("id") or "")
+        if is_trade:
+            oid = str(order.get("order") or order.get("id") or "")
+        else:
+            oid = str(order.get("id") or "")
 
         # Trades are implicitly closed. Orders have an explicit status.
         status = order.get("status", "closed" if "order" in order else "")
+
+        filled = order.get("filled")
+        average = order.get("average")
 
         return exchange_pb2.OrderResponse(
             id=oid,
@@ -109,10 +101,10 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             amount=float(order.get("amount") or getattr(req, "amount", 0.0)),
             price=float(order.get("price") or getattr(req, "price", 0.0)),
             status=status,
-            filled=float(order.get("filled") or order.get("amount") or 0.0),
+            filled=float(filled if filled is not None else order.get("amount", 0.0)),
             remaining=float(order.get("remaining") or 0.0),
             cost=float(order.get("cost") or 0.0),
-            average=float(order.get("average") or order.get("price") or 0.0),
+            average=float(average if average is not None else order.get("price", 0.0)),
             client_order_id=str(order.get("clientOrderId") or ""),
             timestamp=int(order.get("timestamp") or 0),
         )
@@ -146,7 +138,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.BalanceResponse:
         """Handles the GetBalance RPC."""
-        logging.info(f"Received GetBalance request for exchange: {request.exchange}")
+        logging.info(
+            f"Received GetBalance request for exchange: {request.exchange}, currency: {request.currency}"
+        )
 
         exchange = self._getExchange(request, context)
         balances = []
@@ -160,6 +154,10 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             # Use the total map as the source of truth for assets returned by the exchange
             for asset, total_val in total_map.items():
                 if asset not in SUPPORTED_ASSETS:
+                    continue
+
+                # Filter by currency if a specific one was requested
+                if request.currency and asset != request.currency.upper():
                     continue
 
                 f = float(free_map.get(asset, 0.0))
@@ -253,7 +251,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             self._handle_exchange_error(context, e, "fetching open orders")
 
         return exchange_pb2.OrdersResponse(
-            orders=[self._map_order(o, request) for o in orders]
+            orders=[self._map_order(o, request) for o in orders[:limit]]
         )
 
     def GetRecentTrades(
@@ -271,7 +269,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             self._handle_exchange_error(context, e, "fetching recent trades")
 
         return exchange_pb2.OrdersResponse(
-            orders=[self._map_order(t, request) for t in trades]
+            orders=[self._map_order(t, request, True) for t in trades[:limit]]
         )
 
     def ResetState(

@@ -1,21 +1,35 @@
+from .ccxt import CCXTExchange
 from .dummy import DummyExchange
-
-from .binance import BinanceExchange
-from .coinbase import CoinbaseExchange
 from .mercadobitcoin import MercadoBitcoinExchange
 
 
 REGISTRY = {
+    "ccxt": CCXTExchange,
     "dummy": DummyExchange,
-    "binance": BinanceExchange,
-    "coinbase": CoinbaseExchange,
     "mercadobitcoin": MercadoBitcoinExchange,
 }
 
+# Whitelist of assets supported by the system's database schema.
+SUPPORTED_ASSETS = {
+    "BTC",
+    "ETH",
+    "LTC",
+    "XRP",
+    "BCH",
+    "ADA",
+    "DOGE",
+    "SOL",
+    "LINK",
+    "XLM",
+    "USDT",
+    "BRL",
+    "USD",
+}
+
 __all__ = [
+    "CCXTExchange",
     "DummyExchange",
-    "BinanceExchange",
-    "CoinbaseExchange",
     "MercadoBitcoinExchange",
     "REGISTRY",
+    "SUPPORTED_ASSETS",
 ]

@@ -1,8 +1,12 @@
 import logging
 import sys
 import json
+import os
 
 from core.config import LogConfig
+
+# Determine the project root directory (one level up from core/)
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 class JSONFormatter(logging.Formatter):
@@ -25,9 +29,20 @@ class JSONFormatter(logging.Formatter):
         if record.stack_info:
             log_record["stack_info"] = self.formatStack(record.stack_info)
         if self.include_source:
-            log_record["source"] = f"{record.pathname}:{record.lineno}"
+            rel_path = os.path.relpath(record.pathname, _ROOT)
+            log_record["source"] = f"{rel_path}:{record.lineno}"
 
         return json.dumps(log_record)
+
+
+class TextFormatter(logging.Formatter):
+    """
+    A custom formatter to provide relative paths from project root.
+    """
+
+    def format(self, record):
+        record.relpath = os.path.relpath(record.pathname, _ROOT)
+        return super().format(record)
 
 
 def setup(cfg: LogConfig, stream=None):
@@ -54,9 +69,11 @@ def setup(cfg: LogConfig, stream=None):
         log_format = "%(asctime)s - %(levelname)s - %(message)s"
         if cfg.source:
             log_format = (
-                "%(asctime)s - %(levelname)s - [%(pathname)s:%(lineno)d] - %(message)s"
+                "%(asctime)s - %(levelname)s - [%(relpath)s:%(lineno)d] - %(message)s"
             )
-        formatter = logging.Formatter(log_format)
+            formatter = TextFormatter(log_format)
+        else:
+            formatter = logging.Formatter(log_format)
 
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)

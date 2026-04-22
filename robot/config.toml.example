@@ -41,6 +41,7 @@ max_daily_loss = 100.0
 [[exchange]]
 name = "dummy"
 sandbox_mode = false
+# if ccxt is false exchange must have a custom implementation
 ccxt = false
 
 [[exchange]]

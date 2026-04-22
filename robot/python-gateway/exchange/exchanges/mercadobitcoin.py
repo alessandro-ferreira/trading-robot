@@ -27,6 +27,7 @@ class MercadoBitcoinExchange(Exchange):
     PATH_ORDERS_SYMBOL = "/accounts/{}/{}/orders"
     PATH_ORDERS_ALL = "/accounts/{}/orders"
 
+    # TODO: Consider making this configurable and implementing retry logic for timeouts in getter methods.
     TIMEOUT = 10  # seconds
 
     def __init__(self, cfg=None):
