@@ -2,7 +2,7 @@
 CREATE TYPE trading.position_side AS ENUM ('long', 'short');
 
 -- Define ENUM for strategy engine lifecycle states
-CREATE TYPE trading.strategy_state AS ENUM ('idle', 'pending_buy', 'active', 'pending_sell');
+CREATE TYPE trading.strategy_state AS ENUM ('idle', 'pending_buy', 'active', 'pending_sell', 'unmanaged');
 
 -- Table to track open trading positions per exchange and instrument
 CREATE TABLE IF NOT EXISTS trading.positions (

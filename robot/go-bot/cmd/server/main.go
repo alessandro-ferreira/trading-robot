@@ -13,6 +13,7 @@ import (
 	"trading/robot/go-bot/internal/background"
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/portfolio"
+	"trading/robot/go-bot/internal/components/reconciliation"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
@@ -72,24 +73,25 @@ func main() {
 
 	repoContainer := repository.New()
 
-	// Initialize portfolio
-	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer)
-	slog.Info("Portfolio initialized")
-
 	// Initialize execution service
 	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
 	slog.Info("Execution service initialized")
+
+	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer)
+	recon := reconciliation.NewReconciler(slog.Default(), db, repoContainer, execService)
 
 	// --- Background Tasks ---
 	bgManager := background.NewManager(slog.Default())
 
 	setupHealthMonitor(cfg, execService, bgManager)
-	setupReconciliation(cfg, execService, pf, bgManager)
+	setupOrderSync(cfg, recon, bgManager)
+	setupPositionSync(cfg, execService, pf, recon, bgManager)
+	setupTradeAudit(cfg, recon, bgManager)
 
 	bgManager.Start(ctx)
 
 	// --- Orchestration ---
-	orch, err := orchestrator.New(slog.Default(), db, repoContainer, cfg, pf, execService, cfg.Server.OrchestratorInterval)
+	orch, err := orchestrator.New(slog.Default(), db, repoContainer, cfg, pf, recon, execService, cfg.Server.OrchestratorInterval)
 	if err != nil {
 		slog.Error("Failed to initialize Orchestrator", "error", err)
 		os.Exit(1)

@@ -44,7 +44,7 @@ type StrategyPair struct {
 
 // StrategiesRepo defines the interface for managing strategy configurations.
 type StrategiesRepo interface {
-	GetEnabledStrategyPairs(ctx context.Context, db DBExecutor) ([]StrategyPair, error)
+	GetStrategyPairs(ctx context.Context, db DBExecutor, onlyEnabled bool) ([]StrategyPair, error)
 	UpsertEnabledStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType, label string, momentum StrategyMomentum) error
 }
 
@@ -55,8 +55,8 @@ func NewStrategiesRepo() StrategiesRepo {
 	return &pgStrategiesRepo{}
 }
 
-// GetEnabledStrategyPairs retrieves all currently enabled strategy configurations from the database.
-func (r *pgStrategiesRepo) GetEnabledStrategyPairs(ctx context.Context, db DBExecutor) ([]StrategyPair, error) {
+// GetStrategyPairs retrieves strategy pairs with optional filtering by enabled status.
+func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, onlyEnabled bool) ([]StrategyPair, error) {
 	query := `
 		SELECT
 			e.name AS exchange_name,
@@ -74,12 +74,12 @@ func (r *pgStrategiesRepo) GetEnabledStrategyPairs(ctx context.Context, db DBExe
 		INNER JOIN trading.exchanges e ON e.id = sp.exchange_id AND e.active
 		INNER JOIN trading.instruments i ON i.id = sp.instrument_id AND i.exchange_id = sp.exchange_id AND i.active
 		LEFT JOIN trading.strategy_momentum sm ON sp.id = sm.strategy_pair_id AND sm.is_enabled AND sm.active
-		WHERE sp.is_enabled AND sp.active
+		WHERE (sp.is_enabled OR NOT $1) AND sp.active
 	`
 
-	rows, err := db.Query(ctx, query)
+	rows, err := db.Query(ctx, query, onlyEnabled)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query active strategy pairs: %w", err)
+		return nil, fmt.Errorf("failed to query strategy pairs: %w", err)
 	}
 	defer rows.Close()
 

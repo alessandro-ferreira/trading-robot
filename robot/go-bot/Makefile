@@ -21,7 +21,7 @@ MIGRATIONS_PATH := ./migrations
 
 .PHONY: help run proto install-tools pre-commit
 .PHONY: strategy-core clean-strategy
-.PHONY: test test-integration test-all
+.PHONY: coverage test test-integration test-all
 .PHONY: db-up db-down db-drop-all debug-db
 .PHONY: install-migrate migrate-up migrate-down migrate-create migrate-force migrate-version
 
@@ -36,6 +36,7 @@ help:
 	@echo "  proto            Generate protobuf files from .proto definitions."
 	@echo "  install-tools    Install development tools."
 	@echo "  pre-commit       Run pre-commit hooks (requires pre-commit installed)."
+	@echo "  coverage         Run code coverage tests."
 	@echo "  test             Run all unit tests (excluding integration tests)."
 	@echo "  test-integration Run integration tests (requires running DB and Gateway)."
 	@echo "  test-all         Run all unit and integration tests, managing the test environment."
@@ -80,6 +81,11 @@ pre-commit: install-tools
 	@cd ../.. && pre-commit run --all-files
 
 # Testing targets
+coverage:
+	@echo "==> Running tests with coverage..."
+	@go test -timeout 30s -coverprofile=coverage.out ./...
+	@rm -f coverage.out
+
 test: strategy-core
 	@echo "==> Running unit tests..."
 	@go test -v ./...

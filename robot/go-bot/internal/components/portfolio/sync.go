@@ -80,7 +80,7 @@ func (p *Portfolio) UpdatePrice(ctx context.Context, exchange, symbol string, pr
 			Active:           true,
 		}
 		if err := p.repo.Positions.UpsertPosition(ctx, p.db, dto); err != nil {
-			p.logger.Error("Failed to persist high-water mark", "symbol", symbol, "error", err)
+			p.logger.Warn("Failed to persist high-water mark", "symbol", symbol, "error", err)
 		}
 	}
 }
@@ -105,7 +105,7 @@ func (p *Portfolio) SyncMetadata(ctx context.Context, exchange, symbol string, s
 			Active:           true,
 		}
 		if err := p.repo.Positions.UpsertPosition(ctx, p.db, dto); err != nil {
-			p.logger.Error("Failed to persist strategy state", "symbol", symbol, "error", err)
+			p.logger.Warn("Failed to persist strategy state", "symbol", symbol, "error", err)
 		}
 	}
 }

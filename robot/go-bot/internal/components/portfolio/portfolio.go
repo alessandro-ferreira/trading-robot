@@ -60,7 +60,7 @@ func NewPortfolio(logger *slog.Logger, db *database.DB, repo *repository.Contain
 }
 
 // LoadState hydrates the portfolio state from the persistent storage.
-// This should be called on application startup.
+// This should be called on application startup or when a full refresh is needed.
 func (p *Portfolio) LoadState(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -68,7 +68,7 @@ func (p *Portfolio) LoadState(ctx context.Context) error {
 	// Hydrate liquid cash balances
 	balances, err := p.repo.Balances.GetAllBalances(ctx, p.db)
 	if err != nil {
-		return fmt.Errorf("failed to load balances from repository: %w", err)
+		return fmt.Errorf("load state: failed to fetch balances: %w", err)
 	}
 
 	p.cashBalances = make(map[string]*CashBalance)
@@ -84,9 +84,9 @@ func (p *Portfolio) LoadState(ctx context.Context) error {
 	}
 
 	// Hydrate open positions
-	positions, err := p.repo.Positions.GetOpenPositions(ctx, p.db)
+	positions, err := p.repo.Positions.GetOpenPositions(ctx, p.db, "", "")
 	if err != nil {
-		return fmt.Errorf("failed to load positions from repository: %w", err)
+		return fmt.Errorf("load state: failed to fetch positions: %w", err)
 	}
 
 	p.positions = make(map[string]*Position)

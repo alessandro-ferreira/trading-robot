@@ -122,6 +122,19 @@ func NewStrategy(cfg StrategyConfig) (*Strategy, error) {
 	}, nil
 }
 
+// Close releases the underlying C++ strategy handle and associated resources.
+func (s *Strategy) Close() {
+	if s.handle != nil {
+		C.Strategy_Destroy(s.handle)
+		s.handle = nil
+	}
+}
+
+// GetConfig returns the configuration used to create this strategy.
+func (s *Strategy) GetConfig() StrategyConfig {
+	return s.cfg
+}
+
 // UpdateConfig updates the internal strategy parameters without wiping history.
 func (s *Strategy) UpdateConfig(cfg StrategyConfig) error {
 	cCfg := toCConfig(cfg)
@@ -131,49 +144,6 @@ func (s *Strategy) UpdateConfig(cfg StrategyConfig) error {
 	}
 	s.cfg = cfg
 	return nil
-}
-
-// GetConfig returns the configuration used to create this strategy.
-func (s *Strategy) GetConfig() StrategyConfig {
-	return s.cfg
-}
-
-// toCConfig maps the Go StrategyConfig to the C struct.
-func toCConfig(cfg StrategyConfig) C.StrategyConfig {
-	cCfg := C.StrategyConfig{
-		_type:             C.StrategyType(cfg.Type),
-		window_seconds:    C.longlong(cfg.WindowSeconds),
-		stop_loss_pct:     C.double(cfg.StopLossPct),
-		profit_target_pct: C.double(cfg.ProfitTargetPct),
-		activation_pct:    C.double(cfg.ActivationPct),
-		trailing_stop_pct: C.double(cfg.TrailingStopPct),
-	}
-
-	if cfg.MomentumRequireAll {
-		cCfg.momentum_require_all = 1
-	} else {
-		cCfg.momentum_require_all = 0
-	}
-
-	count := len(cfg.MomentumWindows)
-	if count > C.MAX_MOMENTUM_WINDOWS {
-		count = C.MAX_MOMENTUM_WINDOWS
-	}
-	cCfg.num_momentum_windows = C.int(count)
-
-	for i := 0; i < count; i++ {
-		cCfg.momentum_windows[i].lookback_seconds = C.longlong(cfg.MomentumWindows[i].LookbackSeconds)
-		cCfg.momentum_windows[i].threshold = C.double(cfg.MomentumWindows[i].Threshold)
-	}
-	return cCfg
-}
-
-// Close releases the underlying C++ strategy handle and associated resources.
-func (s *Strategy) Close() {
-	if s.handle != nil {
-		C.Strategy_Destroy(s.handle)
-		s.handle = nil
-	}
 }
 
 // InitProfit initializes the strategy state for profit-target based logic with historical data.
@@ -238,4 +208,34 @@ func (s *Strategy) CancelSignal(signal Signal) {
 // ResetSignal explicitly returns the strategy to the IDLE state.
 func (s *Strategy) ResetSignal() {
 	C.Strategy_ResetSignal(s.handle)
+}
+
+// toCConfig maps the Go StrategyConfig to the C struct.
+func toCConfig(cfg StrategyConfig) C.StrategyConfig {
+	cCfg := C.StrategyConfig{
+		_type:             C.StrategyType(cfg.Type),
+		window_seconds:    C.longlong(cfg.WindowSeconds),
+		stop_loss_pct:     C.double(cfg.StopLossPct),
+		profit_target_pct: C.double(cfg.ProfitTargetPct),
+		activation_pct:    C.double(cfg.ActivationPct),
+		trailing_stop_pct: C.double(cfg.TrailingStopPct),
+	}
+
+	if cfg.MomentumRequireAll {
+		cCfg.momentum_require_all = 1
+	} else {
+		cCfg.momentum_require_all = 0
+	}
+
+	count := len(cfg.MomentumWindows)
+	if count > C.MAX_MOMENTUM_WINDOWS {
+		count = C.MAX_MOMENTUM_WINDOWS
+	}
+	cCfg.num_momentum_windows = C.int(count)
+
+	for i := 0; i < count; i++ {
+		cCfg.momentum_windows[i].lookback_seconds = C.longlong(cfg.MomentumWindows[i].LookbackSeconds)
+		cCfg.momentum_windows[i].threshold = C.double(cfg.MomentumWindows[i].Threshold)
+	}
+	return cCfg
 }

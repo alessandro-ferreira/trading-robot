@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"trading/robot/go-bot/internal/components/signal_generator"
+	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
 )
@@ -14,12 +15,12 @@ import (
 // Perform initial strategy warm-up and state hydration for all active strategy pairs.
 func (o *Orchestrator) strategyWarmup(ctx context.Context) error {
 	// Load enabled strategy pairs from database
-	pairs, err := o.repo.Strategies.GetEnabledStrategyPairs(ctx, o.db)
+	pairs, err := o.repo.Strategies.GetStrategyPairs(ctx, o.db, true)
 	if err != nil {
 		return fmt.Errorf("failed to load strategy pairs: %w", err)
 	}
 
-	// Initialize signal generators for each enabled strategy pair in parallel
+	// Initialize signal generators for each enabled strategy pair in parallel.
 	var initWg sync.WaitGroup
 	for _, p := range pairs {
 		initWg.Add(1)
@@ -34,7 +35,19 @@ func (o *Orchestrator) strategyWarmup(ctx context.Context) error {
 	}
 	initWg.Wait()
 
-	// Hydrate Portfolio state from DB (open positions, balances)
+	// Sync and hydrate positions for all active exchanges to ensure Portfolio is up-to-date.
+	initWg = sync.WaitGroup{}
+	for _, ex := range o.cfg.Exchanges {
+		initWg.Add(1)
+		go func(exchange config.ExchangeConfig) {
+			defer initWg.Done()
+			if err := o.recon.SyncPositions(ctx, exchange.Name, ""); err != nil {
+				o.logger.Error("Failed to sync positions", "exchange", exchange.Name, "error", err)
+			}
+		}(ex)
+	}
+	initWg.Wait()
+
 	if err := o.portfolio.LoadState(ctx); err != nil {
 		return fmt.Errorf("failed to hydrate portfolio: %w", err)
 	}
@@ -122,29 +135,45 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	// JIT Sync: verify balance and open orders with Exchange and update them in the DB before making any decisions.
 	var openOrdersCount int
 	if signal != strategy.SignalSearchingEntry && signal != strategy.SignalInvalid {
-		syncBalance := (signal == strategy.SignalBuy || signal == strategy.SignalSell)
-		if syncBalance {
+		isTradeSignal := (signal == strategy.SignalBuy || signal == strategy.SignalSell)
+
+		if isTradeSignal {
+			// JIT Safety Gate: Force sync of liquid truth before executing a Buy or Sell.
 			if _, err := o.exec.GetBalance(ctx, exchange, ""); err == nil {
 				o.logger.Debug("Synced all balances for exchange", "exchange", exchange)
 			}
+			if err := o.recon.SyncOrders(ctx, exchange, symbol); err != nil {
+				o.logger.Error("JIT Order Sync Failure: halting processing", "symbol", symbol, "error", err)
+				return
+			}
+			if err := o.recon.SyncPositions(ctx, exchange, symbol); err != nil {
+				o.logger.Error("JIT Position Sync Failure: halting processing", "symbol", symbol, "error", err)
+				return
+			}
+
+			statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
+			if orders, err := o.repo.Orders.GetOrders(ctx, o.db, exchange, symbol, statuses, 10); err == nil {
+				openOrdersCount = len(orders)
+			}
+
+		} else {
+			if resp, err := o.exec.GetOpenOrders(ctx, exchange, symbol, 10); err == nil {
+				openOrdersCount = len(resp.Orders)
+			}
 		}
 
-		if resp, err := o.exec.GetOpenOrders(ctx, exchange, symbol); err == nil {
-			openOrdersCount = len(resp.Orders)
-		}
-
-		// Refresh Portfolio state from DB
-		_ = o.portfolio.RefreshState(ctx, exchange, symbol, syncBalance, true)
+		// Hydrate memory maps from the synchronized database.
+		_ = o.portfolio.RefreshState(ctx, exchange, symbol, isTradeSignal, true)
 	}
 
 	// Fetch latest position state from memory for decision handling
-	pos, exists := o.portfolio.GetPosition(exchange, symbol)
+	pos, existsPosition := o.portfolio.GetPosition(exchange, symbol)
 
 	// Decision and Risk Handling
 	switch signal {
 	case strategy.SignalSearchingEntry:
 		// RECONCILIATION: If we have a position but the engine is idling, force it to ACTIVE.
-		if exists {
+		if existsPosition {
 			o.logger.Info("Reconciliation: Position found while searching, syncing engine to ACTIVE state", "symbol", symbol)
 			if err := sig.SyncState(strategy.StateActive, pos.EntryPrice, pos.HighestPrice); err != nil {
 				o.logger.Error("Reconciliation sync failed", "symbol", symbol, "error", err)
@@ -154,7 +183,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	case strategy.SignalBuy:
 		// RECONCILIATION: If strategy core says BUY but Portfolio says we are already in,
 		// confirm the signal so the strategy starts tracking the existing position.
-		if exists {
+		if existsPosition {
 			o.logger.Info("Reconciliation: BUY signal while position already exists, syncing to ACTIVE state", "symbol", symbol)
 			if err := sig.SyncState(strategy.StateActive, pos.EntryPrice, pos.HighestPrice); err != nil {
 				o.logger.Error("Reconciliation sync failed", "symbol", symbol, "error", err)
@@ -179,7 +208,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 		o.logger.Info("Placing BUY order", "symbol", symbol, "qty", eval.ApprovedSize, "price", price)
-		order, err := o.exec.CreateOrder(ctx, exchange, symbol, "buy", "limit", eval.ApprovedSize, price)
+		order, err := o.exec.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeLimit, eval.ApprovedSize, price)
 		if err != nil {
 			o.logger.Error("Failed to place BUY order", "symbol", symbol, "error", err)
 			// RECOVERY: If order placement failed, revert to IDLE so the strategy can try again on the next tick.
@@ -194,7 +223,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 	case strategy.SignalWaitingBuyFill:
-		if exists {
+		if existsPosition {
 			// Standard Late Fill: Order filled while we were waiting.
 			o.logger.Info("Reconciliation: Late fill detected, confirming BUY", "symbol", symbol)
 			sig.Confirm(strategy.SignalBuy, pos.EntryPrice)
@@ -209,7 +238,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 	case strategy.SignalSell:
-		if !exists || pos.Quantity <= 0 {
+		if !existsPosition || pos.Quantity <= 0 {
 			// RECONCILIATION: Strategy core thinks we are in a position, but Portfolio says no.
 			// This happens if a Stop Loss triggered on the exchange. We must reset the engine state.
 			o.logger.Info("Reconciliation: SELL signal but no position found, resetting engine to IDLE state", "symbol", symbol)
@@ -224,7 +253,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 		o.logger.Info("Placing SELL order", "symbol", symbol, "qty", pos.Quantity, "price", price)
-		order, err := o.exec.CreateOrder(ctx, exchange, symbol, "sell", "limit", pos.Quantity, price)
+		order, err := o.exec.CreateOrder(ctx, exchange, symbol, repository.OrderSideSell, repository.OrderTypeLimit, pos.Quantity, price)
 		if err != nil {
 			o.logger.Error("Failed to place SELL order", "symbol", symbol, "error", err)
 			// RECOVERY: If order placement failed, revert to ACTIVE so the exit rule can trigger again on the next tick.
@@ -239,7 +268,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		}
 
 	case strategy.SignalWaitingSellFill:
-		if !exists {
+		if !existsPosition {
 			// Standard Late Fill: Sell order cleared while we were waiting.
 			o.logger.Info("Reconciliation: Late fill detected, confirming SELL", "symbol", symbol)
 			sig.Confirm(strategy.SignalSell, price)
@@ -254,7 +283,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 
 	case strategy.SignalTrackingExit:
 		// RECONCILIATION: If the position is gone (External Stop Loss/Manual Sale) while strategy is tracking, reset to IDLE.
-		if !exists {
+		if !existsPosition {
 			o.logger.Info("Reconciliation: Position gone, syncing strategy to IDLE state", "symbol", symbol)
 			sig.Reset()
 		}
@@ -265,7 +294,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 
 	// Sync latest engine state to portfolio for persistence ONLY if it has changed.
 	currentState := sig.State()
-	if exists && pos.StrategyState != currentState {
+	if existsPosition && pos.StrategyState != currentState {
 		o.portfolio.SyncMetadata(ctx, exchange, symbol, currentState)
 	}
 }

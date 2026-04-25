@@ -8,6 +8,7 @@ import (
 
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/portfolio"
+	"trading/robot/go-bot/internal/components/reconciliation"
 	"trading/robot/go-bot/internal/components/risk"
 	"trading/robot/go-bot/internal/components/signal_generator"
 	"trading/robot/go-bot/internal/config"
@@ -20,9 +21,11 @@ type Orchestrator struct {
 	logger    *slog.Logger
 	db        *database.DB
 	repo      *repository.Container
+	cfg       *config.Config
 	portfolio *portfolio.Portfolio
 	risk      *risk.Manager
-	exec      *execution.Service
+	recon     *reconciliation.Reconciler
+	exec      execution.Service
 	interval  time.Duration
 	mu        sync.Mutex
 	signals   map[string]*signal_generator.SignalGenerator
@@ -35,7 +38,8 @@ func New(
 	repo *repository.Container,
 	cfg *config.Config,
 	pf *portfolio.Portfolio,
-	exec *execution.Service,
+	recon *reconciliation.Reconciler,
+	exec execution.Service,
 	interval time.Duration,
 ) (*Orchestrator, error) {
 	// Initialize internal logic components
@@ -46,9 +50,11 @@ func New(
 		logger:    logger,
 		db:        db,
 		repo:      repo,
+		cfg:       cfg,
 		interval:  interval,
 		portfolio: pf,
 		risk:      riskMgr,
+		recon:     recon,
 		exec:      exec,
 		signals:   signals,
 	}, nil

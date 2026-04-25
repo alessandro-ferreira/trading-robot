@@ -33,10 +33,10 @@ type PositionData struct {
 
 // PositionsRepo defines the interface for interacting with positions.
 type PositionsRepo interface {
-	GetPosition(ctx context.Context, db DBExecutor, exchangeName, symbol string) (PositionData, error)
-	GetOpenPositions(ctx context.Context, db DBExecutor) ([]PositionData, error)
+	GetPosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) (PositionData, error)
+	GetOpenPositions(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) ([]PositionData, error)
 	UpsertPosition(ctx context.Context, db DBExecutor, pos PositionData) error
-	DeletePosition(ctx context.Context, db DBExecutor, exchangeName, symbol string) error
+	DeletePosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) error
 }
 
 // pgPositionsRepo is the PostgreSQL implementation of PositionsRepo.
@@ -48,7 +48,7 @@ func NewPositionsRepo() PositionsRepo {
 }
 
 // GetPosition retrieves a specific position.
-func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchangeName, symbol string) (PositionData, error) {
+func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) (PositionData, error) {
 	query := `
 		SELECT
 			p.id,
@@ -69,7 +69,7 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 	`
 
 	var pos PositionData
-	err := db.QueryRow(ctx, query, exchangeName, symbol).Scan(
+	err := db.QueryRow(ctx, query, exchangeName, instrumentSymbol).Scan(
 		&pos.ID,
 		&pos.ExchangeName,
 		&pos.InstrumentSymbol,
@@ -90,7 +90,7 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 }
 
 // GetOpenPositions retrieves all active positions across all exchanges.
-func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor) ([]PositionData, error) {
+func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) ([]PositionData, error) {
 	query := `
 		SELECT
 			p.id,
@@ -105,12 +105,12 @@ func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor) (
 			p.created_at,
 			p.updated_at
 		FROM trading.positions p
-		INNER JOIN trading.exchanges e ON e.id = p.exchange_id AND e.active
-		INNER JOIN trading.instruments i ON i.id = p.instrument_id AND i.exchange_id = p.exchange_id AND i.active
+		INNER JOIN trading.exchanges e ON e.id = p.exchange_id AND ($1 = '' OR e.name = $1) AND e.active
+		INNER JOIN trading.instruments i ON i.id = p.instrument_id AND i.exchange_id = p.exchange_id AND ($2 = '' OR i.name = $2) AND i.active
 		WHERE p.active
 	`
 
-	rows, err := db.Query(ctx, query)
+	rows, err := db.Query(ctx, query, exchangeName, instrumentSymbol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get open positions: %w", err)
 	}
@@ -219,7 +219,7 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 }
 
 // DeletePosition marks a position as inactive (soft delete).
-func (r *pgPositionsRepo) DeletePosition(ctx context.Context, db DBExecutor, exchangeName, symbol string) error {
+func (r *pgPositionsRepo) DeletePosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) error {
 	// Select exchange_id and instrument_id
 	selectQuery := `
 		SELECT i.exchange_id, i.id
@@ -228,7 +228,7 @@ func (r *pgPositionsRepo) DeletePosition(ctx context.Context, db DBExecutor, exc
 		WHERE i.name = $2 AND i.active
 	`
 	var exchangeID, instrumentID int64
-	err := db.QueryRow(ctx, selectQuery, exchangeName, symbol).Scan(
+	err := db.QueryRow(ctx, selectQuery, exchangeName, instrumentSymbol).Scan(
 		&exchangeID,
 		&instrumentID,
 	)

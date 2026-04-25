@@ -36,7 +36,9 @@ type ExchangeServiceClient interface {
 	// GetOrder fetches details of a specific order.
 	GetOrder(ctx context.Context, in *GetOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error)
 	// GetOpenOrders fetches all open orders for a symbol.
-	GetOpenOrders(ctx context.Context, in *GetOpenOrdersRequest, opts ...grpc.CallOption) (*OpenOrdersResponse, error)
+	GetOpenOrders(ctx context.Context, in *GetOrdersRequest, opts ...grpc.CallOption) (*OrdersResponse, error)
+	// GetRecentTrades fetches recent execution history for a symbol.
+	GetRecentTrades(ctx context.Context, in *GetOrdersRequest, opts ...grpc.CallOption) (*OrdersResponse, error)
 	// ResetState resets the state of the exchange.
 	// WARN: This method is intended for testing purposes only.
 	ResetState(ctx context.Context, in *ResetStateRequest, opts ...grpc.CallOption) (*ResetStateResponse, error)
@@ -104,9 +106,18 @@ func (c *exchangeServiceClient) GetOrder(ctx context.Context, in *GetOrderReques
 	return out, nil
 }
 
-func (c *exchangeServiceClient) GetOpenOrders(ctx context.Context, in *GetOpenOrdersRequest, opts ...grpc.CallOption) (*OpenOrdersResponse, error) {
-	out := new(OpenOrdersResponse)
+func (c *exchangeServiceClient) GetOpenOrders(ctx context.Context, in *GetOrdersRequest, opts ...grpc.CallOption) (*OrdersResponse, error) {
+	out := new(OrdersResponse)
 	err := c.cc.Invoke(ctx, "/v1.ExchangeService/GetOpenOrders", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *exchangeServiceClient) GetRecentTrades(ctx context.Context, in *GetOrdersRequest, opts ...grpc.CallOption) (*OrdersResponse, error) {
+	out := new(OrdersResponse)
+	err := c.cc.Invoke(ctx, "/v1.ExchangeService/GetRecentTrades", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +151,9 @@ type ExchangeServiceServer interface {
 	// GetOrder fetches details of a specific order.
 	GetOrder(context.Context, *GetOrderRequest) (*OrderResponse, error)
 	// GetOpenOrders fetches all open orders for a symbol.
-	GetOpenOrders(context.Context, *GetOpenOrdersRequest) (*OpenOrdersResponse, error)
+	GetOpenOrders(context.Context, *GetOrdersRequest) (*OrdersResponse, error)
+	// GetRecentTrades fetches recent execution history for a symbol.
+	GetRecentTrades(context.Context, *GetOrdersRequest) (*OrdersResponse, error)
 	// ResetState resets the state of the exchange.
 	// WARN: This method is intended for testing purposes only.
 	ResetState(context.Context, *ResetStateRequest) (*ResetStateResponse, error)
@@ -169,8 +182,11 @@ func (UnimplementedExchangeServiceServer) CancelOrder(context.Context, *CancelOr
 func (UnimplementedExchangeServiceServer) GetOrder(context.Context, *GetOrderRequest) (*OrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOrder not implemented")
 }
-func (UnimplementedExchangeServiceServer) GetOpenOrders(context.Context, *GetOpenOrdersRequest) (*OpenOrdersResponse, error) {
+func (UnimplementedExchangeServiceServer) GetOpenOrders(context.Context, *GetOrdersRequest) (*OrdersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOpenOrders not implemented")
+}
+func (UnimplementedExchangeServiceServer) GetRecentTrades(context.Context, *GetOrdersRequest) (*OrdersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRecentTrades not implemented")
 }
 func (UnimplementedExchangeServiceServer) ResetState(context.Context, *ResetStateRequest) (*ResetStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResetState not implemented")
@@ -297,7 +313,7 @@ func _ExchangeService_GetOrder_Handler(srv interface{}, ctx context.Context, dec
 }
 
 func _ExchangeService_GetOpenOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetOpenOrdersRequest)
+	in := new(GetOrdersRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -309,7 +325,25 @@ func _ExchangeService_GetOpenOrders_Handler(srv interface{}, ctx context.Context
 		FullMethod: "/v1.ExchangeService/GetOpenOrders",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExchangeServiceServer).GetOpenOrders(ctx, req.(*GetOpenOrdersRequest))
+		return srv.(ExchangeServiceServer).GetOpenOrders(ctx, req.(*GetOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExchangeService_GetRecentTrades_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExchangeServiceServer).GetRecentTrades(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/v1.ExchangeService/GetRecentTrades",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExchangeServiceServer).GetRecentTrades(ctx, req.(*GetOrdersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -366,6 +400,10 @@ var ExchangeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetOpenOrders",
 			Handler:    _ExchangeService_GetOpenOrders_Handler,
+		},
+		{
+			MethodName: "GetRecentTrades",
+			Handler:    _ExchangeService_GetRecentTrades_Handler,
 		},
 		{
 			MethodName: "ResetState",

@@ -53,8 +53,8 @@ type OrderData struct {
 
 // OrdersRepo defines the interface for interacting with orders.
 type OrdersRepo interface {
-	GetOrder(ctx context.Context, db DBExecutor, exchangeOrderID, exchangeName string) (OrderData, error)
-	GetOrders(ctx context.Context, db DBExecutor, exchangeName, symbol string, limit int) ([]OrderData, error)
+	GetOrder(ctx context.Context, db DBExecutor, exchangeName, exchangeOrderID string) (OrderData, error)
+	GetOrders(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string, statuses []string, limit int) ([]OrderData, error)
 	CreateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error)
 	UpdateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error)
 }
@@ -68,7 +68,7 @@ func NewOrdersRepo() OrdersRepo {
 }
 
 // GetOrder retrieves a specific order by its exchange order ID.
-func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeOrderID, exchangeName string) (OrderData, error) {
+func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeName, exchangeOrderID string) (OrderData, error) {
 	query := `
 		SELECT
 			o.id,
@@ -90,13 +90,13 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeOrde
 			o.created_at,
 			o.updated_at
 		FROM trading.orders o
-		INNER JOIN trading.exchanges e ON e.id = o.exchange_id AND e.name = $2 AND e.active
+		INNER JOIN trading.exchanges e ON e.id = o.exchange_id AND e.name = $1 AND e.active
 		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id AND i.active
-		WHERE o.exchange_order_id = $1 AND o.active
+		WHERE o.exchange_order_id = $2 AND o.active
 	`
 
 	var order OrderData
-	err := db.QueryRow(ctx, query, exchangeOrderID, exchangeName).Scan(
+	err := db.QueryRow(ctx, query, exchangeName, exchangeOrderID).Scan(
 		&order.ID,
 		&order.ExchangeName,
 		&order.InstrumentSymbol,
@@ -123,8 +123,8 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeOrde
 	return order, nil
 }
 
-// GetOrders retrieves a list of orders, optionally filtered by symbol.
-func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeName, symbol string, limit int) ([]OrderData, error) {
+// GetOrders retrieves a list of orders, optionally filtered by instrument symbol and status.
+func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string, statuses []string, limit int) ([]OrderData, error) {
 	query := `
 		SELECT
 			o.id,
@@ -148,12 +148,12 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 		FROM trading.orders o
 		INNER JOIN trading.exchanges e ON o.exchange_id = e.id AND e.name = $1 AND e.active
 		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id AND ($2 = '' OR i.name = $2) AND i.active
-		WHERE o.active
+		WHERE o.active AND (array_length($3, 1) IS NULL OR $3::trading.order_status[] @> ARRAY[o.order_status])
 		ORDER BY o.created_at DESC
-		LIMIT $3
+		LIMIT $4
 	`
 
-	rows, err := db.Query(ctx, query, exchangeName, symbol, limit)
+	rows, err := db.Query(ctx, query, exchangeName, instrumentSymbol, statuses, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get orders: %w", err)
 	}
