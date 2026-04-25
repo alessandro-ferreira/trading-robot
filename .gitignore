@@ -30,6 +30,7 @@ __pycache__/
 # --- C++ ---
 # C++ build artifacts
 robot/strategy-core/build/
+ml-engine/build/
 
 # --- Configuration ---
 # Ignore the actual config file with secrets

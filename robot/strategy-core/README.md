@@ -19,7 +19,7 @@ This component is the high-performance strategy engine of the trading bot. It is
 .
 ├── strategy-core/              # The C++ Strategy Engine
 │   ├── Makefile                # Automates build tasks
-│   └── build/                  # Build artifacts
+│   ├── build/                  # Build artifacts
 │   ├── include/                # Public header files
 │   │   └── trading/
 │   │       └── interfaces/     # Abstract component interfaces

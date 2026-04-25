@@ -4,13 +4,13 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
-        files: ^robot/
+        files: ^robot/|^ml-engine/
       - id: end-of-file-fixer
-        files: ^robot/
+        files: ^robot/|^ml-engine/
       - id: check-yaml
-        files: ^robot/
+        files: ^robot/|^ml-engine/
       - id: check-added-large-files
-        files: ^robot/
+        files: ^robot/|^ml-engine/
 
   # Python Gateway
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -57,13 +57,13 @@ repos:
         entry: bash -c 'cd robot/go-bot && golangci-lint run'
         pass_filenames: false
 
-  # C++ Strategy Core
+  # C++ Strategy Core / ML Engine
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v17.0.6
     hooks:
       - id: clang-format
         types_or: [c++, c]
-        files: ^robot/strategy-core/
+        files: ^robot/strategy-core/|^ml-engine/
         args: ['--style={BasedOnStyle: Google, ColumnLimit: 120, IndentWidth: 4}']
 
   # Local Tests
@@ -92,6 +92,14 @@ repos:
         language: system
         types: [c++, c]
         files: ^robot/strategy-core/
+        pass_filenames: false
+      - id: ml-engine-tests
+        name: ml-engine-tests
+        # Using make ensures consistency with the Makefile
+        entry: bash -c 'cd ml-engine && make test'
+        language: system
+        types: [c++, c]
+        files: ^ml-engine/
         pass_filenames: false
 
   # Commit Message Checker

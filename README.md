@@ -4,8 +4,13 @@ This repository contains a suite of tools for automated trading.
 
 ## Project Structure
 
-The project is organized into a main component:
-- `robot`: A live trading bot designed with a modular architecture for performance and scalability. It consists of a Go application for the core logic, a Python gateway to communicate with exchange APIs via gRPC, and a C++ core for high-performance strategy execution.
+The repository is structured around a central trading system supported by specialized auxiliary tools:
+
+### Main Component
+- `robot`: The primary live trading system. It integrates a high-concurrency Go engine for orchestration and risk enforcement, a Python-based exchange gateway, and a high-performance C++ strategy core.
+
+### Auxiliary Tools
+- `ml-engine`: A C++ service for machine learning inference, optimizing trading models and communicating strategic insights to the robot via the Management gRPC API.
 
 For more information and setup instructions, please see the `README.md` file within each respective directory.
 
