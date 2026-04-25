@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package trading.robot.management.v1;
+
+option go_package = "go-bot/gen/v1;v1";
+
+// ManagementService provides an interface for external systems, such as the AI Engine,
+// to dynamically adjust the trading bot's parameters, strategy configurations, and risk limits.
+service ManagementService {
+  // UpdateStrategy adjusts strategy configuration and enabling/disabling for a pair.
+  rpc UpdateStrategy(UpdateStrategyRequest) returns (UpdateStrategyResponse) {}
+
+  // UpdateRisk adjusts pair-specific risk parameters to ensure the bot operates within safety bounds.
+  rpc UpdateRisk(UpdateRiskRequest) returns (UpdateRiskResponse) {}
+}
+
+// MomentumWindow defines a specific lookback period and the corresponding momentum threshold.
+message MomentumWindow {
+  int32 lookback_seconds = 1;
+  double threshold = 2;
+}
+
+// MomentumParams contains the configuration parameters for momentum-based strategies.
+message MomentumParams {
+  string label = 1;
+  int32 window_seconds = 2;
+  repeated MomentumWindow windows = 3;
+  bool require_all = 4;
+  double stop_loss_pct = 5;
+  optional double profit_target_pct = 6; // Optional: target percentage to realize profits
+  optional double activation_pct = 7;    // Optional: threshold to activate trailing stops
+  optional double trailing_stop_pct = 8; // Optional: percentage for trailing stop distance
+}
+
+// UpdateStrategyRequest is the message sent to the UpdateStrategy RPC.
+message UpdateStrategyRequest {
+  string exchange = 1;
+  string symbol = 2;
+  string strategy_type = 3; // e.g., dummy, momentum_profit, momentum_trailing
+  bool enabled = 4;
+  MomentumParams momentum_params = 5;
+}
+
+// UpdateStrategyResponse is the message returned from the UpdateStrategy RPC.
+message UpdateStrategyResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// UpdateRiskRequest is the message sent to the UpdateRisk RPC.
+message UpdateRiskRequest {
+  string exchange = 1;
+  string symbol = 2;
+  double risk_per_trade = 3;
+  double max_position_size = 4;
+}
+
+// UpdateRiskResponse is the message returned from the UpdateRisk RPC.
+message UpdateRiskResponse {
+  bool success = 1;
+  string message = 2;
+}

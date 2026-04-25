@@ -38,7 +38,7 @@ BEGIN
     VALUES (v_dummy_id, v_ltc_id, 'dummy', v_created_by);
 
     -- Configure Momentum configurations
-    -- BTC/BRL - Trailing and Profit enabled, with different parameters
+    -- BTC/USDT - Trailing and Profit enabled, with different parameters
     INSERT INTO trading.strategy_momentum (
         label, strategy_pair_id, strategy_type, window_seconds, momentum_windows,
         stop_loss_pct, activation_pct, trailing_stop_pct, created_by
@@ -51,7 +51,7 @@ BEGIN
     )
     VALUES ('default', v_btc_profit_id, 'momentum_profit', 10, ARRAY[(5, 0.0001)]::trading.momentum_window[], 0.1, 0.05, v_created_by);
 
-    -- ETH/BRL - Trailing disabled, Profit enabled
+    -- ETH/USDT - Trailing disabled, Profit enabled
     INSERT INTO trading.strategy_momentum (
         label, strategy_pair_id, strategy_type, is_enabled, window_seconds, momentum_windows,
         stop_loss_pct, activation_pct, trailing_stop_pct, created_by

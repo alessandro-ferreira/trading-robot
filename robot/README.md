@@ -37,6 +37,7 @@ robot/
 │   │   │   ├── health/             # Periodic health checks
 │   │   │   ├── portfolio/          # Portfolio management
 │   │   │   ├── risk/               # Risk management
+│   │   │   ├── reconciliation/     # Reconciliation tasks
 │   │   │   └── signal_generator/   # Drives the strategy to generate signals
 │   │   ├── config/                 # Configuration loading
 │   │   ├── database/               # Database connection and access logic

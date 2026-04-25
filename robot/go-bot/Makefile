@@ -19,6 +19,10 @@ DB_SSLMODE ?= disable
 DB_URL ?= postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 MIGRATIONS_PATH := ./migrations
 
+# Protobuf definitions
+PROTO_DIR := ../proto
+PROTO_FILES := $(PROTO_DIR)/v1/exchange.proto $(PROTO_DIR)/v1/management.proto
+
 .PHONY: help run proto install-tools pre-commit
 .PHONY: strategy-core clean-strategy
 .PHONY: coverage test test-integration test-all
@@ -68,7 +72,7 @@ clean-strategy:
 # Protobuf generation
 proto:
 	@echo "==> Generating protobuf files..."
-	@protoc -I=../proto --go_out=gen/go --go_opt=paths=source_relative --go-grpc_out=gen/go --go-grpc_opt=paths=source_relative ../proto/v1/exchange.proto
+	@protoc -I=$(PROTO_DIR) --go_out=gen/go --go_opt=paths=source_relative --go-grpc_out=gen/go --go-grpc_opt=paths=source_relative $(PROTO_FILES)
 
 
 # Pre-commit hooks

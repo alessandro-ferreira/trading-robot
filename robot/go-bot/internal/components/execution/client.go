@@ -84,7 +84,11 @@ func (c *gatewayClient) GetTicker(ctx context.Context, exchange, symbol string) 
 
 // GetBalance fetches the account balance.
 func (c *gatewayClient) GetBalance(ctx context.Context, exchange, currency string) (*pb.BalanceResponse, error) {
-	resp, err := c.client.GetBalance(ctx, &pb.GetBalanceRequest{Exchange: exchange, Currency: currency})
+	req := &pb.GetBalanceRequest{Exchange: exchange}
+	if currency != "" {
+		req.Currency = &currency
+	}
+	resp, err := c.client.GetBalance(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get balance for %s on %s: %w", currency, exchange, err)
 	}
@@ -120,7 +124,15 @@ func (c *gatewayClient) GetOrder(ctx context.Context, exchange, symbol, id strin
 
 // GetOpenOrders fetches all open orders for a symbol.
 func (c *gatewayClient) GetOpenOrders(ctx context.Context, exchange, symbol string, limit int) (*pb.OrdersResponse, error) {
-	resp, err := c.client.GetOpenOrders(ctx, &pb.GetOrdersRequest{Exchange: exchange, Symbol: symbol, Limit: int32(limit)})
+	req := &pb.GetOrdersRequest{Exchange: exchange}
+	if symbol != "" {
+		req.Symbol = &symbol
+	}
+	if limit > 0 {
+		l := int32(limit)
+		req.Limit = &l
+	}
+	resp, err := c.client.GetOpenOrders(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get open orders for %s on %s: %w", symbol, exchange, err)
 	}
@@ -129,11 +141,16 @@ func (c *gatewayClient) GetOpenOrders(ctx context.Context, exchange, symbol stri
 
 // GetRecentTrades fetches historical executions.
 func (c *gatewayClient) GetRecentTrades(ctx context.Context, exchange, symbol string, since int64, limit int) (*pb.OrdersResponse, error) {
-	req := &pb.GetOrdersRequest{
-		Exchange: exchange,
-		Symbol:   symbol,
-		Since:    since,
-		Limit:    int32(limit),
+	req := &pb.GetOrdersRequest{Exchange: exchange}
+	if symbol != "" {
+		req.Symbol = &symbol
+	}
+	if since > 0 {
+		req.Since = &since
+	}
+	if limit > 0 {
+		l := int32(limit)
+		req.Limit = &l
 	}
 	resp, err := c.client.GetRecentTrades(ctx, req)
 	if err != nil {

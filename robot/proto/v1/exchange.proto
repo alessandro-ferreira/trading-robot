@@ -7,7 +7,7 @@ package v1;
 
 // The option go_package tells the protoc compiler where to output the generated
 // Go code. The path is relative to the go-bot's module root.
-option go_package = "trading/robot/go-bot/gen/go/v1;v1";
+option go_package = "go-bot/gen/go/v1;v1";
 
 // ExchangeService defines the gRPC service for interacting with a cryptocurrency exchange.
 service ExchangeService {
@@ -64,7 +64,7 @@ message TickerResponse {
 // GetBalanceRequest is the message sent to the GetBalance RPC.
 message GetBalanceRequest {
   string exchange = 1;
-  string currency = 2; // Optional: if provided, can be used for filtering on some exchanges
+  optional string currency = 2; // Optional: if provided, can be used for filtering on some exchanges
 }
 
 // BalanceObject represents the balance components for a specific asset.
@@ -120,19 +120,19 @@ message CancelOrderResponse {
   string status = 2;
 }
 
-// GetOrderRequest is the message sent to the GetOrder RPC.
+// GetOrderRequest is the message sent to the GetOrder and GetRecentTrades RPCs.
 message GetOrderRequest {
   string exchange = 1;
   string id = 2;
   string symbol = 3;
 }
 
-// GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC.
+// GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC and GetRecentTrades RPCs.
 message GetOrdersRequest {
   string exchange = 1;
-  string symbol = 2; // Optional: if empty, fetches all open orders for the exchange
-  int64 since = 3; // Optional: millisecond timestamp for date-based pagination
-  int32 limit = 4; // Optional: limit the number of results returned
+  optional string symbol = 2; // Optional: if empty, fetches all open orders for the exchange
+  optional int64 since = 3; // Optional: millisecond timestamp for date-based pagination
+  optional int32 limit = 4; // Optional: limit the number of results returned
 }
 
 // OpenOrdersResponse is the message returned from the GetOpenOrders RPC.

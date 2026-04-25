@@ -31,6 +31,7 @@ This service is the core of the trading robot, containing the primary business l
 │   │   │   ├── execution/        # Logic for trade execution via gRPC
 │   │   │   ├── health/           # Periodic health checks
 │   │   │   ├── portfolio/        # Portfolio management
+│   │   │   ├── reconciliation/   # Reconciliation tasks
 │   │   │   ├── risk/             # Risk management
 │   │   │   └── signal_generator/ # Drives the strategy to generate signals
 │   │   ├── config/               # Configuration loading
