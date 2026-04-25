@@ -4,15 +4,35 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/pashagolub/pgxmock/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+var riskColumns = []string{"exchange_name", "instrument_symbol", "risk_per_trade", "max_position_size"}
+
+func getSampleRisk() RiskPair {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return RiskPair{
+		ExchangeName:     "binance",
+		InstrumentSymbol: "BTC/USDT",
+		RiskPerTrade:     r.Float64() * 500,
+		MaxPositionSize:  sql.NullFloat64{Float64: r.Float64() * 5, Valid: true},
+	}
+}
+
+func toRiskRow(rp RiskPair) []any {
+	return []any{rp.ExchangeName, rp.InstrumentSymbol, rp.RiskPerTrade, rp.MaxPositionSize}
+}
+
 func TestPgRisksRepo_GetRiskPair(t *testing.T) {
 	repo := NewRisksRepo()
+	columns := riskColumns
+	risk := getSampleRisk()
 
 	testCases := []struct {
 		name                string
@@ -24,17 +44,15 @@ func TestPgRisksRepo_GetRiskPair(t *testing.T) {
 	}{
 		{
 			name:     "Success",
-			exchange: "binance",
-			symbol:   "BTC/USDT",
+			exchange: risk.ExchangeName,
+			symbol:   risk.InstrumentSymbol,
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows([]string{
-					"exchange_name", "instrument_symbol", "risk_per_trade", "max_position_size",
-				}).AddRow("binance", "BTC/USDT", 100.0, 1.5)
-				mock.ExpectQuery("SELECT").WithArgs("binance", "BTC/USDT").WillReturnRows(rows)
+				rows := pgxmock.NewRows(columns).AddRow(toRiskRow(risk)...)
+				mock.ExpectQuery("SELECT").WithArgs(risk.ExchangeName, risk.InstrumentSymbol).WillReturnRows(rows)
 			},
 			validate: func(t *testing.T, data RiskPair) {
-				assert.Equal(t, 100.0, data.RiskPerTrade)
-				assert.Equal(t, 1.5, data.MaxPositionSize.Float64)
+				assert.Equal(t, risk.RiskPerTrade, data.RiskPerTrade)
+				assert.Equal(t, risk.MaxPositionSize, data.MaxPositionSize)
 			},
 		},
 		{
@@ -82,11 +100,14 @@ func TestPgRisksRepo_GetRiskPair(t *testing.T) {
 
 func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 	repo := NewRisksRepo()
-	data := RiskPair{
-		ExchangeName:     "binance",
-		InstrumentSymbol: "BTC/USDT",
-		RiskPerTrade:     100.0,
-		MaxPositionSize:  sql.NullFloat64{Float64: 1.5, Valid: true},
+	risk := getSampleRisk()
+
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+
+	// Internal lambda for argument mapping to ensure encapsulation.
+	toUpsertArgs := func(rp RiskPair) []any {
+		return []any{exchangeID, instrumentID, rp.RiskPerTrade, rp.MaxPositionSize, DefaultUser}
 	}
 
 	testCases := []struct {
@@ -98,11 +119,11 @@ func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 			name: "Success - Update",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
-					WithArgs(data.ExchangeName, data.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WithArgs(risk.ExchangeName, risk.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mock.ExpectQuery("UPDATE trading.risk_pairs").
-					WithArgs(int64(1), int64(10), data.RiskPerTrade, data.MaxPositionSize, DefaultUser).
+					WithArgs(toUpsertArgs(risk)...).
 					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(100)))
 			},
 		},
@@ -110,14 +131,14 @@ func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 			name: "Success - Insert",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
-					WithArgs(data.ExchangeName, data.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WithArgs(risk.ExchangeName, risk.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mock.ExpectQuery("UPDATE trading.risk_pairs").
-					WithArgs(int64(1), int64(10), data.RiskPerTrade, data.MaxPositionSize, DefaultUser).
+					WithArgs(toUpsertArgs(risk)...).
 					WillReturnError(sql.ErrNoRows)
 				mock.ExpectExec("INSERT INTO trading.risk_pairs").
-					WithArgs(int64(1), int64(10), data.RiskPerTrade, data.MaxPositionSize, DefaultUser).
+					WithArgs(toUpsertArgs(risk)...).
 					WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			},
 		},
@@ -125,7 +146,7 @@ func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 			name: "Fail - Resolution",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
-					WithArgs(data.ExchangeName, data.InstrumentSymbol).
+					WithArgs(risk.ExchangeName, risk.InstrumentSymbol).
 					WillReturnError(errors.New("res error"))
 			},
 			expectedErrContains: "failed to resolve exchange and instrument IDs",
@@ -134,11 +155,11 @@ func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 			name: "Fail - Update Error",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
-					WithArgs(data.ExchangeName, data.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WithArgs(risk.ExchangeName, risk.InstrumentSymbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mock.ExpectQuery("UPDATE trading.risk_pairs").
-					WithArgs(int64(1), int64(10), data.RiskPerTrade, data.MaxPositionSize, DefaultUser).
+					WithArgs(toUpsertArgs(risk)...).
 					WillReturnError(errors.New("db error"))
 			},
 			expectedErrContains: "failed to update risk pair",
@@ -152,7 +173,7 @@ func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 			defer mock.Close()
 
 			tc.setupMock(mock)
-			err = repo.UpsertRiskPair(context.Background(), mock, data)
+			err = repo.UpsertRiskPair(context.Background(), mock, risk)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)

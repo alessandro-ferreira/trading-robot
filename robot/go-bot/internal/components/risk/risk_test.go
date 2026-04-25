@@ -1,8 +1,8 @@
 package risk
 
 import (
+	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"trading/robot/go-bot/internal/config"
@@ -10,8 +10,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var (
+	defaultRiskConfig = config.RiskConfig{
+		MaxOpenPositions: 5,
+		MaxDailyLoss:     100.0,
+	}
+	defaultPairRisk = PairRisk{RiskPerTrade: 100.0}
+)
+
 func TestEvaluateEntry(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tests := []struct {
 		name             string
@@ -25,71 +33,48 @@ func TestEvaluateEntry(t *testing.T) {
 		wantSize         float64
 	}{
 		{
-			name: "Allow trade: within limits",
-			config: config.RiskConfig{
-				MaxOpenPositions: 5,
-				MaxDailyLoss:     100.0,
-			},
+			name:             "Allow trade: within limits",
+			config:           defaultRiskConfig,
 			currentPositions: 3,
 			currentDailyLoss: 50.0,
 			price:            50.0,
-			risk: PairRisk{
-				RiskPerTrade: 100.0,
-			},
-			wantAllowed: true,
-			wantSize:    2.0, // 100 / 50 = 2
+			risk:             defaultPairRisk,
+			wantAllowed:      true,
+			wantSize:         2.0, // 100 / 50 = 2
 		},
 		{
-			name: "Reject trade: max positions reached",
-			config: config.RiskConfig{
-				MaxOpenPositions: 5,
-				MaxDailyLoss:     100.0,
-			},
+			name:             "Reject trade: max positions reached",
+			config:           defaultRiskConfig,
 			currentPositions: 5,
 			currentDailyLoss: 50.0,
 			price:            50.0,
-			risk: PairRisk{
-				RiskPerTrade: 100.0,
-			},
-			wantAllowed: false,
-			wantReason:  "max open positions reached",
+			risk:             defaultPairRisk,
+			wantAllowed:      false,
+			wantReason:       "max open positions reached",
 		},
 		{
-			name: "Reject trade: max daily loss reached",
-			config: config.RiskConfig{
-				MaxOpenPositions: 5,
-				MaxDailyLoss:     100.0,
-			},
+			name:             "Reject trade: max daily loss reached",
+			config:           defaultRiskConfig,
 			currentPositions: 3,
 			currentDailyLoss: 100.0,
 			price:            50.0,
-			risk: PairRisk{
-				RiskPerTrade: 100.0,
-			},
-			wantAllowed: false,
-			wantReason:  "max daily loss reached",
+			risk:             defaultPairRisk,
+			wantAllowed:      false,
+			wantReason:       "max daily loss reached",
 		},
 		{
-			name: "Allow trade: unlimited positions (0 config)",
-			config: config.RiskConfig{
-				MaxOpenPositions: 0,
-				MaxDailyLoss:     100.0,
-			},
+			name:             "Allow trade: unlimited positions (0 config)",
+			config:           config.RiskConfig{MaxOpenPositions: 0, MaxDailyLoss: 100.0},
 			currentPositions: 100,
 			currentDailyLoss: 50.0,
 			price:            50.0,
-			risk: PairRisk{
-				RiskPerTrade: 100.0,
-			},
-			wantAllowed: true,
-			wantSize:    2.0,
+			risk:             defaultPairRisk,
+			wantAllowed:      true,
+			wantSize:         2.0,
 		},
 		{
-			name: "Allow trade: cap by MaxPositionSize",
-			config: config.RiskConfig{
-				MaxOpenPositions: 5,
-				MaxDailyLoss:     100.0,
-			},
+			name:             "Allow trade: cap by MaxPositionSize",
+			config:           defaultRiskConfig,
 			currentPositions: 3,
 			currentDailyLoss: 50.0,
 			price:            10.0,
@@ -99,6 +84,30 @@ func TestEvaluateEntry(t *testing.T) {
 			},
 			wantAllowed: true,
 			wantSize:    5.0,
+		},
+		{
+			name:             "Reject trade: invalid risk per trade (<= 0)",
+			config:           defaultRiskConfig,
+			currentPositions: 0,
+			currentDailyLoss: 0,
+			price:            50.0,
+			risk: PairRisk{
+				RiskPerTrade: 0.0,
+			},
+			wantAllowed: false,
+			wantReason:  "invalid risk per trade configuration",
+		},
+		{
+			name:             "Reject trade: invalid price (<= 0)",
+			config:           defaultRiskConfig,
+			currentPositions: 0,
+			currentDailyLoss: 0,
+			price:            0.0,
+			risk: PairRisk{
+				RiskPerTrade: 100.0,
+			},
+			wantAllowed: false,
+			wantReason:  "invalid price",
 		},
 	}
 

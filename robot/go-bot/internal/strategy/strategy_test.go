@@ -7,6 +7,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStrategy_StringMethods(t *testing.T) {
+	// Test StrategyState String()
+	assert.Equal(t, "idle", StateIdle.String())
+	assert.Equal(t, "pending_buy", StatePendingBuy.String())
+	assert.Equal(t, "active", StateActive.String())
+	assert.Equal(t, "pending_sell", StatePendingSell.String())
+	assert.Equal(t, "idle", StrategyState(99).String()) // Default case
+
+	// Test Signal String()
+	assert.Equal(t, "invalid", SignalInvalid.String())
+	assert.Equal(t, "buy", SignalBuy.String())
+	assert.Equal(t, "sell", SignalSell.String())
+	assert.Equal(t, "searching_entry", SignalSearchingEntry.String())
+	assert.Equal(t, "tracking_exit", SignalTrackingExit.String())
+	assert.Equal(t, "waiting_buy_fill", SignalWaitingBuyFill.String())
+	assert.Equal(t, "waiting_sell_fill", SignalWaitingSellFill.String())
+	assert.Equal(t, "invalid", Signal(99).String()) // Default case
+}
+
 func TestStrategy_Dummy(t *testing.T) {
 	cfg := StrategyConfig{
 		Type: StrategyDummy,
@@ -149,6 +168,22 @@ func TestStrategy_Momentum(t *testing.T) {
 		assert.Equal(t, StateActive, trailingStrategy.GetState())
 	})
 
+	t.Run("too many momentum windows", func(t *testing.T) {
+		windows := make([]MomentumWindow, 15)
+		for i := 0; i < 15; i++ {
+			windows[i] = MomentumWindow{LookbackSeconds: 10 + i, Threshold: 0.01}
+		}
+
+		overConfig := cfg
+		overConfig.MomentumWindows = windows
+
+		overStrategy, err := NewStrategy(overConfig)
+		// If the engine accepts it (due to truncation in the bridge), we just close it.
+		if err == nil {
+			overStrategy.Close()
+		}
+	})
+
 	t.Run("update with stale tick", func(t *testing.T) {
 		err := s.UpdatePrice(100.0, 200)
 		require.NoError(t, err)
@@ -177,6 +212,15 @@ func TestStrategy_Momentum(t *testing.T) {
 	})
 }
 
+func TestStrategy_GetConfig(t *testing.T) {
+	cfg := StrategyConfig{Type: StrategyDummy, WindowSeconds: 60}
+	s, err := NewStrategy(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	assert.Equal(t, cfg, s.GetConfig())
+}
+
 func TestStrategy_UpdateConfig(t *testing.T) {
 	cfg := StrategyConfig{
 		Type:          StrategyMomentumTrailing,
@@ -198,6 +242,14 @@ func TestStrategy_UpdateConfig(t *testing.T) {
 	err = s.UpdateConfig(newCfg)
 	assert.NoError(t, err)
 	assert.Equal(t, 0.05, s.cfg.StopLossPct)
+
+	t.Run("update with invalid config error", func(t *testing.T) {
+		invalidCfg := cfg
+		invalidCfg.StopLossPct = -1.0 // C++ should reject negative stop loss
+		err = s.UpdateConfig(invalidCfg)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to update strategy config")
+	})
 }
 
 func TestStrategy_GetState(t *testing.T) {

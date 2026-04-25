@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -11,10 +12,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var marketDataColumns = []string{"tick_unix_at", "price"}
+
+func getSampleTick() MarketDataTick {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return MarketDataTick{
+		ExchangeName: "binance",
+		Symbol:       "BTC/USDT",
+		TickUnixAt:   time.Now().Unix() - r.Int63n(10000),
+		Price:        r.Float64() * 50000,
+	}
+}
+
+func toTickRow(t MarketDataTick) []any {
+	return []any{t.TickUnixAt, t.Price}
+}
+
 func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 	repo := NewMarketDataRepo()
+	tick1 := getSampleTick()
+	tick2 := getSampleTick()
+	tick2.TickUnixAt = tick1.TickUnixAt + 60
+	columns := marketDataColumns
 
-	now := time.Now().Unix()
 	testCases := []struct {
 		name                string
 		exchange            string
@@ -26,20 +46,20 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 	}{
 		{
 			name:     "Success",
-			exchange: "binance",
-			symbol:   "BTC/USDT",
+			exchange: tick1.ExchangeName,
+			symbol:   tick1.Symbol,
 			limit:    2,
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows([]string{"tick_unix_at", "price"}).
-					AddRow(now-60, 50000.0).
-					AddRow(now, 50001.0)
+				rows := pgxmock.NewRows(columns).
+					AddRow(toTickRow(tick1)...).
+					AddRow(toTickRow(tick2)...)
 				mockDB.ExpectQuery("SELECT tick_unix_at, price").
-					WithArgs("binance", "BTC/USDT", 2).
+					WithArgs(tick1.ExchangeName, tick1.Symbol, 2).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, ticks []MarketDataTick) {
 				assert.Len(t, ticks, 2)
-				assert.Equal(t, 50000.0, ticks[0].Price)
+				assert.Equal(t, tick1.Price, ticks[0].Price)
 			},
 		},
 		{
@@ -79,12 +99,12 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 
 func TestPgMarketDataRepo_InsertTick(t *testing.T) {
 	repo := NewMarketDataRepo()
-	tick := MarketDataTick{
-		ExchangeName: "binance",
-		Symbol:       "BTC/USDT",
-		TickUnixAt:   time.Now().Unix(),
-		Price:        50000.0,
-	}
+	tick := getSampleTick()
+
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+	resolveArgs := []any{tick.ExchangeName, tick.Symbol, tick.TickUnixAt}
+	insertArgs := []any{exchangeID, instrumentID, tick.TickUnixAt, tick.Price}
 
 	testCases := []struct {
 		name                string
@@ -95,11 +115,11 @@ func TestPgMarketDataRepo_InsertTick(t *testing.T) {
 			name: "Success - New Tick",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id, t.tick_unix_at").
-					WithArgs(tick.ExchangeName, tick.Symbol, tick.TickUnixAt).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id", "tick_unix_at"}).AddRow(int64(1), int64(10), nil))
+					WithArgs(resolveArgs...).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id", "tick_unix_at"}).AddRow(exchangeID, instrumentID, nil))
 
 				mockDB.ExpectExec("INSERT INTO trading.market_data_ticks").
-					WithArgs(int64(1), int64(10), tick.TickUnixAt, tick.Price).
+					WithArgs(insertArgs...).
 					WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			},
 		},
@@ -107,15 +127,15 @@ func TestPgMarketDataRepo_InsertTick(t *testing.T) {
 			name: "Success - Duplicate Skip",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id, t.tick_unix_at").
-					WithArgs(tick.ExchangeName, tick.Symbol, tick.TickUnixAt).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id", "tick_unix_at"}).AddRow(int64(1), int64(10), int64(999)))
+					WithArgs(resolveArgs...).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id", "tick_unix_at"}).AddRow(exchangeID, instrumentID, tick.TickUnixAt))
 			},
 		},
 		{
 			name: "Resolution Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id, t.tick_unix_at").
-					WithArgs(tick.ExchangeName, tick.Symbol, tick.TickUnixAt).
+					WithArgs(resolveArgs...).
 					WillReturnError(errors.New("db resolution error"))
 			},
 			expectedErrContains: "failed to resolve exchange and instrument IDs",
@@ -124,10 +144,10 @@ func TestPgMarketDataRepo_InsertTick(t *testing.T) {
 			name: "Insert Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id, t.tick_unix_at").
-					WithArgs(tick.ExchangeName, tick.Symbol, tick.TickUnixAt).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id", "tick_unix_at"}).AddRow(int64(1), int64(10), nil))
+					WithArgs(resolveArgs...).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id", "tick_unix_at"}).AddRow(exchangeID, instrumentID, nil))
 				mockDB.ExpectExec("INSERT INTO trading.market_data_ticks").
-					WithArgs(int64(1), int64(10), tick.TickUnixAt, tick.Price).
+					WithArgs(insertArgs...).
 					WillReturnError(errors.New("db insert error"))
 			},
 			expectedErrContains: "failed to insert market data tick",

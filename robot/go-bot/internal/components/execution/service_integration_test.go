@@ -19,7 +19,7 @@ import (
 
 // setupIntegrationTest initializes all dependencies for an integration test.
 // It returns the initialized Service and a cleanup function to release resources after the test.
-func setupIntegrationTest(t *testing.T) (*Service, func()) {
+func setupIntegrationTest(t *testing.T) (Service, GatewayClient, *database.DB, *repository.Container, func()) {
 	// Use t.Helper() to indicate this is a test helper function.
 	t.Helper()
 
@@ -72,11 +72,11 @@ func setupIntegrationTest(t *testing.T) (*Service, func()) {
 		db.Close()
 	}
 
-	return svc, cleanup
+	return svc, client, db, repoContainer, cleanup
 }
 
 func TestService_Integration_GetBalance(t *testing.T) {
-	svc, cleanup := setupIntegrationTest(t)
+	svc, client, db, repo, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -86,7 +86,7 @@ func TestService_Integration_GetBalance(t *testing.T) {
 	assetSymbol := "BTC"
 
 	// Fetch directly from Gateway to establish baseline expectation
-	expectedResp, err := svc.client.GetBalance(ctx, exchangeName, assetSymbol)
+	expectedResp, err := client.GetBalance(ctx, exchangeName, assetSymbol)
 	require.NoError(t, err, "Failed to fetch expected balance from gateway")
 	t.Logf("Expected Balance (from Gateway): %s", expectedResp.String())
 
@@ -97,7 +97,7 @@ func TestService_Integration_GetBalance(t *testing.T) {
 
 	// Verification
 	// Fetch all balances from DB to verify persistence
-	storedBalances, err := svc.repo.Balances.GetAllBalances(ctx, svc.db)
+	storedBalances, err := repo.Balances.GetAllBalances(ctx, db)
 	require.NoError(t, err, "Failed to fetch balances from database")
 
 	// Find our specific record
@@ -131,7 +131,7 @@ func TestService_Integration_GetBalance(t *testing.T) {
 
 // TestService_Integration_OrderLifecycle covers the full create-get-cancel-list flow.
 func TestService_Integration_OrderLifecycle(t *testing.T) {
-	svc, cleanup := setupIntegrationTest(t)
+	svc, _, db, repo, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -140,7 +140,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// List open orders (should be empty)
 	t.Log("Listing open orders (expecting empty)")
-	openOrders, err := svc.GetOpenOrders(ctx, exchangeName, symbol)
+	openOrders, err := svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
 	require.NoError(t, err)
 	assert.Empty(t, openOrders.Orders, "Initially, there should be no open orders")
 	t.Logf("Initial open orders response: %s", openOrders.String())
@@ -166,7 +166,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// Get the order directly from the database
 	t.Log("Getting the first order from the database")
-	dbOrder1, err := svc.repo.Orders.GetOrder(ctx, svc.db, order1.Id, exchangeName)
+	dbOrder1, err := repo.Orders.GetOrder(ctx, db, exchangeName, order1.Id)
 	require.NoError(t, err)
 	assert.Equal(t, order1.Id, dbOrder1.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusOpen, dbOrder1.Status)
@@ -186,7 +186,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// List open orders (should have two)
 	t.Log("Listing open orders (expecting two)")
-	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol)
+	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
 	require.NoError(t, err)
 	assert.Len(t, openOrders.Orders, 2, "Should be two open orders")
 	t.Logf("Open orders response (with 2 orders): %s", openOrders.String())
@@ -198,7 +198,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// Get the second order from the database to check status
 	t.Log("Getting the second order from the database (expecting canceled)")
-	dbOrder2, err := svc.repo.Orders.GetOrder(ctx, svc.db, order2.Id, exchangeName)
+	dbOrder2, err := repo.Orders.GetOrder(ctx, db, exchangeName, order2.Id)
 	require.NoError(t, err)
 	assert.Equal(t, order2.Id, dbOrder2.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusCanceled, dbOrder2.Status, "Order status in DB should be canceled")
@@ -206,7 +206,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// List open orders again (should have one)
 	t.Log("Listing open orders again (expecting one)")
-	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol)
+	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
 	require.NoError(t, err)
 	require.Len(t, openOrders.Orders, 1, "Should be one open order left")
 	assert.Equal(t, order1.Id, openOrders.Orders[0].Id, "The remaining open order should be the first one")

@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"testing"
 
 	"trading/robot/go-bot/internal/config"
@@ -11,49 +12,103 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSetup(t *testing.T) {
+	// Setup modifies global state, so we restore it
+	oldDefault := slog.Default()
+	defer slog.SetDefault(oldDefault)
+
+	cfg := config.LogConfig{Level: "info", Format: "text"}
+	Setup(cfg)
+
+	assert.NotNil(t, slog.Default())
+	// We check if the default logger was indeed replaced
+	assert.NotEqual(t, oldDefault, slog.Default())
+}
+
 func TestNew(t *testing.T) {
-	t.Run("json format", func(t *testing.T) {
-		var buf bytes.Buffer
-		cfg := config.LogConfig{
-			Level:  "info",
-			Format: "json",
-			Source: true,
-		}
+	testCases := []struct {
+		name     string
+		cfg      config.LogConfig
+		logFunc  func(*slog.Logger)
+		validate func(*testing.T, string)
+	}{
+		{
+			name:    "JSON format - Info Level",
+			cfg:     config.LogConfig{Level: "info", Format: "json", Source: true},
+			logFunc: func(l *slog.Logger) { l.Info("msg", "key", "val") },
+			validate: func(t *testing.T, out string) {
+				var data map[string]any
+				err := json.Unmarshal([]byte(out), &data)
+				require.NoError(t, err)
+				assert.Equal(t, "INFO", data["level"])
+				assert.Equal(t, "msg", data["msg"])
+				assert.Equal(t, "val", data["key"])
+				assert.Contains(t, data, "source")
+			},
+		},
+		{
+			name:    "Text format - Debug Level",
+			cfg:     config.LogConfig{Level: "debug", Format: "text", Source: false},
+			logFunc: func(l *slog.Logger) { l.Debug("debug msg") },
+			validate: func(t *testing.T, out string) {
+				assert.Contains(t, out, "level=DEBUG")
+				assert.Contains(t, out, "msg=\"debug msg\"")
+			},
+		},
+		{
+			name:    "Invalid Level defaults to Info",
+			cfg:     config.LogConfig{Level: "invalid", Format: "text"},
+			logFunc: func(l *slog.Logger) { l.Info("info msg") },
+			validate: func(t *testing.T, out string) {
+				assert.Contains(t, out, "level=INFO")
+			},
+		},
+		{
+			name: "Warn and Error levels",
+			cfg:  config.LogConfig{Level: "debug", Format: "text"},
+			logFunc: func(l *slog.Logger) {
+				l.Warn("warn msg")
+				l.Error("error msg")
+			},
+			validate: func(t *testing.T, out string) {
+				assert.Contains(t, out, "level=WARN")
+				assert.Contains(t, out, "level=ERROR")
+			},
+		},
+		{
+			name:    "Invalid Format defaults to Text",
+			cfg:     config.LogConfig{Level: "info", Format: "unknown"},
+			logFunc: func(l *slog.Logger) { l.Info("msg") },
+			validate: func(t *testing.T, out string) {
+				assert.Contains(t, out, "level=INFO")
+				assert.NotContains(t, out, "{")
+			},
+		},
+		{
+			name:    "Time and Source Formatting",
+			cfg:     config.LogConfig{Level: "info", Format: "json", Source: true},
+			logFunc: func(l *slog.Logger) { l.Info("msg") },
+			validate: func(t *testing.T, out string) {
+				var data map[string]any
+				_ = json.Unmarshal([]byte(out), &data)
+				// Check time format (YYYY-MM-DD HH:MM:SS.mmm)
+				timeStr, _ := data["time"].(string)
+				assert.Regexp(t, `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$`, timeStr)
+				// Check source path (relative)
+				source, _ := data["source"].(map[string]any)
+				file, _ := source["file"].(string)
+				assert.Contains(t, file, "internal/logger/logger_test.go")
+				assert.NotContains(t, file, "go-bot/internal")
+			},
+		},
+	}
 
-		logger := New(&buf, cfg)
-		logger.Info("test message", "key", "value")
-
-		// Unmarshal the JSON output and check its fields
-		var logOutput map[string]interface{}
-		err := json.Unmarshal(buf.Bytes(), &logOutput)
-		require.NoError(t, err, "Log output should be valid JSON")
-
-		assert.Equal(t, "INFO", logOutput["level"])
-		assert.Equal(t, "test message", logOutput["msg"])
-		assert.Equal(t, "value", logOutput["key"])
-		assert.Contains(t, logOutput, "time", "Log should contain a time field")
-		assert.Contains(t, logOutput, "source", "Log should contain a source field")
-	})
-
-	t.Run("text format", func(t *testing.T) {
-		var buf bytes.Buffer
-		cfg := config.LogConfig{
-			Level:  "debug",
-			Format: "text",
-			Source: false,
-		}
-
-		logger := New(&buf, cfg)
-		// Use a debug message to also test the level
-		logger.Debug("test message", "key", "value")
-
-		output := buf.String()
-
-		// Check for the presence of essential parts, making the test robust
-		assert.Contains(t, output, "level=DEBUG", "Log output should contain the correct level")
-		assert.Contains(t, output, `msg="test message"`, "Log output should contain the correct message")
-		assert.Contains(t, output, "key=value", "Log output should contain the key-value pair")
-		assert.Contains(t, output, "time=", "Log should contain a time field")
-		assert.NotContains(t, output, "source=", "Log should contain a source field")
-	})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			l := New(&buf, tc.cfg)
+			tc.logFunc(l)
+			tc.validate(t, buf.String())
+		})
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -13,25 +14,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var positionColumns = []string{
+	"id", "exchange_name", "instrument_symbol", "side", "quantity",
+	"entry_price", "highest_price", "strategy_state", "active", "created_at", "updated_at",
+}
+
 func getSamplePosition() PositionData {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	now := time.Now().Truncate(time.Second)
 	return PositionData{
-		ID:               1,
+		ID:               r.Int63n(1000) + 1,
 		ExchangeName:     "binance",
 		InstrumentSymbol: "BTC/USDT",
 		Side:             PositionSideLong,
-		Quantity:         0.5,
-		EntryPrice:       50000.0,
-		HighestPrice:     52000.0,
+		Quantity:         r.Float64() * 2,
+		EntryPrice:       r.Float64() * 50000,
+		HighestPrice:     r.Float64() * 52000,
 		StrategyState:    "active",
 		Active:           true,
-		CreatedAt:        time.Now(),
+		CreatedAt:        now,
 		UpdatedAt:        sql.NullTime{Valid: false},
+	}
+}
+
+func toPositionRow(p PositionData) []any {
+	return []any{
+		p.ID, p.ExchangeName, p.InstrumentSymbol, p.Side, p.Quantity,
+		p.EntryPrice, p.HighestPrice, p.StrategyState, p.Active, p.CreatedAt, p.UpdatedAt,
 	}
 }
 
 func TestPgPositionsRepo_GetPosition(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
+	columns := positionColumns
 
 	testCases := []struct {
 		name                string
@@ -42,13 +58,8 @@ func TestPgPositionsRepo_GetPosition(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows([]string{
-					"id", "exchange_name", "instrument_symbol", "side", "quantity",
-					"entry_price", "highest_price", "strategy_state", "active", "created_at", "updated_at",
-				}).AddRow(
-					pos.ID, pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
-					pos.EntryPrice, pos.HighestPrice, pos.StrategyState, pos.Active, pos.CreatedAt, pos.UpdatedAt,
-				)
+				rows := pgxmock.NewRows(columns).AddRow(toPositionRow(pos)...)
+
 				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
 					WillReturnRows(rows)
@@ -66,6 +77,15 @@ func TestPgPositionsRepo_GetPosition(t *testing.T) {
 					WillReturnError(pgx.ErrNoRows)
 			},
 			expectedErrContains: "failed to get position",
+		},
+		{
+			name: "Query Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
+					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
+					WillReturnError(errors.New("db query error"))
+			},
+			expectedErrContains: "db query error",
 		},
 	}
 
@@ -94,24 +114,25 @@ func TestPgPositionsRepo_GetPosition(t *testing.T) {
 func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
+	columns := positionColumns
 
 	testCases := []struct {
 		name                string
+		exchangeFilter      string
+		symbolFilter        string
 		setupMock           func(mockDB pgxmock.PgxPoolIface)
 		expectedErrContains string
 		assertResult        func(t *testing.T, result []PositionData)
 	}{
 		{
-			name: "Success",
+			name:           "Success",
+			exchangeFilter: "",
+			symbolFilter:   "",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows([]string{
-					"id", "exchange_name", "instrument_symbol", "side", "quantity",
-					"entry_price", "highest_price", "strategy_state", "active", "created_at", "updated_at",
-				}).AddRow(
-					pos.ID, pos.ExchangeName, pos.InstrumentSymbol, pos.Side, pos.Quantity,
-					pos.EntryPrice, pos.HighestPrice, pos.StrategyState, pos.Active, pos.CreatedAt, pos.UpdatedAt,
-				)
+				rows := pgxmock.NewRows(columns).AddRow(toPositionRow(pos)...)
+
 				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
+					WithArgs("", "").
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, result []PositionData) {
@@ -121,9 +142,29 @@ func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
 			},
 		},
 		{
-			name: "Query Error",
+			name:           "Success - Multiple rows",
+			exchangeFilter: "binance",
+			symbolFilter:   "",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				pos2 := getSamplePosition()
+				pos2.InstrumentSymbol = "ETH/USDT"
+
+				rows := pgxmock.NewRows(columns).AddRows(toPositionRow(pos), toPositionRow(pos2))
+				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
+					WithArgs("binance", "").
+					WillReturnRows(rows)
+			},
+			assertResult: func(t *testing.T, result []PositionData) {
+				require.Len(t, result, 2)
+			},
+		},
+		{
+			name:           "Query Error",
+			exchangeFilter: "",
+			symbolFilter:   "",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT p.id, e.name AS exchange_name").
+					WithArgs("", "").
 					WillReturnError(errors.New("db query error"))
 			},
 			expectedErrContains: "failed to get open positions",
@@ -138,7 +179,7 @@ func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			result, err := repo.GetOpenPositions(context.Background(), mockDB)
+			result, err := repo.GetOpenPositions(context.Background(), mockDB, tc.exchangeFilter, tc.symbolFilter)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -156,6 +197,22 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
 
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+
+	toUpsertArgs := func(p PositionData) []any {
+		return []any{
+			exchangeID, instrumentID, p.Quantity, p.EntryPrice,
+			p.HighestPrice, p.StrategyState, DefaultUser,
+		}
+	}
+	toInsertArgs := func(p PositionData) []any {
+		return []any{
+			exchangeID, instrumentID, p.Side, p.Quantity, p.EntryPrice,
+			p.HighestPrice, p.StrategyState, DefaultUser,
+		}
+	}
+
 	testCases := []struct {
 		name                string
 		setupMock           func(mockDB pgxmock.PgxPoolIface)
@@ -166,15 +223,10 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				rows := pgxmock.NewRows([]string{"id"}).AddRow(pos.ID)
-				mockDB.ExpectQuery("UPDATE trading.positions").
-					WithArgs(
-						int64(1), int64(10), pos.Quantity,
-						pos.EntryPrice, pos.HighestPrice,
-						pos.StrategyState, DefaultUser,
-					).WillReturnRows(rows)
+				mockDB.ExpectQuery("UPDATE trading.positions").WithArgs(toUpsertArgs(pos)...).WillReturnRows(rows)
 			},
 		},
 		{
@@ -182,21 +234,11 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				mockDB.ExpectQuery("UPDATE trading.positions").
-					WithArgs(
-						int64(1), int64(10), pos.Quantity,
-						pos.EntryPrice, pos.HighestPrice,
-						pos.StrategyState, DefaultUser,
-					).WillReturnError(pgx.ErrNoRows)
+				mockDB.ExpectQuery("UPDATE trading.positions").WithArgs(toUpsertArgs(pos)...).WillReturnError(pgx.ErrNoRows)
 
-				mockDB.ExpectExec("INSERT INTO trading.positions").
-					WithArgs(
-						int64(1), int64(10), pos.Side, pos.Quantity,
-						pos.EntryPrice, pos.HighestPrice,
-						pos.StrategyState, DefaultUser,
-					).WillReturnResult(pgxmock.NewResult("INSERT", 1))
+				mockDB.ExpectExec("INSERT INTO trading.positions").WithArgs(toInsertArgs(pos)...).WillReturnResult(pgxmock.NewResult("INSERT", 1))
 			},
 		},
 		{
@@ -213,14 +255,9 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				mockDB.ExpectQuery("UPDATE trading.positions").
-					WithArgs(
-						int64(1), int64(10), pos.Quantity,
-						pos.EntryPrice, pos.HighestPrice,
-						pos.StrategyState, DefaultUser,
-					).WillReturnError(errors.New("db update error"))
+				mockDB.ExpectQuery("UPDATE trading.positions").WithArgs(toUpsertArgs(pos)...).WillReturnError(errors.New("db update error"))
 			},
 			expectedErrContains: "failed to update position",
 		},
@@ -229,23 +266,11 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				mockDB.ExpectQuery("UPDATE trading.positions").
-					WithArgs(
-						int64(1), int64(10), pos.Quantity,
-						pos.EntryPrice, pos.HighestPrice,
-						pos.StrategyState, DefaultUser,
-					).
-					WillReturnError(pgx.ErrNoRows)
+				mockDB.ExpectQuery("UPDATE trading.positions").WithArgs(toUpsertArgs(pos)...).WillReturnError(pgx.ErrNoRows)
 
-				mockDB.ExpectExec("INSERT INTO trading.positions").
-					WithArgs(
-						int64(1), int64(10), pos.Side, pos.Quantity,
-						pos.EntryPrice, pos.HighestPrice,
-						pos.StrategyState, DefaultUser,
-					).
-					WillReturnError(errors.New("db insert error"))
+				mockDB.ExpectExec("INSERT INTO trading.positions").WithArgs(toInsertArgs(pos)...).WillReturnError(errors.New("db insert error"))
 			},
 			expectedErrContains: "failed to insert position",
 		},
@@ -276,6 +301,9 @@ func TestPgPositionsRepo_DeletePosition(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
 
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+
 	testCases := []struct {
 		name                string
 		setupMock           func(mockDB pgxmock.PgxPoolIface)
@@ -286,10 +314,10 @@ func TestPgPositionsRepo_DeletePosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mockDB.ExpectExec("UPDATE trading.positions").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(exchangeID, instrumentID, DefaultUser).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 			},
 		},
@@ -307,10 +335,10 @@ func TestPgPositionsRepo_DeletePosition(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(pos.ExchangeName, pos.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mockDB.ExpectExec("UPDATE trading.positions").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(exchangeID, instrumentID, DefaultUser).
 					WillReturnError(errors.New("db update error"))
 			},
 			expectedErrContains: "failed to delete position",

@@ -1,9 +1,8 @@
 package signal_generator
 
 import (
-	"database/sql"
+	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"trading/robot/go-bot/internal/database/repository"
@@ -13,10 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	testSymbol   = "BTC/USD"
+	testExchange = "binance"
+	testRisk     = repository.RiskPair{RiskPerTrade: 100.0}
+)
+
 func TestNewSignalGenerator(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	symbol := "BTC/USD"
-	exchange := "binance"
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tests := []struct {
 		name        string
@@ -33,8 +36,8 @@ func TestNewSignalGenerator(t *testing.T) {
 		{
 			name: "dummy strategy initialization",
 			strategyCfg: repository.StrategyPair{
-				ExchangeName:     exchange,
-				InstrumentSymbol: symbol,
+				ExchangeName:     testExchange,
+				InstrumentSymbol: testSymbol,
 				Type:             repository.StrategyDummy,
 			},
 			wantErr: false,
@@ -42,8 +45,8 @@ func TestNewSignalGenerator(t *testing.T) {
 		{
 			name: "momentum profit strategy initialization",
 			strategyCfg: repository.StrategyPair{
-				ExchangeName:     exchange,
-				InstrumentSymbol: symbol,
+				ExchangeName:     testExchange,
+				InstrumentSymbol: testSymbol,
 				Type:             repository.StrategyMomentumProfit,
 				Momentum: repository.StrategyMomentum{
 					WindowSeconds: 60,
@@ -59,8 +62,8 @@ func TestNewSignalGenerator(t *testing.T) {
 		{
 			name: "momentum trailing strategy initialization",
 			strategyCfg: repository.StrategyPair{
-				ExchangeName:     exchange,
-				InstrumentSymbol: symbol,
+				ExchangeName:     testExchange,
+				InstrumentSymbol: testSymbol,
 				Type:             repository.StrategyMomentumTrailing,
 				Momentum: repository.StrategyMomentum{
 					WindowSeconds: 60,
@@ -78,8 +81,7 @@ func TestNewSignalGenerator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			riskData := repository.RiskPair{RiskPerTrade: 100.0}
-			sg, err := NewSignalGenerator(logger, riskData, tt.strategyCfg)
+			sg, err := NewSignalGenerator(logger, testRisk, tt.strategyCfg)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, sg)
@@ -96,32 +98,28 @@ func TestNewSignalGenerator(t *testing.T) {
 }
 
 func TestSignalGenerator_Metadata(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	symbol := "ETH/USDT"
-	exchange := "kraken"
 	strategyCfg := repository.StrategyPair{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
 		Type:             repository.StrategyDummy,
 	}
 
-	sg, err := NewSignalGenerator(logger, repository.RiskPair{RiskPerTrade: 100.0}, strategyCfg)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 
-	assert.Equal(t, symbol, sg.Symbol())
-	assert.Equal(t, exchange, sg.Exchange())
-	assert.Equal(t, "SignalGenerator-kraken-ETH/USDT", sg.Name())
+	assert.Equal(t, testSymbol, sg.Symbol())
+	assert.Equal(t, testExchange, sg.Exchange())
+	assert.Contains(t, sg.Name(), testExchange)
+	assert.Equal(t, testRisk.RiskPerTrade, sg.Risk().RiskPerTrade)
+	assert.Equal(t, testRisk.MaxPositionSize.Float64, sg.Risk().MaxPositionSize)
 }
 
 func TestSignalGenerator_Warmup(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	symbol := "BTC/USD"
-	exchange := "binance"
-
 	stratCfg := repository.StrategyPair{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
 		Type:             repository.StrategyMomentumTrailing,
 		Momentum: repository.StrategyMomentum{
 			WindowSeconds: 60,
@@ -134,8 +132,8 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 		},
 	}
 
-	riskData := repository.RiskPair{RiskPerTrade: 100.0}
-	sg, err := NewSignalGenerator(logger, riskData, stratCfg)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -153,14 +151,9 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 }
 
 func TestSignalGenerator_Sync(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	symbol := "BTC/USD"
-	exchange := "binance"
-	riskData := repository.RiskPair{RiskPerTrade: 100.0}
-
 	stratCfg := repository.StrategyPair{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
 		Type:             repository.StrategyMomentumTrailing,
 		Momentum: repository.StrategyMomentum{
 			WindowSeconds: 10,
@@ -173,7 +166,8 @@ func TestSignalGenerator_Sync(t *testing.T) {
 		},
 	}
 
-	sg, err := NewSignalGenerator(logger, riskData, stratCfg)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -183,15 +177,10 @@ func TestSignalGenerator_Sync(t *testing.T) {
 	assert.Equal(t, strategy.StateActive, sg.State())
 }
 
-func TestSignalGenerator_Update(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
-	symbol := "BTC/USD"
-	exchange := "binance"
-
+func TestSignalGenerator_UpdatePrice(t *testing.T) {
 	strategyCfg := repository.StrategyPair{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
 		Type:             repository.StrategyMomentumTrailing,
 		Momentum: repository.StrategyMomentum{
 			WindowSeconds: 100,
@@ -204,9 +193,8 @@ func TestSignalGenerator_Update(t *testing.T) {
 		},
 	}
 
-	riskData := repository.RiskPair{RiskPerTrade: 100.0}
-
-	sg, err := NewSignalGenerator(logger, riskData, strategyCfg)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -222,17 +210,14 @@ func TestSignalGenerator_Update(t *testing.T) {
 }
 
 func TestSignalGenerator_State(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	symbol := "BTC/USD"
-	exchange := "binance"
 	strategyCfg := repository.StrategyPair{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
 		Type:             repository.StrategyDummy,
 	}
 
-	riskData := repository.RiskPair{RiskPerTrade: 100.0}
-	sg, err := NewSignalGenerator(logger, riskData, strategyCfg)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -246,20 +231,14 @@ func TestSignalGenerator_State(t *testing.T) {
 }
 
 func TestSignalGenerator_Lifecycle(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	symbol := "BTC/USD"
-	exchange := "binance"
 	strategyCfg := repository.StrategyPair{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
 		Type:             repository.StrategyDummy,
 	}
 
-	riskData := repository.RiskPair{
-		RiskPerTrade:    100.0,
-		MaxPositionSize: sql.NullFloat64{Float64: 10.0, Valid: true},
-	}
-	sg, err := NewSignalGenerator(logger, riskData, strategyCfg)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
 	require.NoError(t, err)
 	defer sg.Close()
 

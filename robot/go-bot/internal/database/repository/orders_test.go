@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -13,29 +15,247 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var orderColumns = []string{
+	"id", "exchange_name", "instrument_symbol", "exchange_order_id", "client_order_id",
+	"side", "order_type", "price", "amount", "filled", "remaining", "average_price",
+	"cost", "order_status", "error_message", "exchange_timestamp", "created_at", "updated_at",
+}
+
 // getSampleOrder provides a consistent OrderData object for tests.
 func getSampleOrder() OrderData {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	now := time.Now().Truncate(time.Second)
 	return OrderData{
+		ID:                r.Int63n(1000) + 1,
 		ExchangeName:      "dummy",
 		InstrumentSymbol:  "BTC/USDT",
-		ExchangeOrderID:   "dummy-order-123",
-		ClientOrderID:     sql.NullString{String: "dummy-client-123", Valid: true},
+		ExchangeOrderID:   fmt.Sprintf("order-%d", r.Intn(10000)),
+		ClientOrderID:     sql.NullString{String: fmt.Sprintf("client-%d", r.Intn(10000)), Valid: true},
 		Side:              OrderSideBuy,
 		OrderType:         OrderTypeLimit,
-		Price:             sql.NullFloat64{Float64: 50000.0, Valid: true},
-		Amount:            1.5,
+		Price:             sql.NullFloat64{Float64: r.Float64() * 50000, Valid: true},
+		Amount:            r.Float64() * 2,
 		Filled:            0.0,
-		Remaining:         1.5,
+		Remaining:         r.Float64() * 2,
 		AveragePrice:      sql.NullFloat64{Valid: false},
 		Cost:              0.0,
 		Status:            OrderStatusOpen,
 		ErrorMessage:      sql.NullString{Valid: false},
-		ExchangeTimestamp: sql.NullTime{Time: time.Now(), Valid: true},
+		ExchangeTimestamp: sql.NullTime{Time: now, Valid: true},
+		CreatedAt:         now,
+		UpdatedAt:         sql.NullTime{Valid: false},
+	}
+}
+
+func toOrderRow(o OrderData) []any {
+	return []any{o.ID, o.ExchangeName, o.InstrumentSymbol, o.ExchangeOrderID, o.ClientOrderID, o.Side, o.OrderType, o.Price, o.Amount, o.Filled, o.Remaining, o.AveragePrice, o.Cost, o.Status, o.ErrorMessage, o.ExchangeTimestamp, o.CreatedAt, o.UpdatedAt}
+}
+
+func TestPgOrdersRepo_GetOrder(t *testing.T) {
+	repo := NewOrdersRepo()
+	order := getSampleOrder()
+
+	testCases := []struct {
+		name                string
+		setupMock           func(mockDB pgxmock.PgxPoolIface)
+		expectedErrContains string
+		assertResult        func(t *testing.T, result OrderData, err error)
+	}{
+		{
+			name: "Success",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				rows := pgxmock.NewRows(orderColumns).AddRow(toOrderRow(order)...)
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WillReturnRows(rows)
+			},
+			assertResult: func(t *testing.T, result OrderData, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, order.ID, result.ID)
+				assert.Equal(t, order.ExchangeOrderID, result.ExchangeOrderID)
+			},
+		},
+		{
+			name: "Success_WithNulls",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				oNull := getSampleOrder()
+				oNull.ClientOrderID = sql.NullString{Valid: false}
+				oNull.Price = sql.NullFloat64{Valid: false}
+				oNull.AveragePrice = sql.NullFloat64{Valid: false}
+				oNull.ErrorMessage = sql.NullString{Valid: false}
+				oNull.ExchangeTimestamp = sql.NullTime{Valid: false}
+
+				rows := pgxmock.NewRows(orderColumns).AddRow(toOrderRow(oNull)...)
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WillReturnRows(rows)
+			},
+			assertResult: func(t *testing.T, result OrderData, err error) {
+				require.NoError(t, err)
+				assert.False(t, result.ClientOrderID.Valid)
+				assert.False(t, result.Price.Valid)
+				assert.False(t, result.ExchangeTimestamp.Valid)
+			},
+		},
+		{
+			name: "Not Found",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WillReturnError(pgx.ErrNoRows)
+			},
+			expectedErrContains: "failed to get order",
+		},
+		{
+			name: "DB Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WillReturnError(errors.New("db query error"))
+			},
+			expectedErrContains: "db query error",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDB, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tc.setupMock(mockDB)
+
+			result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeOrderID, order.ExchangeName)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				tc.assertResult(t, result, err)
+			}
+			require.NoError(t, mockDB.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPgOrdersRepo_GetOrders(t *testing.T) {
+	repo := NewOrdersRepo()
+	order1 := getSampleOrder()
+	order2 := getSampleOrder()
+	columns := orderColumns
+
+	testCases := []struct {
+		name                string
+		exchangeName        string
+		symbolFilter        string
+		statusFilter        []string
+		limit               int
+		setupMock           func(mockDB pgxmock.PgxPoolIface)
+		expectedErrContains string
+		assertResult        func(t *testing.T, result []OrderData)
+	}{
+		{
+			name:         "Success with symbol filter",
+			exchangeName: "dummy",
+			symbolFilter: "BTC/USDT",
+			statusFilter: []string{},
+			limit:        10,
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				rows := pgxmock.NewRows(columns).AddRow(toOrderRow(order1)...)
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs("dummy", "BTC/USDT", []string{}, 10).
+					WillReturnRows(rows)
+			},
+			assertResult: func(t *testing.T, result []OrderData) {
+				require.Len(t, result, 1)
+				assert.Equal(t, order1.ID, result[0].ID)
+			},
+		},
+		{
+			name:         "Success without symbol filter",
+			exchangeName: "dummy",
+			symbolFilter: "",
+			statusFilter: []string{},
+			limit:        10,
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				rows := pgxmock.NewRows(columns).AddRows(toOrderRow(order1), toOrderRow(order2))
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs("dummy", "", []string{}, 10).
+					WillReturnRows(rows)
+			},
+			assertResult: func(t *testing.T, result []OrderData) {
+				require.Len(t, result, 2)
+			},
+		},
+		{
+			name:         "Success with status filter",
+			exchangeName: "dummy",
+			symbolFilter: "BTC/USDT",
+			statusFilter: []string{OrderStatusNew, OrderStatusOpen},
+			limit:        10,
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				rows := pgxmock.NewRows(columns).AddRow(toOrderRow(order1)...)
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs("dummy", "BTC/USDT", []string{OrderStatusNew, OrderStatusOpen}, 10).
+					WillReturnRows(rows)
+			},
+			assertResult: func(t *testing.T, result []OrderData) {
+				require.Len(t, result, 1)
+				assert.Equal(t, OrderStatusOpen, result[0].Status)
+			},
+		},
+		{
+			name:         "DB Error",
+			exchangeName: "dummy",
+			symbolFilter: "",
+			statusFilter: []string{},
+			limit:        10,
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
+					WithArgs("dummy", "", []string{}, 10).
+					WillReturnError(errors.New("db query error"))
+			},
+			expectedErrContains: "failed to get orders",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDB, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tc.setupMock(mockDB)
+
+			result, err := repo.GetOrders(context.Background(), mockDB, tc.exchangeName, tc.symbolFilter, tc.statusFilter, tc.limit)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+				tc.assertResult(t, result)
+			}
+
+			require.NoError(t, mockDB.ExpectationsWereMet())
+		})
 	}
 }
 
 func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 	repo := NewOrdersRepo()
+
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+
+	toInsertArgs := func(o OrderData) []any {
+		return []any{
+			o.ExchangeOrderID, o.ClientOrderID, exchangeID, instrumentID,
+			o.Side, o.OrderType, o.Price, o.Amount, o.Filled, o.Remaining,
+			o.AveragePrice, o.Cost, o.Status, o.ErrorMessage, o.ExchangeTimestamp,
+			DefaultUser,
+		}
+	}
 
 	testCases := []struct {
 		name                string
@@ -50,18 +270,12 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(order.ExchangeName, order.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(1))
-				mockDB.ExpectQuery("INSERT INTO trading.orders").
-					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
-						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
-						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
-						DefaultUser,
-					).WillReturnRows(rows)
+				insertArgs := toInsertArgs(order)
+				rows := pgxmock.NewRows([]string{"id"}).AddRow(order.ID)
+				mockDB.ExpectQuery("INSERT INTO trading.orders").WithArgs(insertArgs...).WillReturnRows(rows)
 			},
-			expectedID: 1,
 		},
 		{
 			name: "Success_AllNulls",
@@ -76,18 +290,12 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(order.ExchangeName, order.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(2))
-				mockDB.ExpectQuery("INSERT INTO trading.orders").
-					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
-						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
-						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
-						DefaultUser,
-					).WillReturnRows(rows)
+				insertArgs := toInsertArgs(order)
+				rows := pgxmock.NewRows([]string{"id"}).AddRow(order.ID)
+				mockDB.ExpectQuery("INSERT INTO trading.orders").WithArgs(insertArgs...).WillReturnRows(rows)
 			},
-			expectedID: 2,
 		},
 		{
 			name: "Success_AllFilled",
@@ -99,18 +307,12 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(order.ExchangeName, order.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				rows := pgxmock.NewRows([]string{"id"}).AddRow(int64(3))
-				mockDB.ExpectQuery("INSERT INTO trading.orders").
-					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
-						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
-						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
-						DefaultUser,
-					).WillReturnRows(rows)
+				insertArgs := toInsertArgs(order)
+				rows := pgxmock.NewRows([]string{"id"}).AddRow(order.ID)
+				mockDB.ExpectQuery("INSERT INTO trading.orders").WithArgs(insertArgs...).WillReturnRows(rows)
 			},
-			expectedID: 3,
 		},
 		{
 			name:          "DB Select Error",
@@ -128,15 +330,10 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
 				mockDB.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(order.ExchangeName, order.InstrumentSymbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
-				mockDB.ExpectQuery("INSERT INTO trading.orders").
-					WithArgs(
-						order.ExchangeOrderID, order.ClientOrderID, int64(1), int64(10),
-						order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining,
-						order.AveragePrice, order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp,
-						DefaultUser,
-					).WillReturnError(errors.New("db insert error"))
+				insertArgs := toInsertArgs(order)
+				mockDB.ExpectQuery("INSERT INTO trading.orders").WithArgs(insertArgs...).WillReturnError(errors.New("db insert error"))
 			},
 			expectedErrContains: "failed to create order",
 		},
@@ -162,7 +359,7 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tc.expectedID, id)
+				assert.Equal(t, order.ID, id)
 			}
 
 			require.NoError(t, mockDB.ExpectationsWereMet())
@@ -172,6 +369,12 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 
 func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 	repo := NewOrdersRepo()
+
+	b := getSampleOrder()
+	updateArgs := []any{
+		b.Filled, b.Remaining, b.AveragePrice, b.Cost, b.Status,
+		b.ErrorMessage, b.ExchangeTimestamp, DefaultUser, b.ExchangeOrderID, b.ExchangeName,
+	}
 
 	testCases := []struct {
 		name                string
@@ -183,33 +386,21 @@ func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 			name: "Success",
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
 				rows := pgxmock.NewRows([]string{"id"}).AddRow(order.ID)
-				mockDB.ExpectQuery("UPDATE trading.orders").
-					WithArgs(
-						order.Filled, order.Remaining, order.AveragePrice, order.Cost, order.Status,
-						order.ErrorMessage, order.ExchangeTimestamp, DefaultUser, order.ExchangeOrderID, order.ExchangeName,
-					).WillReturnRows(rows)
+				mockDB.ExpectQuery("UPDATE trading.orders").WithArgs(updateArgs...).WillReturnRows(rows)
 			},
-			expectedID: 1,
+			expectedID: b.ID,
 		},
 		{
 			name: "DB Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
-				mockDB.ExpectQuery("UPDATE trading.orders").
-					WithArgs(
-						order.Filled, order.Remaining, order.AveragePrice, order.Cost, order.Status,
-						order.ErrorMessage, order.ExchangeTimestamp, DefaultUser, order.ExchangeOrderID, order.ExchangeName,
-					).WillReturnError(errors.New("db update error"))
+				mockDB.ExpectQuery("UPDATE trading.orders").WithArgs(updateArgs...).WillReturnError(errors.New("db update error"))
 			},
 			expectedErrContains: "failed to update order",
 		},
 		{
 			name: "Not Found",
 			setupMock: func(mockDB pgxmock.PgxPoolIface, order OrderData) {
-				mockDB.ExpectQuery("UPDATE trading.orders").
-					WithArgs(
-						order.Filled, order.Remaining, order.AveragePrice, order.Cost, order.Status,
-						order.ErrorMessage, order.ExchangeTimestamp, DefaultUser, order.ExchangeOrderID, order.ExchangeName,
-					).WillReturnError(pgx.ErrNoRows)
+				mockDB.ExpectQuery("UPDATE trading.orders").WithArgs(updateArgs...).WillReturnError(pgx.ErrNoRows)
 			},
 			expectedErrContains: "failed to update order",
 		},
@@ -221,12 +412,9 @@ func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 			require.NoError(t, err)
 			defer mockDB.Close()
 
-			order := getSampleOrder()
-			order.ID = 1
+			tc.setupMock(mockDB, b)
 
-			tc.setupMock(mockDB, order)
-
-			id, err := repo.UpdateOrder(context.Background(), mockDB, order)
+			id, err := repo.UpdateOrder(context.Background(), mockDB, b)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -234,189 +422,6 @@ func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedID, id)
-			}
-
-			require.NoError(t, mockDB.ExpectationsWereMet())
-		})
-	}
-}
-
-func TestPgOrdersRepo_GetOrder(t *testing.T) {
-	repo := NewOrdersRepo()
-	order := getSampleOrder()
-	order.ID = 1
-
-	mockDB, err := pgxmock.NewPool()
-	require.NoError(t, err)
-	defer mockDB.Close()
-
-	// Success Case
-	t.Run("Success", func(t *testing.T) {
-		rows := pgxmock.NewRows([]string{
-			"id", "exchange_name", "instrument_symbol", "exchange_order_id", "client_order_id",
-			"side", "order_type", "price", "amount", "filled", "remaining", "average_price",
-			"cost", "order_status", "error_message", "exchange_timestamp", "created_at", "updated_at",
-		}).AddRow(
-			order.ID, order.ExchangeName, order.InstrumentSymbol, order.ExchangeOrderID, order.ClientOrderID,
-			order.Side, order.OrderType, order.Price, order.Amount, order.Filled, order.Remaining, order.AveragePrice,
-			order.Cost, order.Status, order.ErrorMessage, order.ExchangeTimestamp, time.Now(), sql.NullTime{},
-		)
-		mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-			WithArgs(order.ExchangeOrderID, order.ExchangeName).
-			WillReturnRows(rows)
-
-		result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeOrderID, order.ExchangeName)
-		require.NoError(t, err)
-		assert.Equal(t, order.ID, result.ID)
-		assert.Equal(t, order.ExchangeOrderID, result.ExchangeOrderID)
-	})
-
-	// Success Case (With Nulls)
-	t.Run("Success_WithNulls", func(t *testing.T) {
-		rows := pgxmock.NewRows([]string{
-			"id", "exchange_name", "instrument_symbol", "exchange_order_id", "client_order_id",
-			"side", "order_type", "price", "amount", "filled", "remaining", "average_price",
-			"cost", "order_status", "error_message", "exchange_timestamp", "created_at", "updated_at",
-		}).AddRow(
-			order.ID, order.ExchangeName, order.InstrumentSymbol, order.ExchangeOrderID, nil,
-			order.Side, order.OrderType, nil, order.Amount, order.Filled, order.Remaining, nil,
-			order.Cost, order.Status, nil, nil, time.Now(), nil,
-		)
-		mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-			WithArgs(order.ExchangeOrderID, order.ExchangeName).
-			WillReturnRows(rows)
-
-		result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeOrderID, order.ExchangeName)
-		require.NoError(t, err)
-		assert.False(t, result.ClientOrderID.Valid)
-		assert.False(t, result.Price.Valid)
-		assert.False(t, result.AveragePrice.Valid)
-		assert.False(t, result.ErrorMessage.Valid)
-		assert.False(t, result.ExchangeTimestamp.Valid)
-		assert.False(t, result.UpdatedAt.Valid)
-	})
-
-	// Not Found Case
-	t.Run("Not Found", func(t *testing.T) {
-		mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-			WithArgs(order.ExchangeOrderID, order.ExchangeName).
-			WillReturnError(pgx.ErrNoRows)
-
-		_, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeOrderID, order.ExchangeName)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get order")
-	})
-
-	// DB Error Case
-	t.Run("DB Error", func(t *testing.T) {
-		mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-			WithArgs(order.ExchangeOrderID, order.ExchangeName).
-			WillReturnError(errors.New("db query error"))
-
-		_, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeOrderID, order.ExchangeName)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "db query error")
-	})
-
-	require.NoError(t, mockDB.ExpectationsWereMet())
-}
-
-func TestPgOrdersRepo_GetOrders(t *testing.T) {
-	repo := NewOrdersRepo()
-	order1 := getSampleOrder()
-	order1.ID = 1
-	order2 := getSampleOrder()
-	order2.ID = 2
-	order2.ExchangeOrderID = "dummy-order-456"
-
-	columns := []string{
-		"id", "exchange_name", "instrument_symbol", "exchange_order_id", "client_order_id",
-		"side", "order_type", "price", "amount", "filled", "remaining", "average_price",
-		"cost", "order_status", "error_message", "exchange_timestamp", "created_at", "updated_at",
-	}
-
-	testCases := []struct {
-		name                string
-		exchangeName        string
-		symbolFilter        string
-		limit               int
-		setupMock           func(mockDB pgxmock.PgxPoolIface)
-		expectedErrContains string
-		assertResult        func(t *testing.T, result []OrderData)
-	}{
-		{
-			name:         "Success with symbol filter",
-			exchangeName: "dummy",
-			symbolFilter: "BTC/USDT",
-			limit:        10,
-			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows(columns).AddRow(
-					order1.ID, order1.ExchangeName, order1.InstrumentSymbol, order1.ExchangeOrderID, order1.ClientOrderID,
-					order1.Side, order1.OrderType, order1.Price, order1.Amount, order1.Filled, order1.Remaining, order1.AveragePrice,
-					order1.Cost, order1.Status, order1.ErrorMessage, order1.ExchangeTimestamp, time.Now(), sql.NullTime{},
-				)
-				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs("dummy", "BTC/USDT", 10).
-					WillReturnRows(rows)
-			},
-			assertResult: func(t *testing.T, result []OrderData) {
-				require.Len(t, result, 1)
-				assert.Equal(t, order1.ID, result[0].ID)
-			},
-		},
-		{
-			name:         "Success without symbol filter",
-			exchangeName: "dummy",
-			symbolFilter: "",
-			limit:        10,
-			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows(columns).AddRow(
-					order1.ID, order1.ExchangeName, order1.InstrumentSymbol, order1.ExchangeOrderID, order1.ClientOrderID,
-					order1.Side, order1.OrderType, order1.Price, order1.Amount, order1.Filled, order1.Remaining, order1.AveragePrice,
-					order1.Cost, order1.Status, order1.ErrorMessage, order1.ExchangeTimestamp, time.Now(), sql.NullTime{},
-				).AddRow(
-					order2.ID, order2.ExchangeName, order2.InstrumentSymbol, order2.ExchangeOrderID, order2.ClientOrderID,
-					order2.Side, order2.OrderType, order2.Price, order2.Amount, order2.Filled, order2.Remaining, order2.AveragePrice,
-					order2.Cost, order2.Status, order2.ErrorMessage, order2.ExchangeTimestamp, time.Now(), sql.NullTime{},
-				)
-				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs("dummy", "", 10).
-					WillReturnRows(rows)
-			},
-			assertResult: func(t *testing.T, result []OrderData) {
-				require.Len(t, result, 2)
-			},
-		},
-		{
-			name:         "DB Error",
-			exchangeName: "dummy",
-			symbolFilter: "",
-			limit:        10,
-			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs("dummy", "", 10).
-					WillReturnError(errors.New("db query error"))
-			},
-			expectedErrContains: "failed to get orders",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockDB, err := pgxmock.NewPool()
-			require.NoError(t, err)
-			defer mockDB.Close()
-
-			tc.setupMock(mockDB)
-
-			result, err := repo.GetOrders(context.Background(), mockDB, tc.exchangeName, tc.symbolFilter, tc.limit)
-
-			if tc.expectedErrContains != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedErrContains)
-			} else {
-				require.NoError(t, err)
-				tc.assertResult(t, result)
 			}
 
 			require.NoError(t, mockDB.ExpectationsWereMet())

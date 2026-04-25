@@ -72,7 +72,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	// Initial State: Verify no open positions
 	t.Log("Checking initial state (expecting empty)")
-	openPositions, err := repo.Positions.GetOpenPositions(ctx, db)
+	openPositions, err := repo.Positions.GetOpenPositions(ctx, db, "", "")
 	require.NoError(t, err)
 	assert.Empty(t, openPositions, "Should have no open positions initially")
 
@@ -115,7 +115,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	// Get Open Positions: Should return the single aggregated position
 	t.Log("Verifying GetOpenPositions")
-	openPositions, err = repo.Positions.GetOpenPositions(ctx, db)
+	openPositions, err = repo.Positions.GetOpenPositions(ctx, db, "", "")
 	require.NoError(t, err)
 	require.Len(t, openPositions, 1)
 	assert.Equal(t, symbol, openPositions[0].InstrumentSymbol)
@@ -128,7 +128,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	// Verify deletion via GetOpenPositions (should be empty)
 	t.Log("Verifying deletion via GetOpenPositions")
-	openPositions, err = repo.Positions.GetOpenPositions(ctx, db)
+	openPositions, err = repo.Positions.GetOpenPositions(ctx, db, "", "")
 	require.NoError(t, err)
 	assert.Empty(t, openPositions, "Should have no open positions after selling all")
 

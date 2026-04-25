@@ -81,7 +81,7 @@ func TestGatewayClient_Integration(t *testing.T) {
 	t.Logf("Get: %s", getOrderResp.String())
 
 	// Test GetOpenOrders
-	openOrdersResp, err := client.GetOpenOrders(ctx, "dummy", "BTC/USDT")
+	openOrdersResp, err := client.GetOpenOrders(ctx, "dummy", "BTC/USDT", 10)
 	require.NoError(t, err, "GetOpenOrders should not error")
 	require.NotNil(t, openOrdersResp, "GetOpenOrders response should not be nil")
 	t.Logf("OpenOrders: %s", openOrdersResp.String())

@@ -34,7 +34,7 @@ type mockExchangeServer struct {
 	cancelOrderError      error
 	getOrderResponse      *pb.OrderResponse
 	getOrderError         error
-	getOpenOrdersResponse *pb.OpenOrdersResponse
+	getOpenOrdersResponse *pb.OrdersResponse
 	getOpenOrdersError    error
 	resetStateResponse    *pb.ResetStateResponse
 	resetStateError       error
@@ -82,7 +82,14 @@ func (s *mockExchangeServer) GetOrder(ctx context.Context, req *pb.GetOrderReque
 	return s.getOrderResponse, nil
 }
 
-func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOpenOrdersRequest) (*pb.OpenOrdersResponse, error) {
+func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOrdersRequest) (*pb.OrdersResponse, error) {
+	if s.getOpenOrdersError != nil {
+		return nil, s.getOpenOrdersError
+	}
+	return s.getOpenOrdersResponse, nil
+}
+
+func (s *mockExchangeServer) GetRecentTrades(ctx context.Context, req *pb.GetOrdersRequest) (*pb.OrdersResponse, error) {
 	if s.getOpenOrdersError != nil {
 		return nil, s.getOpenOrdersError
 	}
@@ -97,7 +104,7 @@ func (s *mockExchangeServer) ResetState(ctx context.Context, req *pb.ResetStateR
 }
 
 // setupTest creates a mock gRPC server and returns a client connected to it via an in-memory buffer.
-func setupTest(t *testing.T, mockSrv *mockExchangeServer) (*GatewayClient, func()) {
+func setupTest(t *testing.T, mockSrv *mockExchangeServer) (GatewayClient, func()) {
 	t.Helper()
 
 	lis := bufconn.Listen(1024 * 1024)
@@ -116,7 +123,7 @@ func setupTest(t *testing.T, mockSrv *mockExchangeServer) (*GatewayClient, func(
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
-	client := &GatewayClient{
+	client := &gatewayClient{
 		conn:   conn,
 		client: pb.NewExchangeServiceClient(conn),
 	}
@@ -128,6 +135,41 @@ func setupTest(t *testing.T, mockSrv *mockExchangeServer) (*GatewayClient, func(
 	}
 
 	return client, cleanup
+}
+
+func TestNewGatewayClient_Success(t *testing.T) {
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	addr := lis.Addr().String()
+
+	mockSrv := &mockExchangeServer{
+		pingResponse: &pb.PingResponse{Message: "mock pong"},
+	}
+	grpcServer := grpc.NewServer()
+	pb.RegisterExchangeServiceServer(grpcServer, mockSrv)
+
+	go func() {
+		_ = grpcServer.Serve(lis)
+	}()
+	defer grpcServer.Stop()
+
+	cfg := &config.GRPCConfig{PythonGatewayAddress: addr}
+	client, err := NewGatewayClient(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	// Test Close for coverage
+	err = client.Close()
+	require.NoError(t, err)
+}
+
+func TestNewGatewayClient_ConnectionFailure(t *testing.T) {
+	// This is a small integration test to ensure NewGatewayClient fails fast.
+	// It attempts to connect to a port that is presumed to be closed.
+	cfg := &config.GRPCConfig{PythonGatewayAddress: "localhost:9999"} // Invalid port
+	_, err := NewGatewayClient(cfg)
+	require.Error(t, err, "NewGatewayClient should fail when the gateway is unreachable")
+	assert.Contains(t, err.Error(), "initial health check to python-gateway failed")
 }
 
 func TestGatewayClient_Ping(t *testing.T) {
@@ -174,6 +216,110 @@ func TestGatewayClient_Ping(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedMessage, resp)
+			}
+		})
+	}
+}
+
+func TestGatewayClient_GetTicker(t *testing.T) {
+	testCases := []struct {
+		name          string
+		setupMock     func(*mockExchangeServer)
+		expectedPrice float64
+		expectError   bool
+		errorCode     codes.Code
+	}{
+		{
+			name: "Success",
+			setupMock: func(s *mockExchangeServer) {
+				s.tickerResponse = &pb.TickerResponse{Symbol: "BTC/USDT", Price: 20000.00}
+			},
+			expectedPrice: 20000.00,
+		},
+		{
+			name: "Server Error",
+			setupMock: func(s *mockExchangeServer) {
+				s.tickerError = status.Error(codes.Internal, "internal server error")
+			},
+			expectError: true,
+			errorCode:   codes.Internal,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			if tc.setupMock != nil {
+				tc.setupMock(mockSrv)
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			resp, err := client.GetTicker(context.Background(), "binance", "BTC/USDT")
+
+			if tc.expectError {
+				require.Error(t, err)
+				st, ok := status.FromError(err)
+				require.True(t, ok)
+				assert.Equal(t, tc.errorCode, st.Code())
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, "BTC/USDT", resp.Symbol)
+				assert.Equal(t, tc.expectedPrice, resp.Price)
+			}
+		})
+	}
+}
+
+func TestGatewayClient_GetBalance(t *testing.T) {
+	testCases := []struct {
+		name          string
+		setupMock     func(*mockExchangeServer)
+		expectedTotal float64
+		expectedFree  float64
+		expectError   bool
+		errorCode     codes.Code
+	}{
+		{
+			name: "Success",
+			setupMock: func(s *mockExchangeServer) {
+				s.balanceResponse = &pb.BalanceResponse{
+					Balances: []*pb.BalanceObject{{Asset: "USDT", Free: 500.00, Total: 1000.00}},
+				}
+			},
+			expectedTotal: 1000.00,
+			expectedFree:  500.00,
+		},
+		{
+			name: "Server Error",
+			setupMock: func(s *mockExchangeServer) {
+				s.balanceError = status.Error(codes.Internal, "internal server error")
+			},
+			expectError: true,
+			errorCode:   codes.Internal,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			if tc.setupMock != nil {
+				tc.setupMock(mockSrv)
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			resp, err := client.GetBalance(context.Background(), "binance", "USDT")
+
+			if tc.expectError {
+				require.Error(t, err)
+				st, ok := status.FromError(err)
+				require.True(t, ok)
+				assert.Equal(t, tc.errorCode, st.Code())
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedTotal, resp.Balances[0].Total)
+				assert.Equal(t, tc.expectedFree, resp.Balances[0].Free)
 			}
 		})
 	}
@@ -338,7 +484,7 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.getOpenOrdersResponse = &pb.OpenOrdersResponse{
+				s.getOpenOrdersResponse = &pb.OrdersResponse{
 					Orders: []*pb.OrderResponse{
 						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
 						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
@@ -365,7 +511,56 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.GetOpenOrders(context.Background(), "binance", "BTC/USDT")
+			resp, err := client.GetOpenOrders(context.Background(), "binance", "BTC/USDT", 10)
+
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Len(t, resp.Orders, tc.expectedLen)
+			}
+		})
+	}
+}
+
+func TestGatewayClient_GetRecentTrades(t *testing.T) {
+	testCases := []struct {
+		name        string
+		setupMock   func(*mockExchangeServer)
+		expectedLen int
+		expectError bool
+	}{
+		{
+			name: "Success",
+			setupMock: func(s *mockExchangeServer) {
+				s.getOpenOrdersResponse = &pb.OrdersResponse{
+					Orders: []*pb.OrderResponse{
+						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed},
+						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed},
+					},
+				}
+			},
+			expectedLen: 2,
+		},
+		{
+			name: "Server Error",
+			setupMock: func(s *mockExchangeServer) {
+				s.getOpenOrdersError = status.Error(codes.Internal, "internal server error")
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			if tc.setupMock != nil {
+				tc.setupMock(mockSrv)
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			resp, err := client.GetRecentTrades(context.Background(), "binance", "BTC/USDT", 0, 10)
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -413,119 +608,6 @@ func TestGatewayClient_ResetState(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestNewGatewayClient_ConnectionFailure(t *testing.T) {
-	// This is a small integration test to ensure NewGatewayClient fails fast.
-	// It attempts to connect to a port that is presumed to be closed.
-	cfg := &config.GRPCConfig{PythonGatewayAddress: "localhost:9999"} // Invalid port
-	_, err := NewGatewayClient(cfg)
-	require.Error(t, err, "NewGatewayClient should fail when the gateway is unreachable")
-	assert.Contains(t, err.Error(), "initial health check to python-gateway failed")
-}
-
-func TestGatewayClient_GetTicker(t *testing.T) {
-	testCases := []struct {
-		name          string
-		setupMock     func(*mockExchangeServer)
-		expectedPrice float64
-		expectError   bool
-		errorCode     codes.Code
-	}{
-		{
-			name: "Success",
-			setupMock: func(s *mockExchangeServer) {
-				s.tickerResponse = &pb.TickerResponse{Symbol: "BTC/USDT", Price: 20000.00}
-			},
-			expectedPrice: 20000.00,
-		},
-		{
-			name: "Server Error",
-			setupMock: func(s *mockExchangeServer) {
-				s.tickerError = status.Error(codes.Internal, "internal server error")
-			},
-			expectError: true,
-			errorCode:   codes.Internal,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockSrv := &mockExchangeServer{}
-			if tc.setupMock != nil {
-				tc.setupMock(mockSrv)
-			}
-			client, cleanup := setupTest(t, mockSrv)
-			defer cleanup()
-
-			resp, err := client.GetTicker(context.Background(), "binance", "BTC/USDT")
-
-			if tc.expectError {
-				require.Error(t, err)
-				st, ok := status.FromError(err)
-				require.True(t, ok)
-				assert.Equal(t, tc.errorCode, st.Code())
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, "BTC/USDT", resp.Symbol)
-				assert.Equal(t, tc.expectedPrice, resp.Price)
-			}
-		})
-	}
-}
-
-func TestGatewayClient_GetBalance(t *testing.T) {
-	testCases := []struct {
-		name          string
-		setupMock     func(*mockExchangeServer)
-		expectedTotal float64
-		expectedFree  float64
-		expectError   bool
-		errorCode     codes.Code
-	}{
-		{
-			name: "Success",
-			setupMock: func(s *mockExchangeServer) {
-				s.balanceResponse = &pb.BalanceResponse{
-					Balances: []*pb.BalanceObject{{Asset: "USDT", Free: 500.00, Total: 1000.00}},
-				}
-			},
-			expectedTotal: 1000.00,
-			expectedFree:  500.00,
-		},
-		{
-			name: "Server Error",
-			setupMock: func(s *mockExchangeServer) {
-				s.balanceError = status.Error(codes.Internal, "internal server error")
-			},
-			expectError: true,
-			errorCode:   codes.Internal,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockSrv := &mockExchangeServer{}
-			if tc.setupMock != nil {
-				tc.setupMock(mockSrv)
-			}
-			client, cleanup := setupTest(t, mockSrv)
-			defer cleanup()
-
-			resp, err := client.GetBalance(context.Background(), "binance", "USDT")
-
-			if tc.expectError {
-				require.Error(t, err)
-				st, ok := status.FromError(err)
-				require.True(t, ok)
-				assert.Equal(t, tc.errorCode, st.Code())
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.expectedTotal, resp.Balances[0].Total)
-				assert.Equal(t, tc.expectedFree, resp.Balances[0].Free)
 			}
 		})
 	}

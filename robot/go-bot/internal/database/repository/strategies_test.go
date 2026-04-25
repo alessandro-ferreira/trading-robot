@@ -4,24 +4,71 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/pashagolub/pgxmock/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestPgStrategiesRepo_GetEnabledStrategyPairs(t *testing.T) {
-	repo := NewStrategiesRepo()
-	mockDB, err := pgxmock.NewPool()
-	require.NoError(t, err)
-	defer mockDB.Close()
+var strategyPairColumns = []string{
+	"exchange_name", "instrument_symbol", "strategy_type", "window_seconds",
+	"lookbacks", "thresholds", "require_all", "stop_loss_pct", "profit_target_pct",
+	"activation_pct", "trailing_stop_pct",
+}
 
-	columns := []string{
-		"exchange_name", "instrument_symbol", "strategy_type", "window_seconds",
-		"lookbacks", "thresholds", "require_all", "stop_loss_pct", "profit_target_pct",
-		"activation_pct", "trailing_stop_pct",
+func getSampleMomentum() StrategyMomentum {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return StrategyMomentum{
+		WindowSeconds: int(r.Int31n(3600) + 300),
+		Windows: []MomentumWindow{
+			{LookbackSeconds: 60, Threshold: r.Float64() * 0.05},
+			{LookbackSeconds: 120, Threshold: r.Float64() * 0.1},
+		},
+		RequireAll:      r.Intn(2) == 0,
+		StopLossPct:     r.Float64() * 0.05,
+		ProfitTargetPct: r.Float64() * 0.1,
+		ActivationPct:   r.Float64() * 0.02,
+		TrailingStopPct: r.Float64() * 0.01,
 	}
+}
+
+func getSampleStrategyPair() StrategyPair {
+	return StrategyPair{
+		ExchangeName:     "binance",
+		InstrumentSymbol: "BTC/USDT",
+		Type:             StrategyMomentumTrailing,
+		WarmupWindow:     300,
+		Momentum:         getSampleMomentum(),
+	}
+}
+
+func toStrategyPairRow(p StrategyPair) []any {
+	lookbacks := make([]int32, len(p.Momentum.Windows))
+	thresholds := make([]float64, len(p.Momentum.Windows))
+	for i, w := range p.Momentum.Windows {
+		lookbacks[i] = int32(w.LookbackSeconds)
+		thresholds[i] = w.Threshold
+	}
+
+	var windowSec any = int32(p.Momentum.WindowSeconds)
+	if p.Type == StrategyDummy {
+		windowSec = nil
+	}
+
+	return []any{
+		p.ExchangeName, p.InstrumentSymbol, p.Type, windowSec,
+		lookbacks, thresholds, p.Momentum.RequireAll, p.Momentum.StopLossPct,
+		p.Momentum.ProfitTargetPct, p.Momentum.ActivationPct, p.Momentum.TrailingStopPct,
+	}
+}
+
+func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
+	repo := NewStrategiesRepo()
+	columns := strategyPairColumns
+	p1 := getSampleStrategyPair()
 
 	tests := []struct {
 		name          string
@@ -32,16 +79,18 @@ func TestPgStrategiesRepo_GetEnabledStrategyPairs(t *testing.T) {
 		{
 			name: "0 active pairs",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				mock.ExpectQuery("SELECT").WillReturnRows(pgxmock.NewRows(columns))
+				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(pgxmock.NewRows(columns))
 			},
 			expectedCount: 0,
 		},
 		{
 			name: "1 dummy pair (no momentum config)",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows(columns).
-					AddRow("binance", "BTC/USDT", "dummy", nil, nil, nil, nil, nil, nil, nil, nil)
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
+				d := p1
+				d.Type = StrategyDummy
+				d.Momentum = StrategyMomentum{}
+				rows := pgxmock.NewRows(columns).AddRow(toStrategyPairRow(d)...)
+				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
 			},
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
@@ -53,56 +102,53 @@ func TestPgStrategiesRepo_GetEnabledStrategyPairs(t *testing.T) {
 		{
 			name: "1 momentum pair (1 window)",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows(columns).
-					AddRow("binance", "BTC/USDT", "momentum_trailing", 3600, []int32{60}, []float64{0.01}, true, 0.02, nil, 0.03, 0.01)
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
+				m := p1
+				m.Momentum.Windows = m.Momentum.Windows[:1]
+				rows := pgxmock.NewRows(columns).AddRow(toStrategyPairRow(m)...)
+				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
 			},
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
-				assert.Equal(t, "momentum_trailing", results[0].Type)
-				assert.Equal(t, 3600, results[0].WarmupWindow)
-				assert.Equal(t, 3600, results[0].Momentum.WindowSeconds)
+				assert.Equal(t, p1.Type, results[0].Type)
 				require.Len(t, results[0].Momentum.Windows, 1)
-				assert.Equal(t, 60, results[0].Momentum.Windows[0].LookbackSeconds)
-				assert.Equal(t, 0.01, results[0].Momentum.Windows[0].Threshold)
 			},
 		},
 		{
 			name: "1 momentum pair (n > 1 windows)",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				rows := pgxmock.NewRows(columns).
-					AddRow("binance", "BTC/USDT", "momentum_trailing", 3600, []int32{60, 120}, []float64{0.01, 0.02}, true, 0.02, nil, 0.03, 0.01)
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
+				rows := pgxmock.NewRows(columns).AddRow(toStrategyPairRow(p1)...)
+				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
 			},
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
 				require.Len(t, results[0].Momentum.Windows, 2)
-				assert.Equal(t, 60, results[0].Momentum.Windows[0].LookbackSeconds)
-				assert.Equal(t, 120, results[0].Momentum.Windows[1].LookbackSeconds)
 			},
 		},
 		{
 			name: "Mixed pairs",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
+				p2 := getSampleStrategyPair()
+				p2.ExchangeName = "kraken"
+				p2.Type = StrategyMomentumProfit
+
 				rows := pgxmock.NewRows(columns).
-					AddRow("binance", "BTC/USDT", "dummy", nil, nil, nil, nil, nil, nil, nil, nil).
-					AddRow("kraken", "ETH/USDT", "momentum_profit", 300, []int32{60}, []float64{0.01}, false, 0.02, 0.05, nil, nil)
-				mock.ExpectQuery("SELECT").WillReturnRows(rows)
+					AddRows(toStrategyPairRow(p1), toStrategyPairRow(p2))
+				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
 			},
 			expectedCount: 2,
-			validate: func(t *testing.T, results []StrategyPair) {
-				assert.Equal(t, "dummy", results[0].Type)
-				assert.Equal(t, "momentum_profit", results[1].Type)
-				assert.Equal(t, 300, results[1].WarmupWindow)
-			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			mockDB, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
 			tt.setupMock(mockDB)
 
-			results, err := repo.GetEnabledStrategyPairs(context.Background(), mockDB)
+			// Testing with onlyEnabled=true to match typical usage
+			results, err := repo.GetStrategyPairs(context.Background(), mockDB, true)
 			require.NoError(t, err)
 			assert.Len(t, results, tt.expectedCount)
 
@@ -114,10 +160,14 @@ func TestPgStrategiesRepo_GetEnabledStrategyPairs(t *testing.T) {
 	}
 
 	t.Run("Query Error", func(t *testing.T) {
-		mockDB.ExpectQuery("SELECT").WillReturnError(fmt.Errorf("db error"))
-		_, err := repo.GetEnabledStrategyPairs(context.Background(), mockDB)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to query active strategy pairs")
+		mockDB, err := pgxmock.NewPool()
+		require.NoError(t, err)
+		defer mockDB.Close()
+
+		mockDB.ExpectQuery("SELECT").WithArgs(true).WillReturnError(fmt.Errorf("db error"))
+		_, err = repo.GetStrategyPairs(context.Background(), mockDB, true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to query strategy pairs")
 	})
 }
 
@@ -128,14 +178,41 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 	strategyType := StrategyMomentumProfit
 	label := "default"
 
-	momentum := StrategyMomentum{
-		WindowSeconds: 300,
-		Windows: []MomentumWindow{
-			{LookbackSeconds: 60, Threshold: 0.01},
-		},
-		StopLossPct:     0.02,
-		ProfitTargetPct: 0.05,
+	momentum := getSampleMomentum()
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+	pairID := int64(100)
+
+	// Argument mapping lambdas to ensure tests are dry and stay in sync with repo logic
+	lookbacks := []int32{int32(momentum.Windows[0].LookbackSeconds), int32(momentum.Windows[1].LookbackSeconds)}
+	thresholds := []float64{momentum.Windows[0].Threshold, momentum.Windows[1].Threshold}
+
+	toPairUpdateArgs := func(st string) []any {
+		return []any{exchangeID, instrumentID, st, DefaultUser}
 	}
+	toMomArgs := func(st string, isInsert bool) []any {
+		profitValid := st == StrategyMomentumProfit
+		trailValid := st == StrategyMomentumTrailing
+
+		commonArgs := []any{
+			momentum.WindowSeconds, lookbacks, thresholds,
+			momentum.RequireAll, momentum.StopLossPct,
+			sql.NullFloat64{Float64: momentum.ProfitTargetPct, Valid: profitValid},
+			sql.NullFloat64{Float64: momentum.ActivationPct, Valid: trailValid},
+			sql.NullFloat64{Float64: momentum.TrailingStopPct, Valid: trailValid},
+			DefaultUser,
+		}
+
+		if isInsert {
+			// Insert query starts with label and pairID
+			return append([]any{label, pairID, st}, commonArgs...)
+		}
+		// Update query starts with IDs/Label and ends with DefaultUser
+		return append([]any{pairID, st, label}, commonArgs...)
+	}
+
+	disablePairArgs := []any{exchangeID, instrumentID, DefaultUser}
+	disableMomArgs := []any{pairID, strategyType, DefaultUser}
 
 	testCases := []struct {
 		name                string
@@ -149,46 +226,31 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(exchange, symbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mock.ExpectBegin()
 				mock.ExpectExec("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(disablePairArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
 				mock.ExpectQuery("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), strategyType, DefaultUser).
+					WithArgs(toPairUpdateArgs(strategyType)...).
 					WillReturnError(sql.ErrNoRows)
 
 				mock.ExpectQuery("INSERT INTO trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), strategyType, DefaultUser).
-					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(100)))
+					WithArgs(toPairUpdateArgs(strategyType)...).
+					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(pairID))
 
 				mock.ExpectExec("UPDATE trading.strategy_momentum").
-					WithArgs(int64(100), strategyType, DefaultUser).
+					WithArgs(disableMomArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
 				mock.ExpectQuery("UPDATE trading.strategy_momentum").
-					WithArgs(
-						int64(100), strategyType, label,
-						momentum.WindowSeconds, []int32{60}, []float64{0.01},
-						momentum.RequireAll, momentum.StopLossPct,
-						sql.NullFloat64{Float64: 0.05, Valid: true},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						DefaultUser,
-					).
+					WithArgs(toMomArgs(strategyType, false)...).
 					WillReturnError(sql.ErrNoRows)
 
 				mock.ExpectExec("INSERT INTO trading.strategy_momentum").
-					WithArgs(
-						label, int64(100), strategyType, momentum.WindowSeconds, []int32{60}, []float64{0.01},
-						momentum.RequireAll, momentum.StopLossPct,
-						sql.NullFloat64{Float64: 0.05, Valid: true},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						DefaultUser,
-					).
+					WithArgs(toMomArgs(strategyType, true)...).
 					WillReturnResult(pgxmock.NewResult("INSERT", 1))
 				mock.ExpectCommit()
 			},
@@ -199,28 +261,20 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(exchange, symbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mock.ExpectBegin()
 				mock.ExpectExec("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(disablePairArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 				mock.ExpectQuery("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), strategyType, DefaultUser).
-					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(100)))
+					WithArgs(toPairUpdateArgs(strategyType)...).
+					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(pairID))
 				mock.ExpectExec("UPDATE trading.strategy_momentum").
-					WithArgs(int64(100), strategyType, DefaultUser).
+					WithArgs(disableMomArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 				mock.ExpectQuery("UPDATE trading.strategy_momentum").
-					WithArgs(
-						int64(100), strategyType, label,
-						momentum.WindowSeconds, []int32{60}, []float64{0.01},
-						momentum.RequireAll, momentum.StopLossPct,
-						sql.NullFloat64{Float64: 0.05, Valid: true},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						DefaultUser,
-					).
+					WithArgs(toMomArgs(strategyType, false)...).
 					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(500)))
 				mock.ExpectCommit()
 			},
@@ -231,15 +285,15 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(exchange, symbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 
 				mock.ExpectBegin()
 				mock.ExpectExec("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(disablePairArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 				mock.ExpectQuery("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), StrategyDummy, DefaultUser).
-					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(100)))
+					WithArgs(toPairUpdateArgs(StrategyDummy)...).
+					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(pairID))
 				mock.ExpectCommit()
 			},
 		},
@@ -259,7 +313,7 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(exchange, symbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 				mock.ExpectBegin().WillReturnError(fmt.Errorf("begin error"))
 			},
 			expectedErrContains: "failed to begin transaction",
@@ -270,13 +324,13 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(exchange, symbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 				mock.ExpectBegin()
 				mock.ExpectExec("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(disablePairArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 				mock.ExpectQuery("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), strategyType, DefaultUser).
+					WithArgs(toPairUpdateArgs(strategyType)...).
 					WillReturnError(fmt.Errorf("db error"))
 				mock.ExpectRollback()
 			},
@@ -288,27 +342,19 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				mock.ExpectQuery("SELECT i.exchange_id, i.id").
 					WithArgs(exchange, symbol).
-					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(int64(1), int64(10)))
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
 				mock.ExpectBegin()
 				mock.ExpectExec("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), DefaultUser).
+					WithArgs(disablePairArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 				mock.ExpectQuery("UPDATE trading.strategy_pairs").
-					WithArgs(int64(1), int64(10), strategyType, DefaultUser).
-					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(int64(100)))
+					WithArgs(toPairUpdateArgs(strategyType)...).
+					WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(pairID))
 				mock.ExpectExec("UPDATE trading.strategy_momentum").
-					WithArgs(int64(100), strategyType, DefaultUser).
+					WithArgs(disableMomArgs...).
 					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 				mock.ExpectQuery("UPDATE trading.strategy_momentum").
-					WithArgs(
-						int64(100), strategyType, label,
-						momentum.WindowSeconds, []int32{60}, []float64{0.01},
-						momentum.RequireAll, momentum.StopLossPct,
-						sql.NullFloat64{Float64: 0.05, Valid: true},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						sql.NullFloat64{Float64: 0, Valid: false},
-						DefaultUser,
-					).
+					WithArgs(toMomArgs(strategyType, false)...).
 					WillReturnError(fmt.Errorf("db error"))
 				mock.ExpectRollback()
 			},

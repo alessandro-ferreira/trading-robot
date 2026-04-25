@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -63,6 +65,22 @@ func TestService_GetTicker(t *testing.T) {
 			setupRepoMock:       func(mockRepo *MockMarketDataRepo) {},
 			expectedErrContains: "gateway down",
 		},
+		{
+			name: "Insert Error",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.tickerResponse = &pb.TickerResponse{
+					Symbol: "BTC/USDT",
+					Price:  50000.0,
+				}
+			},
+			setupRepoMock: func(mockRepo *MockMarketDataRepo) {
+				mockRepo.On("InsertTick", mock.Anything, mock.Anything, mock.Anything).Return(
+					errors.New("db insert error"),
+				)
+			},
+			expectedErrContains: "failed to persist tick",
+			expectedPrice:       50000.0,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -79,7 +97,8 @@ func TestService_GetTicker(t *testing.T) {
 			}
 
 			container := &repository.Container{MarketData: mockRepo}
-			svc := NewService(slog.Default(), nil, client, container)
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
 
 			// Act
 			resp, err := svc.GetTicker(context.Background(), "binance", "BTC/USDT")
@@ -88,11 +107,15 @@ func TestService_GetTicker(t *testing.T) {
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
-				assert.Nil(t, resp)
 			} else {
 				require.NoError(t, err)
-				assert.NotNil(t, resp)
+			}
+
+			if tc.expectedPrice > 0 {
+				require.NotNil(t, resp)
 				assert.Equal(t, tc.expectedPrice, resp.Price)
+			} else {
+				assert.Nil(t, resp)
 			}
 
 			mockRepo.AssertExpectations(t)
@@ -118,6 +141,7 @@ func (m *MockBalancesRepo) UpsertBalance(ctx context.Context, db repository.DBEx
 func TestService_GetBalance(t *testing.T) {
 	testCases := []struct {
 		name                string
+		assetSymbol         string
 		setupGatewayMock    func(*mockExchangeServer)
 		setupRepoMock       func(*MockBalancesRepo)
 		expectedErrContains string
@@ -125,7 +149,8 @@ func TestService_GetBalance(t *testing.T) {
 		assertLogs          func(*testing.T, *bytes.Buffer)
 	}{
 		{
-			name: "Success",
+			name:        "Success",
+			assetSymbol: "BTC",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceResponse = &pb.BalanceResponse{
 					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.5, Used: 0.5, Total: 2.0}},
@@ -138,7 +163,8 @@ func TestService_GetBalance(t *testing.T) {
 			},
 		},
 		{
-			name: "Gateway Error",
+			name:        "Gateway Error",
+			assetSymbol: "BTC",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceError = status.Error(codes.Unavailable, "gateway down")
 			},
@@ -146,7 +172,8 @@ func TestService_GetBalance(t *testing.T) {
 			expectedErrContains: "gateway down",
 		},
 		{
-			name: "DB Persistence Error",
+			name:        "DB Persistence Error",
+			assetSymbol: "", // Empty assetSymbol means continue on error
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceResponse = &pb.BalanceResponse{
 					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.0, Used: 0.0, Total: 1.0}},
@@ -159,7 +186,22 @@ func TestService_GetBalance(t *testing.T) {
 			expectedErrContains: "",
 		},
 		{
-			name: "Success with balance inconsistency warning",
+			name:        "DB Persistence Error - Specific Asset",
+			assetSymbol: "BTC", // Specific asset means fail on error
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.balanceResponse = &pb.BalanceResponse{
+					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.0, Used: 0.0, Total: 1.0}},
+				}
+			},
+			setupRepoMock: func(mockRepo *MockBalancesRepo) {
+				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), errors.New("db error"))
+			},
+			// When assetSymbol is passed ("BTC"), persistence failure should return an error
+			expectedErrContains: "failed to persist balance",
+		},
+		{
+			name:        "Success with balance inconsistency warning",
+			assetSymbol: "BTC",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.balanceResponse = &pb.BalanceResponse{
 					Balances: []*pb.BalanceObject{{Asset: "BTC", Free: 1.0, Used: 1.0, Total: 2.000000001}},
@@ -192,7 +234,7 @@ func TestService_GetBalance(t *testing.T) {
 			svc := NewService(logger, nil, client, container)
 
 			// Act
-			resp, err := svc.GetBalance(context.Background(), "binance", "BTC")
+			resp, err := svc.GetBalance(context.Background(), "binance", tc.assetSymbol)
 
 			// Assert
 			if tc.expectedErrContains != "" {
@@ -224,8 +266,8 @@ func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor,
 	return args.Get(0).(repository.OrderData), args.Error(1)
 }
 
-func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, limit int) ([]repository.OrderData, error) {
-	args := m.Called(ctx, db, exchangeName, symbol, limit)
+func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, status []string, limit int) ([]repository.OrderData, error) {
+	args := m.Called(ctx, db, exchangeName, symbol, status, limit)
 	return args.Get(0).([]repository.OrderData), args.Error(1)
 }
 
@@ -306,7 +348,8 @@ func TestService_CreateOrder(t *testing.T) {
 			tc.setupRepoMock(mockRepo)
 
 			container := &repository.Container{Orders: mockRepo}
-			svc := NewService(slog.Default(), nil, client, container)
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
 
 			resp, err := svc.CreateOrder(context.Background(), "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeLimit, 1.5, 50000.0)
 
@@ -386,6 +429,25 @@ func TestService_CancelOrder(t *testing.T) {
 			},
 			expectedErrContains: "failed to update db",
 		},
+		{
+			name: "DB Not Found Fallback",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.cancelOrderResponse = &pb.CancelOrderResponse{Id: "order-123", Status: repository.OrderStatusCanceled}
+				mockSrv.getOrderResponse = &pb.OrderResponse{
+					Id:     "order-123",
+					Symbol: "BTC/USDT",
+					Status: repository.OrderStatusCanceled,
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(
+					int64(0), pgx.ErrNoRows,
+				)
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.Anything).Return(
+					int64(1), nil,
+				)
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -399,7 +461,8 @@ func TestService_CancelOrder(t *testing.T) {
 			tc.setupRepoMock(mockRepo)
 
 			container := &repository.Container{Orders: mockRepo}
-			svc := NewService(slog.Default(), nil, client, container)
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
 
 			err := svc.CancelOrder(context.Background(), "binance", "BTC/USDT", "order-123")
 
@@ -464,6 +527,25 @@ func TestService_GetOrder(t *testing.T) {
 			expectedErrContains: "order fetched but failed to update db",
 			expectedOrderID:     "order-123",
 		},
+		{
+			name: "DB Not Found Fallback",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOrderResponse = &pb.OrderResponse{
+					Id:     "order-123",
+					Symbol: "BTC/USDT",
+					Status: repository.OrderStatusClosed,
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(
+					int64(0), pgx.ErrNoRows,
+				)
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.Anything).Return(
+					int64(1), nil,
+				)
+			},
+			expectedOrderID: "order-123",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -477,7 +559,8 @@ func TestService_GetOrder(t *testing.T) {
 			tc.setupRepoMock(mockRepo)
 
 			container := &repository.Container{Orders: mockRepo}
-			svc := NewService(slog.Default(), nil, client, container)
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
 
 			resp, err := svc.GetOrder(context.Background(), "binance", "BTC/USDT", "order-123")
 
@@ -509,7 +592,7 @@ func TestService_GetOpenOrders(t *testing.T) {
 		{
 			name: "Success",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
-				mockSrv.getOpenOrdersResponse = &pb.OpenOrdersResponse{
+				mockSrv.getOpenOrdersResponse = &pb.OrdersResponse{
 					Orders: []*pb.OrderResponse{
 						{
 							Id:        "order-1",
@@ -539,12 +622,50 @@ func TestService_GetOpenOrders(t *testing.T) {
 			expectedCount: 2,
 		},
 		{
+			name: "Success with CreateOrder fallback",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOpenOrdersResponse = &pb.OrdersResponse{
+					Orders: []*pb.OrderResponse{
+						{
+							Id:     "order-new",
+							Symbol: "BTC/USDT",
+							Status: repository.OrderStatusOpen,
+						},
+					},
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), pgx.ErrNoRows)
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
+					return o.ExchangeOrderID == "order-new"
+				})).Return(int64(10), nil)
+			},
+			expectedCount: 1,
+		},
+		{
 			name: "Gateway Error",
 			setupGatewayMock: func(mockSrv *mockExchangeServer) {
 				mockSrv.getOpenOrdersError = status.Error(codes.Unavailable, "gateway down")
 			},
 			setupRepoMock:       func(mockRepo *MockOrdersRepo) {},
 			expectedErrContains: "failed to fetch open orders",
+		},
+		{
+			name: "DB Generic Error Continue",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOpenOrdersResponse = &pb.OrdersResponse{
+					Orders: []*pb.OrderResponse{
+						{Id: "order-1", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
+					},
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				// If UpdateOrder returns an error other than ErrNoRows, it logs a warning and continues.
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(
+					int64(0), errors.New("db generic error"),
+				)
+			},
+			expectedCount: 1,
 		},
 	}
 
@@ -559,9 +680,116 @@ func TestService_GetOpenOrders(t *testing.T) {
 			tc.setupRepoMock(mockRepo)
 
 			container := &repository.Container{Orders: mockRepo}
-			svc := NewService(slog.Default(), nil, client, container)
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
 
-			resp, err := svc.GetOpenOrders(context.Background(), "binance", "BTC/USDT")
+			resp, err := svc.GetOpenOrders(context.Background(), "binance", "BTC/USDT", 10)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+				assert.Len(t, resp.Orders, tc.expectedCount)
+			}
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_GetRecentTrades(t *testing.T) {
+	testCases := []struct {
+		name                string
+		setupGatewayMock    func(*mockExchangeServer)
+		setupRepoMock       func(*MockOrdersRepo)
+		expectedErrContains string
+		expectedCount       int
+	}{
+		{
+			name: "Success",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOpenOrdersResponse = &pb.OrdersResponse{ // Reuse mock field for simplicity
+					Orders: []*pb.OrderResponse{
+						{
+							Id:     "trade-1",
+							Symbol: "BTC/USDT",
+							Status: repository.OrderStatusClosed,
+							Filled: 1.0,
+						},
+					},
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
+					return o.ExchangeOrderID == "trade-1"
+				})).Return(int64(1), nil)
+			},
+			expectedCount: 1,
+		},
+		{
+			name: "Success with CreateOrder fallback",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOpenOrdersResponse = &pb.OrdersResponse{
+					Orders: []*pb.OrderResponse{
+						{
+							Id:     "trade-new",
+							Symbol: "BTC/USDT",
+							Status: repository.OrderStatusClosed,
+						},
+					},
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), pgx.ErrNoRows)
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
+					return o.ExchangeOrderID == "trade-new"
+				})).Return(int64(10), nil)
+			},
+			expectedCount: 1,
+		},
+		{
+			name: "Gateway Error",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOpenOrdersError = status.Error(codes.Unavailable, "gateway down")
+			},
+			setupRepoMock:       func(mockRepo *MockOrdersRepo) {},
+			expectedErrContains: "failed to fetch trades from gateway",
+		},
+		{
+			name: "DB Generic Error Continue",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.getOpenOrdersResponse = &pb.OrdersResponse{
+					Orders: []*pb.OrderResponse{
+						{Id: "trade-1", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed},
+					},
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				// If UpdateOrder returns an error other than ErrNoRows, it logs a warning and continues.
+				mockRepo.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).Return(
+					int64(0), errors.New("db generic error"),
+				)
+			},
+			expectedCount: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			tc.setupGatewayMock(mockSrv)
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			mockRepo := new(MockOrdersRepo)
+			tc.setupRepoMock(mockRepo)
+
+			container := &repository.Container{Orders: mockRepo}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
+
+			resp, err := svc.GetRecentTrades(context.Background(), "binance", "BTC/USDT", 0, 10)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)

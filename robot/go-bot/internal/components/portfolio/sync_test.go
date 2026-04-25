@@ -2,20 +2,19 @@ package portfolio
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
 )
 
 func TestPortfolio_RefreshState(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mockPositions := &MockPositionsRepo{}
 	mockBalances := &MockBalancesRepo{}
 	container := &repository.Container{
@@ -23,120 +22,189 @@ func TestPortfolio_RefreshState(t *testing.T) {
 		Balances:  mockBalances,
 	}
 
-	t.Run("Refresh balances and positions successfully", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container)
+	tests := []struct {
+		name         string
+		setup        func()
+		initialState func(*Portfolio)
+		syncBalance  bool
+		syncPosition bool
+		check        func(*testing.T, *Portfolio)
+	}{
+		{
+			name: "Successful sync of both balance and position",
+			setup: func() {
+				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+					return []repository.BalanceData{{ExchangeName: "binance", AssetSymbol: "USDT", Free: 100.0}}, nil
+				}
+				mockPositions.GetPositionFn = func(ctx context.Context, db repository.DBExecutor, ex, sym string) (repository.PositionData, error) {
+					return repository.PositionData{ExchangeName: ex, InstrumentSymbol: sym, Quantity: 1.0, StrategyState: "active"}, nil
+				}
+			},
+			syncBalance:  true,
+			syncPosition: true,
+			check: func(t *testing.T, p *Portfolio) {
+				assert.Equal(t, 100.0, p.GetCashBalance("binance", "USDT"))
+				pos, exists := p.GetPosition("binance", "BTC/USDT")
+				assert.True(t, exists)
+				assert.Equal(t, 1.0, pos.Quantity)
+			},
+		},
+		{
+			name: "Removes position from memory if not found in DB",
+			setup: func() {
+				mockPositions.GetPositionFn = func(ctx context.Context, db repository.DBExecutor, ex, sym string) (repository.PositionData, error) {
+					return repository.PositionData{}, errors.New("not found")
+				}
+			},
+			initialState: func(p *Portfolio) {
+				p.mu.Lock()
+				p.positions["binance|BTC/USDT"] = &Position{Symbol: "BTC/USDT"}
+				p.mu.Unlock()
+			},
+			syncPosition: true,
+			check: func(t *testing.T, p *Portfolio) {
+				_, exists := p.GetPosition("binance", "BTC/USDT")
+				assert.False(t, exists)
+			},
+		},
+	}
 
-		mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
-			return []repository.BalanceData{
-				{ExchangeName: "binance", AssetSymbol: "USDT", Free: 100.0, Used: 10.0, Total: 110.0},
-			}, nil
-		}
-
-		mockPositions.GetPositionFn = func(ctx context.Context, db repository.DBExecutor, exchange, symbol string) (repository.PositionData, error) {
-			return repository.PositionData{
-				ExchangeName:     "binance",
-				InstrumentSymbol: "BTC/USDT",
-				Quantity:         1.0,
-				EntryPrice:       50000.0,
-				HighestPrice:     55000.0,
-				StrategyState:    "active",
-			}, nil
-		}
-
-		err := p.RefreshState(context.Background(), "binance", "BTC/USDT", true, true)
-		require.NoError(t, err)
-
-		assert.Equal(t, 100.0, p.GetCashBalance("binance", "USDT"))
-		pos, exists := p.GetPosition("binance", "BTC/USDT")
-		assert.True(t, exists)
-		assert.Equal(t, 1.0, pos.Quantity)
-	})
-
-	t.Run("Refresh position removal on error", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container)
-		p.mu.Lock()
-		p.positions["binance|BTC/USDT"] = &Position{Symbol: "BTC/USDT"}
-		p.mu.Unlock()
-
-		mockPositions.GetPositionFn = func(ctx context.Context, db repository.DBExecutor, exchange, symbol string) (repository.PositionData, error) {
-			return repository.PositionData{}, fmt.Errorf("not found")
-		}
-
-		err := p.RefreshState(context.Background(), "binance", "BTC/USDT", false, true)
-		require.NoError(t, err)
-
-		_, exists := p.GetPosition("binance", "BTC/USDT")
-		assert.False(t, exists)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup()
+			p := NewPortfolio(logger, nil, container)
+			if tt.initialState != nil {
+				tt.initialState(p)
+			}
+			err := p.RefreshState(context.Background(), "binance", "BTC/USDT", tt.syncBalance, tt.syncPosition)
+			assert.NoError(t, err)
+			tt.check(t, p)
+		})
+	}
 }
 
 func TestPortfolio_UpdatePrice(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mockRepo := &MockPositionsRepo{}
 	container := &repository.Container{
 		Positions: mockRepo,
 		Balances:  &MockBalancesRepo{},
 	}
 
-	t.Run("Price increase updates unrealized pnl and persists new peak", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container)
-		p.mu.Lock()
-		p.positions["binance|BTC/USDT"] = &Position{
-			Exchange: "binance", Symbol: "BTC/USDT", Quantity: 1.0, EntryPrice: 100.0, HighestPrice: 100.0,
-		}
-		p.mu.Unlock()
+	tests := []struct {
+		name         string
+		initialPos   *Position
+		newPrice     float64
+		upsertErr    error
+		expectUpsert bool
+		check        func(*testing.T, *Position)
+	}{
+		{
+			name: "New peak price updates HWM and persists",
+			initialPos: &Position{
+				Exchange: "binance", Symbol: "BTC/USDT", Quantity: 1.0, EntryPrice: 100.0, HighestPrice: 100.0,
+			},
+			newPrice:     110.0,
+			expectUpsert: true,
+			check: func(t *testing.T, p *Position) {
+				assert.Equal(t, 110.0, p.HighestPrice)
+				assert.Equal(t, 10.0, p.UnrealizedPnL)
+			},
+		},
+		{
+			name: "Price decrease updates unrealized pnl but not HWM",
+			initialPos: &Position{
+				Exchange: "binance", Symbol: "BTC/USDT", Quantity: 1.0, EntryPrice: 100.0, HighestPrice: 120.0,
+			},
+			newPrice:     110.0,
+			expectUpsert: false,
+			check: func(t *testing.T, p *Position) {
+				assert.Equal(t, 120.0, p.HighestPrice)
+				assert.Equal(t, 10.0, p.UnrealizedPnL)
+			},
+		},
+		{
+			name: "Gracefully handles persistence errors on peak update",
+			initialPos: &Position{
+				Exchange: "binance", Symbol: "BTC/USDT", Quantity: 1.0, EntryPrice: 100.0, HighestPrice: 100.0,
+			},
+			newPrice:     110.0,
+			upsertErr:    errors.New("db error"),
+			expectUpsert: true,
+			check: func(t *testing.T, p *Position) {
+				assert.Equal(t, 110.0, p.HighestPrice)
+			},
+		},
+	}
 
-		persisted := false
-		mockRepo.UpsertPositionFn = func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error {
-			persisted = true
-			assert.Equal(t, 110.0, pos.HighestPrice)
-			return nil
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewPortfolio(logger, nil, container)
+			p.mu.Lock()
+			key := makeKey(tt.initialPos.Exchange, tt.initialPos.Symbol)
+			p.positions[key] = tt.initialPos
+			p.mu.Unlock()
 
-		p.UpdatePrice(context.Background(), "binance", "BTC/USDT", 110.0)
-		pos, _ := p.GetPosition("binance", "BTC/USDT")
-		assert.Equal(t, 10.0, pos.UnrealizedPnL)
-		assert.Equal(t, 110.0, pos.HighestPrice)
-		assert.True(t, persisted)
-	})
+			upsertCalled := false
+			mockRepo.UpsertPositionFn = func(ctx context.Context, db repository.DBExecutor, data repository.PositionData) error {
+				upsertCalled = true
+				return tt.upsertErr
+			}
 
-	t.Run("Price decrease updates pnl but does not update peak or persist", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container)
-		p.mu.Lock()
-		p.positions["binance|BTC/USDT"] = &Position{
-			Exchange: "binance", Symbol: "BTC/USDT", Quantity: 1.0, EntryPrice: 100.0, HighestPrice: 120.0,
-		}
-		p.mu.Unlock()
+			p.UpdatePrice(context.Background(), tt.initialPos.Exchange, tt.initialPos.Symbol, tt.newPrice)
 
-		mockRepo.UpsertPositionFn = func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error {
-			t.Fatal("UpsertPosition should not be called on price drop")
-			return nil
-		}
+			if tt.expectUpsert {
+				assert.True(t, upsertCalled, "UpsertPosition should have been called")
+			} else {
+				assert.False(t, upsertCalled, "UpsertPosition should not have been called")
+			}
 
-		p.UpdatePrice(context.Background(), "binance", "BTC/USDT", 110.0)
-		pos, _ := p.GetPosition("binance", "BTC/USDT")
-		assert.Equal(t, 10.0, pos.UnrealizedPnL)
-		assert.Equal(t, 120.0, pos.HighestPrice)
-	})
+			pos, _ := p.GetPosition(tt.initialPos.Exchange, tt.initialPos.Symbol)
+			tt.check(t, pos)
+		})
+	}
 }
 
 func TestPortfolio_SyncMetadata(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mockRepo := &MockPositionsRepo{}
 	container := &repository.Container{Positions: mockRepo}
-	p := NewPortfolio(logger, nil, container)
-	p.mu.Lock()
-	p.positions["binance|BTC/USDT"] = &Position{Exchange: "binance", Symbol: "BTC/USDT"}
-	p.mu.Unlock()
 
-	t.Run("Updates memory and triggers persistence", func(t *testing.T) {
-		called := false
-		mockRepo.UpsertPositionFn = func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error {
-			called = true
-			assert.Equal(t, "pending_sell", pos.StrategyState)
-			return nil
-		}
-		p.SyncMetadata(context.Background(), "binance", "BTC/USDT", strategy.StatePendingSell)
-		assert.True(t, called)
-	})
+	tests := []struct {
+		name      string
+		state     strategy.StrategyState
+		upsertErr error
+	}{
+		{
+			name:  "Metadata sync persists new state",
+			state: strategy.StatePendingSell,
+		},
+		{
+			name:      "Gracefully handles persistence errors",
+			state:     strategy.StateActive,
+			upsertErr: errors.New("db fail"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewPortfolio(logger, nil, container)
+			p.mu.Lock()
+			p.positions["binance|BTC/USDT"] = &Position{Exchange: "binance", Symbol: "BTC/USDT"}
+			p.mu.Unlock()
+
+			upsertCalled := false
+			mockRepo.UpsertPositionFn = func(ctx context.Context, db repository.DBExecutor, data repository.PositionData) error {
+				upsertCalled = true
+				assert.Equal(t, tt.state.String(), data.StrategyState)
+				return tt.upsertErr
+			}
+
+			p.SyncMetadata(context.Background(), "binance", "BTC/USDT", tt.state)
+			assert.True(t, upsertCalled)
+
+			pos, _ := p.GetPosition("binance", "BTC/USDT")
+			assert.Equal(t, tt.state, pos.StrategyState)
+		})
+	}
 }

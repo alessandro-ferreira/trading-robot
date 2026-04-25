@@ -2,8 +2,9 @@ package portfolio
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,22 +16,22 @@ import (
 
 // MockPositionsRepo implements repository.PositionsRepo for testing
 type MockPositionsRepo struct {
-	GetPositionFn      func(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string) (repository.PositionData, error)
-	GetOpenPositionsFn func(ctx context.Context, db repository.DBExecutor) ([]repository.PositionData, error)
+	GetPositionFn      func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) (repository.PositionData, error)
+	GetOpenPositionsFn func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error)
 	UpsertPositionFn   func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error
-	DeletePositionFn   func(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string) error
+	DeletePositionFn   func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) error
 }
 
-func (m *MockPositionsRepo) GetPosition(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string) (repository.PositionData, error) {
+func (m *MockPositionsRepo) GetPosition(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) (repository.PositionData, error) {
 	if m.GetPositionFn != nil {
-		return m.GetPositionFn(ctx, db, exchangeName, symbol)
+		return m.GetPositionFn(ctx, db, exchangeName, instrumentSymbol)
 	}
 	return repository.PositionData{}, nil
 }
 
-func (m *MockPositionsRepo) GetOpenPositions(ctx context.Context, db repository.DBExecutor) ([]repository.PositionData, error) {
+func (m *MockPositionsRepo) GetOpenPositions(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
 	if m.GetOpenPositionsFn != nil {
-		return m.GetOpenPositionsFn(ctx, db)
+		return m.GetOpenPositionsFn(ctx, db, exchangeName, instrumentSymbol)
 	}
 	return []repository.PositionData{}, nil
 }
@@ -41,9 +42,9 @@ func (m *MockPositionsRepo) UpsertPosition(ctx context.Context, db repository.DB
 	}
 	return nil
 }
-func (m *MockPositionsRepo) DeletePosition(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string) error {
+func (m *MockPositionsRepo) DeletePosition(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) error {
 	if m.DeletePositionFn != nil {
-		return m.DeletePositionFn(ctx, db, exchangeName, symbol)
+		return m.DeletePositionFn(ctx, db, exchangeName, instrumentSymbol)
 	}
 	return nil
 }
@@ -65,7 +66,7 @@ func (m *MockBalancesRepo) UpsertBalance(ctx context.Context, db repository.DBEx
 }
 
 func TestPortfolio_LoadState(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mockRepo := &MockPositionsRepo{}
 	mockBalances := &MockBalancesRepo{}
 	container := &repository.Container{
@@ -73,37 +74,99 @@ func TestPortfolio_LoadState(t *testing.T) {
 		Balances:  mockBalances,
 	}
 
-	t.Run("Hydrates internal map from DB positions", func(t *testing.T) {
-		p := NewPortfolio(logger, nil, container)
-		mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
-			return []repository.BalanceData{
-				{ExchangeName: "binance", AssetSymbol: "USDT", Free: 1000.0, Used: 0.0, Total: 1000.0},
-			}, nil
-		}
-		mockRepo.GetOpenPositionsFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.PositionData, error) {
-			return []repository.PositionData{
-					{
-						ExchangeName:     "binance",
-						InstrumentSymbol: "BTC/USDT",
-						Quantity:         1.5,
-						EntryPrice:       40000.0,
-						HighestPrice:     45000.0,
-						StrategyState:    "active",
-					},
-				},
-				nil
-		}
+	tests := []struct {
+		name                   string
+		setupBalances          func()
+		setupPositions         func()
+		expectedErrContains    string
+		expectedCashAsset      string
+		expectedCashAmount     float64
+		expectedPositionsCount int
+	}{
+		{
+			name: "Success hydration",
+			setupBalances: func() {
+				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+					return []repository.BalanceData{
+						{ExchangeName: "binance", AssetSymbol: "USDT", Free: 1000.0, Total: 1000.0},
+					}, nil
+				}
+			},
+			setupPositions: func() {
+				mockRepo.GetOpenPositionsFn = func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
+					return []repository.PositionData{
+						{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Quantity: 1.5, EntryPrice: 40000.0, HighestPrice: 45000.0, StrategyState: "active"},
+					}, nil
+				}
+			},
+			expectedCashAsset:      "USDT",
+			expectedCashAmount:     1000.0,
+			expectedPositionsCount: 1,
+		},
+		{
+			name: "Returns error when GetAllBalances fails",
+			setupBalances: func() {
+				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+					return nil, errors.New("db balance error")
+				}
+			},
+			setupPositions:      func() {},
+			expectedErrContains: "failed to fetch balances",
+		},
+		{
+			name: "Returns error when GetOpenPositions fails",
+			setupBalances: func() {
+				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+					return []repository.BalanceData{}, nil
+				}
+			},
+			setupPositions: func() {
+				mockRepo.GetOpenPositionsFn = func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
+					return nil, errors.New("db position error")
+				}
+			},
+			expectedErrContains: "failed to fetch positions",
+		},
+	}
 
-		err := p.LoadState(context.Background())
-		require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupBalances()
+			tt.setupPositions()
+			p := NewPortfolio(logger, nil, container)
 
-		pos, exists := p.GetPosition("binance", "BTC/USDT")
-		require.True(t, exists)
-		assert.Equal(t, 1.5, pos.Quantity)
-		assert.Equal(t, 40000.0, pos.EntryPrice)
-		assert.Equal(t, 45000.0, pos.HighestPrice)
-		assert.Equal(t, strategy.StateActive, pos.StrategyState)
+			err := p.LoadState(context.Background())
 
-		assert.Equal(t, 1000.0, p.GetCashBalance("binance", "USDT"))
+			if tt.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+				if tt.expectedCashAsset != "" {
+					assert.Equal(t, tt.expectedCashAmount, p.GetCashBalance("binance", tt.expectedCashAsset))
+				}
+				assert.Equal(t, tt.expectedPositionsCount, p.GetOpenPositionsCount())
+			}
+		})
+	}
+}
+
+func TestPortfolio_Helpers(t *testing.T) {
+	t.Run("splitSymbol handles correct and incorrect formats", func(t *testing.T) {
+		base, quote := splitSymbol("BTC/USDT")
+		assert.Equal(t, "BTC", base)
+		assert.Equal(t, "USDT", quote)
+
+		base, quote = splitSymbol("INVALID")
+		assert.Equal(t, "INVALID", base)
+		assert.Equal(t, "", quote)
+	})
+
+	t.Run("toState maps strings to strategy states", func(t *testing.T) {
+		assert.Equal(t, strategy.StateIdle, toState("idle"))
+		assert.Equal(t, strategy.StateActive, toState("active"))
+		assert.Equal(t, strategy.StatePendingBuy, toState("pending_buy"))
+		assert.Equal(t, strategy.StatePendingSell, toState("pending_sell"))
+		assert.Equal(t, strategy.StateIdle, toState("unknown"))
 	})
 }

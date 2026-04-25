@@ -23,6 +23,8 @@ func TestPeriodicTask(t *testing.T) {
 	// Create a task that runs every 100ms
 	task := NewPeriodicTask("test-periodic", 100*time.Millisecond, false, job)
 
+	assert.Equal(t, "test-periodic", task.Name(), "Task name should be correct")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 

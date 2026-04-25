@@ -23,6 +23,8 @@ func TestCronTask(t *testing.T) {
 	// This spec runs every second.
 	task := NewCronTask("test-cron", "* * * * * *", false, job)
 
+	assert.Equal(t, "test-cron", task.Name(), "Task name should be set correctly")
+
 	// We'll run the task for a short duration to check if it triggers.
 	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
 	defer cancel()
