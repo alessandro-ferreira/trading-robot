@@ -12,6 +12,11 @@ class TemplateEngineTest : public ::testing::Test {
     string exchange_ = "binance";
 };
 
+TEST_F(TemplateEngineTest, BasicInterface) {
+    EXPECT_TRUE(engine_.Init());
+    EXPECT_EQ(engine_.GetName(), "template_v1");
+}
+
 TEST_F(TemplateEngineTest, BTCConfigurationMatchesMigration) {
     auto update = engine_.GenerateStrategyUpdate(exchange_, "BTC/USDT");
     EXPECT_EQ(update.strategy_type, "momentum_trailing");

@@ -39,6 +39,7 @@ This guide provides the steps to build the strategy core library for development
 
 -   **C++ Compiler:** GCC or Clang with C++17 support (as defined in `Makefile`)
 -   **Make:** For build automation
+-   **Coverage Tools:** `lcov` and `gcovr` (required for `make coverage`)
 
 ### 2. Build the Library
 

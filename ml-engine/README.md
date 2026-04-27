@@ -36,6 +36,8 @@ Note that the actual Machine Learning implementation is proprietary and is not a
 ### 1. Prerequisites
 
 -   **C++ Compiler:** GCC or Clang with C++17 support.
+-   **Make:** For build automation
+-   **Coverage Tools:** `lcov` and `gcovr` (required for `make coverage`)
 -   **gRPC & Protobuf:** Development libraries for C++.
     ```bash
     make install-deps

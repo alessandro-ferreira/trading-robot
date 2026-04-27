@@ -37,6 +37,13 @@ htmlcov/
 robot/strategy-core/build/
 ml-engine/build/
 
+# C++ coverage files
+*.gcno
+*.gcda
+coverage.info
+*_cov
+coverage_runner
+
 # --- Configuration ---
 # Ignore the actual config file with secrets
 robot/config.toml

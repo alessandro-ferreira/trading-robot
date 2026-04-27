@@ -90,7 +90,7 @@ repos:
         # Using make ensures consistency with the Makefile
         entry: bash -c 'cd robot/strategy-core && make test'
         language: system
-        types: [c++, c]
+        types_or: [c++, c]
         files: ^robot/strategy-core/
         pass_filenames: false
       - id: ml-engine-tests
@@ -98,7 +98,7 @@ repos:
         # Using make ensures consistency with the Makefile
         entry: bash -c 'cd ml-engine && make test'
         language: system
-        types: [c++, c]
+        types: [c++]
         files: ^ml-engine/
         pass_filenames: false
 
