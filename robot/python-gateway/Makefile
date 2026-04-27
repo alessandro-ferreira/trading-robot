@@ -2,10 +2,13 @@
 MAIN_FILE := main.py
 CONFIG_FILE ?= ../config.toml
 
+# Patterns to exclude from coverage (tests and auto-generated gRPC code)
+COVERAGE_OMIT := "tests/*,v1/*"
+
 PYTHON := python
 VENV_CHECK := $(shell python -c 'import sys; print(1 if sys.prefix != sys.base_prefix else 0)')
 
-.PHONY: help run test pre-commit
+.PHONY: help run test coverage proto pre-commit
 
 help:
 	@echo "Usage: make <target>"
@@ -48,3 +51,10 @@ test: ## Run unit tests
 	$(call CHECK_VENV)
 	@echo "--> Running unit tests..."
 	@$(PYTHON) -m unittest discover -s tests -t .
+
+coverage: ## Run tests with coverage reporting
+	$(call CHECK_VENV)
+	@echo "--> Running tests with coverage..."
+	@coverage run --omit=$(COVERAGE_OMIT) -m unittest discover -s tests -t .
+	@coverage report -m --omit=$(COVERAGE_OMIT)
+	@coverage xml --omit=$(COVERAGE_OMIT)

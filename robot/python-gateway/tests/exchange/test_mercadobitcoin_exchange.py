@@ -427,6 +427,47 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         # Verify 'size' is NOT passed for symbol-specific path as per MB doc
         self.assertNotIn("size", kwargs.get("params", {}))
 
+    @patch("requests.request")
+    def test_fetch_my_trades_all_success(self, mock_request):
+        """Verify account-wide trade history retrieval (no symbol provided)."""
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        # Mock response for account-wide orders with executions
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.OK
+        mock_response.json.return_value = {
+            "items": [
+                {
+                    "id": "order_all",
+                    "executions": [
+                        {
+                            "id": "exec_all",
+                            "instrument": "ETH-BRL",
+                            "side": "sell",
+                            "qty": "1.0",
+                            "price": "10000.0",
+                            "executed_at": 1672531300,
+                        }
+                    ],
+                }
+            ]
+        }
+        mock_request.return_value = mock_response
+
+        trades = self.exchange.fetch_my_trades(symbol=None, limit=10)
+
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0]["id"], "exec_all")
+        self.assertEqual(trades[0]["symbol"], "ETH/BRL")
+
+        args, kwargs = mock_request.call_args
+        self.assertEqual(args[0], "GET")
+        self.assertIn("/accounts/acc_123/orders", args[1])
+        self.assertEqual(kwargs["params"]["has_executions"], "true")
+        self.assertEqual(kwargs["params"]["size"], 10)
+
 
 # To run this test directly, use:
 #   python -m tests.exchange.test_mercadobitcoin

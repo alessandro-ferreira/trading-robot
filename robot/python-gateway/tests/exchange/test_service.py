@@ -4,7 +4,11 @@ from unittest.mock import MagicMock
 import grpc
 import ccxt
 
-from exchange.service import ExchangeService, ExchangeNotConfigured
+from exchange.service import (
+    ExchangeService,
+    ExchangeNotConfigured,
+    ExchangeConfigurationError,
+)
 from v1 import exchange_pb2
 from exchange.exchanges.base import Ticker
 from core import config
@@ -114,6 +118,19 @@ class TestExchangeService(unittest.TestCase):
         self.assertIn("Exchange not configured", str(cm.exception))
         self.context.abort.side_effect = None
         self.mock_factory.get.side_effect = None
+
+    def test_get_ticker_configuration_error(self):
+        """Verify mapping of ExchangeConfigurationError in _getExchange."""
+        self.mock_factory.get.side_effect = ExchangeConfigurationError(
+            "Invalid credentials"
+        )
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.GetTickerRequest(exchange="binance", symbol="BTC/USDT")
+        with self.assertRaises(Exception):
+            self.service.GetTicker(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.FAILED_PRECONDITION, "Invalid credentials"
+        )
 
     def test_get_ticker_internal_error(self):
         """Verify internal exception mapping to gRPC INTERNAL status."""
@@ -378,6 +395,17 @@ class TestExchangeService(unittest.TestCase):
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_open_orders.side_effect = None
 
+    def test_get_recent_trades_internal_error(self):
+        """Verify internal exception mapping in GetRecentTrades."""
+        self.mock_exchange.fetch_my_trades.side_effect = Exception("Database failure")
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="BTC/USDT")
+        with self.assertRaises(Exception):
+            self.service.GetRecentTrades(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INTERNAL, "Database failure"
+        )
+
     def test_get_recent_trades(self):
         """Verify historical trade history retrieval and parameter propagation."""
         self.mock_exchange.fetch_my_trades.return_value = [
@@ -438,6 +466,14 @@ class TestExchangeService(unittest.TestCase):
         response = self.service.ResetState(request, self.context)
         self.assertEqual(response.status, "OK")
         self.mock_exchange.reset.assert_called_once()
+
+    def test_reset_state_exception_returns_ignored(self):
+        """Verify that ResetState returns IGNORED when an exception occurs."""
+        # Force an exception when accessing the factory or calling reset
+        self.mock_factory.get.side_effect = Exception("Factory failure")
+        request = exchange_pb2.ResetStateRequest()
+        response = self.service.ResetState(request, self.context)
+        self.assertEqual(response.status, "IGNORED")
 
 
 # To run this test directly, use:

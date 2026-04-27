@@ -18,6 +18,17 @@ class TestCCXTExchange(unittest.TestCase):
             mock_binance.return_value = self.mock_ccxt
             self.exchange = CCXTExchange(self.cfg)
 
+    def test_set_sandbox_mode(self):
+        """Tests sandbox mode propagation."""
+        self.exchange.set_sandbox_mode(True)
+        self.mock_ccxt.set_sandbox_mode.assert_called_with(True)
+
+    def test_set_sandbox_mode_not_supported(self):
+        """Tests handling of set_sandbox_mode when underlying exchange raises error."""
+        self.mock_ccxt.set_sandbox_mode.side_effect = Exception("Not supported")
+        with self.assertRaises(ExchangeError):
+            self.exchange.set_sandbox_mode(True)
+
     def test_fetch_ticker_standard(self):
         """Tests fetch_ticker using the 'last' field."""
         self.mock_ccxt.fetch_ticker.return_value = {
@@ -84,6 +95,35 @@ class TestCCXTExchange(unittest.TestCase):
         )
         self.assertEqual(order["id"], "123")
 
+    def test_cancel_order(self):
+        """Tests canceling an order via CCXT."""
+        self.mock_ccxt.cancel_order.return_value = {
+            "id": "ord-123",
+            "status": "canceled",
+        }
+        result = self.exchange.cancel_order("ord-123", "BTC/USDT")
+        self.mock_ccxt.cancel_order.assert_called_with("ord-123", "BTC/USDT")
+        self.assertEqual(result["id"], "ord-123")
+        self.assertEqual(result["status"], "canceled")
+
+    def test_fetch_order(self):
+        """Tests fetching an order via CCXT."""
+        self.mock_ccxt.fetch_order.return_value = {
+            "id": "ord-123",
+            "symbol": "BTC/USDT",
+            "status": "closed",
+        }
+        result = self.exchange.fetch_order("ord-123", "BTC/USDT")
+        self.mock_ccxt.fetch_order.assert_called_with("ord-123", "BTC/USDT")
+        self.assertEqual(result["id"], "ord-123")
+        self.assertEqual(result["status"], "closed")
+
+    def test_fetch_open_orders_filtering(self):
+        """Tests that limit and symbol are passed correctly to open orders."""
+        self.mock_ccxt.fetch_open_orders.return_value = []
+        self.exchange.fetch_open_orders(symbol="ETH/USDT", limit=50)
+        self.mock_ccxt.fetch_open_orders.assert_called_with("ETH/USDT", limit=50)
+
     def test_fetch_my_trades_with_params(self):
         """Tests trades fetching with since and limit parameters."""
         self.mock_ccxt.fetch_my_trades.return_value = [{"id": "t1"}]
@@ -117,23 +157,6 @@ class TestCCXTExchange(unittest.TestCase):
 
         with self.assertRaises(ccxt.NetworkError):
             self.exchange.fetch_my_trades(symbol="BTC/USDT")
-
-    def test_fetch_open_orders_filtering(self):
-        """Tests that limit and symbol are passed correctly to open orders."""
-        self.mock_ccxt.fetch_open_orders.return_value = []
-        self.exchange.fetch_open_orders(symbol="ETH/USDT", limit=50)
-        self.mock_ccxt.fetch_open_orders.assert_called_with("ETH/USDT", limit=50)
-
-    def test_set_sandbox_mode(self):
-        """Tests sandbox mode propagation."""
-        self.exchange.set_sandbox_mode(True)
-        self.mock_ccxt.set_sandbox_mode.assert_called_with(True)
-
-    def test_set_sandbox_mode_not_supported(self):
-        """Tests handling of set_sandbox_mode when underlying exchange raises error."""
-        self.mock_ccxt.set_sandbox_mode.side_effect = Exception("Not supported")
-        with self.assertRaises(ExchangeError):
-            self.exchange.set_sandbox_mode(True)
 
 
 # To run this test directly, use:

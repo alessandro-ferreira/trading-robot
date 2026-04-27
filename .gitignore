@@ -23,6 +23,11 @@ venv_trading/
 __pycache__/
 *.pyc
 
+# Testing and Coverage
+.coverage
+coverage.xml
+htmlcov/
+
 # --- Go ---
 # Go build artifacts
 /robot/go-bot/go-bot

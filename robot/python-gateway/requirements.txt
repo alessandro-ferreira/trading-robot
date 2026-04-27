@@ -28,6 +28,8 @@ charset-normalizer==3.4.4
     # via requests
 coincurve==21.0.0
     # via ccxt
+coverage==7.13.5
+    # via -r requirements.in
 cryptography==46.0.3
     # via ccxt
 frozenlist==1.8.0

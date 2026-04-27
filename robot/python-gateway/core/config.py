@@ -1,12 +1,7 @@
 import logging
-import sys
+import tomllib
 from dataclasses import dataclass, field
-from typing import List, Union  # 1. Added List and Union
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
+from typing import List, Union
 
 
 @dataclass

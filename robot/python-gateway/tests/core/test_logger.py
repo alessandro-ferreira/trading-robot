@@ -2,6 +2,7 @@ import unittest
 import logging
 import io
 import json
+from unittest.mock import patch
 
 from core import config, logger
 
@@ -39,6 +40,27 @@ class LoggerTest(unittest.TestCase):
         self.assertIn("debug message", output)
         self.assertIn("[", output)  # For source
         self.assertIn("test_logger.py", output)
+
+    def test_text_format_no_source(self):
+        """Tests text formatting without source information to cover the default Formatter branch."""
+        log_config = config.LogConfig(level="info", format="text", source=False)
+        logger.setup(log_config, stream=self.log_stream)
+
+        logging.info("no source message")
+        output = self.log_stream.getvalue()
+
+        self.assertIn("INFO", output)
+        self.assertIn("no source message", output)
+        self.assertNotIn("[", output)  # Source info is omitted
+
+    @patch("sys.stdout", new_callable=io.StringIO)
+    def test_default_stream(self, mock_stdout):
+        """Tests that the logger defaults to sys.stdout when no stream is provided."""
+        log_config = config.LogConfig(level="info", format="text")
+        # Calling setup without stream hits the 'if stream is None' branch
+        logger.setup(log_config)
+        logging.info("covered default stream")
+        self.assertIn("INFO", mock_stdout.getvalue())
 
 
 # To run this test directly, use:

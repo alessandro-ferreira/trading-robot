@@ -4,3 +4,4 @@ ccxt
 toml
 python-dotenv
 grpcio-reflection
+coverage

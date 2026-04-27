@@ -6,6 +6,11 @@ class TestDummyExchange(unittest.TestCase):
     def setUp(self):
         self.exchange = DummyExchange()
 
+    def test_set_sandbox_mode(self):
+        """Verify that set_sandbox_mode is accepted (no-op)."""
+        # Should not raise any exception
+        self.exchange.set_sandbox_mode(True)
+
     def test_fetch_ticker(self):
         """Verify ticker fetching and simulated price drift."""
         ticker = self.exchange.fetch_ticker("BTC/USDT")
@@ -54,6 +59,11 @@ class TestDummyExchange(unittest.TestCase):
         order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
         result = self.exchange.cancel_order(order["id"], "BTC/USDT")
         self.assertEqual(result["id"], order["id"])
+        self.assertEqual(result["status"], "canceled")
+
+    def test_cancel_order_not_found(self):
+        """Verify that canceling a non-existent order returns a canceled state via fetch_order."""
+        result = self.exchange.cancel_order("non-existent", "BTC/USDT")
         self.assertEqual(result["status"], "canceled")
 
     def test_fetch_order(self):

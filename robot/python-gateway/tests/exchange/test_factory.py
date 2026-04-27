@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch, MagicMock
 
 from exchange.factory import (
     ExchangeFactory,
@@ -46,6 +47,28 @@ class TestExchangeFactory(unittest.TestCase):
         """Verify that requesting an unknown exchange name raises ExchangeNotConfigured."""
         with self.assertRaises(ExchangeNotConfigured):
             self.factory.get("unknown-exchange")
+
+    @patch("exchange.factory.REGISTRY", {})
+    def test_get_provider_not_found_raises(self):
+        """Verify that a configured exchange with no implementation in REGISTRY raises ExchangeNotConfigured."""
+        # The factory has configs, but the registry is mocked as empty
+        with self.assertRaises(ExchangeNotConfigured) as cm:
+            self.factory.get("binance")
+        self.assertIn("No provider found", str(cm.exception))
+
+    def test_get_initialization_failure_raises(self):
+        """Verify that an exception during provider instantiation is wrapped in ExchangeConfigurationError."""
+        cfg = config.Config()
+        cfg.exchanges = [ExchangeConfig(name="crash-exchange", ccxt=False)]
+
+        # Mock a provider that crashes on __init__
+        mock_provider = MagicMock(side_effect=RuntimeError("Constructor failed"))
+
+        with patch("exchange.factory.REGISTRY", {"crash-exchange": mock_provider}):
+            factory = ExchangeFactory(cfg.exchanges)
+            with self.assertRaises(ExchangeConfigurationError) as cm:
+                factory.get("crash-exchange")
+            self.assertIn("Failed to initialize exchange", str(cm.exception))
 
     def test_get_sandbox_mode_not_supported_raises(self):
         """Verify that enabling sandbox on unsupported native exchanges raises ExchangeConfigurationError."""
