@@ -45,8 +45,8 @@ func NewSignalGenerator(logger *slog.Logger, riskData repository.RiskPair, strat
 
 		if strategyData.Type == repository.StrategyMomentumTrailing {
 			stratCfg.Type = strategy.StrategyMomentumTrailing
-			stratCfg.ActivationPct = strategyData.Momentum.ActivationPct
-			stratCfg.TrailingStopPct = strategyData.Momentum.TrailingStopPct
+			stratCfg.ActivationPct = strategyData.Momentum.ActivationPct.Float64
+			stratCfg.TrailingStopPct = strategyData.Momentum.TrailingStopPct.Float64
 
 			logger.Info("Configured MomentumTrailing strategy",
 				"window_seconds", stratCfg.WindowSeconds,
@@ -58,7 +58,7 @@ func NewSignalGenerator(logger *slog.Logger, riskData repository.RiskPair, strat
 			)
 		} else {
 			stratCfg.Type = strategy.StrategyMomentumProfit
-			stratCfg.ProfitTargetPct = strategyData.Momentum.ProfitTargetPct
+			stratCfg.ProfitTargetPct = strategyData.Momentum.ProfitTargetPct.Float64
 
 			logger.Info("Configured MomentumProfit strategy",
 				"window_seconds", stratCfg.WindowSeconds,

@@ -106,6 +106,11 @@ func (m *MockStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db repos
 	return args.Error(0)
 }
 
+func (m *MockStrategiesRepo) DisableStrategy(ctx context.Context, db repository.DBExecutor, exchange, symbol, strategyType string) error {
+	args := m.Called(ctx, db, exchange, symbol, strategyType)
+	return args.Error(0)
+}
+
 // --- Helpers ---
 
 func setupReconciler(t *testing.T) (*Reconciler, *MockExecutionService, *repository.Container) {

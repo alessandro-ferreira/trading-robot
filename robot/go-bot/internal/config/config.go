@@ -46,6 +46,7 @@ type DatabaseConfig struct {
 type GRPCConfig struct {
 	GoBotAddress         string `toml:"go_bot_address"`
 	PythonGatewayAddress string `toml:"python_gateway_address"`
+	ManagementAddress    string `toml:"management_address"`
 }
 
 // HealthCheckConfig holds settings for the background health monitor.

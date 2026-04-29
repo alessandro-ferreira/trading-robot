@@ -16,7 +16,7 @@ import (
 var strategyPairColumns = []string{
 	"exchange_name", "instrument_symbol", "strategy_type", "window_seconds",
 	"lookbacks", "thresholds", "require_all", "stop_loss_pct", "profit_target_pct",
-	"activation_pct", "trailing_stop_pct",
+	"activation_pct", "trailing_stop_pct", "created_at", "updated_at",
 }
 
 func getSampleMomentum() StrategyMomentum {
@@ -29,19 +29,23 @@ func getSampleMomentum() StrategyMomentum {
 		},
 		RequireAll:      r.Intn(2) == 0,
 		StopLossPct:     r.Float64() * 0.05,
-		ProfitTargetPct: r.Float64() * 0.1,
-		ActivationPct:   r.Float64() * 0.02,
-		TrailingStopPct: r.Float64() * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: r.Float64() * 0.1, Valid: true},
+		ActivationPct:   sql.NullFloat64{Float64: r.Float64() * 0.02, Valid: true},
+		TrailingStopPct: sql.NullFloat64{Float64: r.Float64() * 0.01, Valid: true},
 	}
 }
 
 func getSampleStrategyPair() StrategyPair {
+	// Truncate to seconds to avoid precision issues with database timestamp comparisons
+	now := time.Now().Truncate(time.Second)
 	return StrategyPair{
 		ExchangeName:     "binance",
 		InstrumentSymbol: "BTC/USDT",
 		Type:             StrategyMomentumTrailing,
 		WarmupWindow:     300,
 		Momentum:         getSampleMomentum(),
+		CreatedAt:        now,
+		UpdatedAt:        sql.NullTime{Time: now, Valid: true},
 	}
 }
 
@@ -59,9 +63,9 @@ func toStrategyPairRow(p StrategyPair) []any {
 	}
 
 	return []any{
-		p.ExchangeName, p.InstrumentSymbol, p.Type, windowSec,
-		lookbacks, thresholds, p.Momentum.RequireAll, p.Momentum.StopLossPct,
-		p.Momentum.ProfitTargetPct, p.Momentum.ActivationPct, p.Momentum.TrailingStopPct,
+		p.ExchangeName, p.InstrumentSymbol, p.Type, windowSec, lookbacks, thresholds,
+		p.Momentum.RequireAll, p.Momentum.StopLossPct, p.Momentum.ProfitTargetPct,
+		p.Momentum.ActivationPct, p.Momentum.TrailingStopPct, p.CreatedAt, p.UpdatedAt,
 	}
 }
 
@@ -191,15 +195,23 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 		return []any{exchangeID, instrumentID, st, DefaultUser}
 	}
 	toMomArgs := func(st string, isInsert bool) []any {
-		profitValid := st == StrategyMomentumProfit
-		trailValid := st == StrategyMomentumTrailing
+		profitTarget := sql.NullFloat64{}
+		if st == StrategyMomentumProfit {
+			profitTarget = momentum.ProfitTargetPct
+		}
+		activation := sql.NullFloat64{}
+		trailing := sql.NullFloat64{}
+		if st == StrategyMomentumTrailing {
+			activation = momentum.ActivationPct
+			trailing = momentum.TrailingStopPct
+		}
 
 		commonArgs := []any{
 			momentum.WindowSeconds, lookbacks, thresholds,
 			momentum.RequireAll, momentum.StopLossPct,
-			sql.NullFloat64{Float64: momentum.ProfitTargetPct, Valid: profitValid},
-			sql.NullFloat64{Float64: momentum.ActivationPct, Valid: trailValid},
-			sql.NullFloat64{Float64: momentum.TrailingStopPct, Valid: trailValid},
+			profitTarget,
+			activation,
+			trailing,
 			DefaultUser,
 		}
 
@@ -382,6 +394,67 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 			if err := mockDB.ExpectationsWereMet(); err != nil {
 				t.Errorf("there were unfulfilled expectations: %s", err)
 			}
+		})
+	}
+}
+
+func TestPgStrategiesRepo_DisableStrategy(t *testing.T) {
+	repo := NewStrategiesRepo()
+	exchange := "binance"
+	symbol := "BTC/USDT"
+	strategyType := StrategyMomentumTrailing
+
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+
+	testCases := []struct {
+		name                string
+		setupMock           func(mock pgxmock.PgxPoolIface)
+		expectedErrContains string
+	}{
+		{
+			name: "Success",
+			setupMock: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(exchange, symbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
+
+				mock.ExpectExec("UPDATE trading.strategy_pairs").
+					WithArgs(exchangeID, instrumentID, strategyType, DefaultUser).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+			},
+		},
+		{
+			name: "Fail - Execution",
+			setupMock: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(exchange, symbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
+
+				mock.ExpectExec("UPDATE trading.strategy_pairs").
+					WithArgs(exchangeID, instrumentID, strategyType, DefaultUser).
+					WillReturnError(fmt.Errorf("db error"))
+			},
+			expectedErrContains: "failed to disable strategy",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mock.Close()
+
+			tc.setupMock(mock)
+			err = repo.DisableStrategy(context.Background(), mock, exchange, symbol, strategyType)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }

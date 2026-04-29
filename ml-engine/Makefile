@@ -36,13 +36,13 @@ TARGET = $(BUILD_DIR)/engine
 
 .PHONY: all run clean test rebuild proto install-deps help coverage pre-commit
 
+all: proto $(TARGET) ## Build the engine executable
+
 help: ## Show this help message
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
-
-all: proto $(TARGET) ## Build the engine executable
 
 $(TARGET): $(PROTO_OBJS) $(OBJS)
 	@mkdir -p $(dir $@)

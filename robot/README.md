@@ -31,6 +31,7 @@ robot/
 │   │   └── main.go                 # Initializes and runs the Go components
 │   ├── gen/go/v1/                  # Auto-generated Go gRPC code
 │   ├── internal/                   # All internal Go packages
+|   │   ├── api                     # gRPC services
 |   │   ├── background/             # Background tasks
 │   │   ├── components/
 │   │   │   ├── execution/          # Logic for trade execution via gRPC
@@ -74,7 +75,9 @@ robot/
 │
 └── proto/                          # Shared gRPC definitions
     └── v1/
-        └── exchange.proto          # Defines services and messages
+        ├── exchange.proto          # Defines exchange communication services and messages
+        └── management.proto        # Defines management services and messages
+
 ```
 
 ## Development Environment

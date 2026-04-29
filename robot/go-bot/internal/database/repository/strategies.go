@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 const (
@@ -28,9 +29,9 @@ type StrategyMomentum struct {
 	Windows         []MomentumWindow
 	RequireAll      bool
 	StopLossPct     float64
-	ProfitTargetPct float64
-	ActivationPct   float64
-	TrailingStopPct float64
+	ProfitTargetPct sql.NullFloat64
+	ActivationPct   sql.NullFloat64
+	TrailingStopPct sql.NullFloat64
 }
 
 // StrategyPair represents metadata from the trading.strategy_pairs table.
@@ -40,12 +41,15 @@ type StrategyPair struct {
 	Type             string
 	WarmupWindow     int
 	Momentum         StrategyMomentum
+	CreatedAt        time.Time
+	UpdatedAt        sql.NullTime
 }
 
 // StrategiesRepo defines the interface for managing strategy configurations.
 type StrategiesRepo interface {
 	GetStrategyPairs(ctx context.Context, db DBExecutor, onlyEnabled bool) ([]StrategyPair, error)
 	UpsertEnabledStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType, label string, momentum StrategyMomentum) error
+	DisableStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string) error
 }
 
 type pgStrategiesRepo struct{}
@@ -69,7 +73,9 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 			sm.stop_loss_pct,
 			sm.profit_target_pct,
 			sm.activation_pct,
-			sm.trailing_stop_pct
+			sm.trailing_stop_pct,
+			sp.created_at,
+			sp.updated_at
 		FROM trading.strategy_pairs sp
 		INNER JOIN trading.exchanges e ON e.id = sp.exchange_id AND e.active
 		INNER JOIN trading.instruments i ON i.id = sp.instrument_id AND i.exchange_id = sp.exchange_id AND i.active
@@ -104,6 +110,8 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 			&profitTarget,
 			&activationPct,
 			&trailingStopPct,
+			&p.CreatedAt,
+			&p.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan strategy pair: %w", err)
@@ -130,9 +138,9 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 		}
 
 		// Map nullable DB fields to config struct
-		p.Momentum.ProfitTargetPct = profitTarget.Float64
-		p.Momentum.ActivationPct = activationPct.Float64
-		p.Momentum.TrailingStopPct = trailingStopPct.Float64
+		p.Momentum.ProfitTargetPct = profitTarget
+		p.Momentum.ActivationPct = activationPct
+		p.Momentum.TrailingStopPct = trailingStopPct
 
 		pairs = append(pairs, p)
 	}
@@ -141,6 +149,14 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 
 // UpsertEnabledStrategy dynamically changes or creates the enabled strategy and configuration for a pair.
 func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType, label string, momentum StrategyMomentum) (err error) {
+	// Validate strategy-specific requirements to prevent saving NULLs for required fields.
+	if strategyType == StrategyMomentumProfit && !momentum.ProfitTargetPct.Valid {
+		return fmt.Errorf("profit_target_pct is required for %s", strategyType)
+	}
+	if strategyType == StrategyMomentumTrailing && (!momentum.ActivationPct.Valid || !momentum.TrailingStopPct.Valid) {
+		return fmt.Errorf("activation_pct and trailing_stop_pct are required for %s", strategyType)
+	}
+
 	// Select exchange_id and instrument_id
 	selectQuery := `
 		SELECT i.exchange_id, i.id
@@ -226,6 +242,18 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 		thresholds[i] = w.Threshold
 	}
 
+	// We only persist values for the specific strategy type, otherwise we pass NULL.
+	profitTarget := sql.NullFloat64{}
+	if strategyType == StrategyMomentumProfit {
+		profitTarget = momentum.ProfitTargetPct
+	}
+	activation := sql.NullFloat64{}
+	trailing := sql.NullFloat64{}
+	if strategyType == StrategyMomentumTrailing {
+		activation = momentum.ActivationPct
+		trailing = momentum.TrailingStopPct
+	}
+
 	// Try to update an existing momentum configuration with new values.
 	updateMom := `
 		UPDATE trading.strategy_momentum
@@ -247,10 +275,11 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 	err = tx.QueryRow(ctx, updateMom,
 		pairID, strategyType, label,
 		momentum.WindowSeconds, lookbacks, thresholds,
-		momentum.RequireAll, momentum.StopLossPct,
-		sql.NullFloat64{Float64: momentum.ProfitTargetPct, Valid: strategyType == StrategyMomentumProfit},
-		sql.NullFloat64{Float64: momentum.ActivationPct, Valid: strategyType == StrategyMomentumTrailing},
-		sql.NullFloat64{Float64: momentum.TrailingStopPct, Valid: strategyType == StrategyMomentumTrailing},
+		momentum.RequireAll,
+		momentum.StopLossPct,
+		profitTarget,
+		activation,
+		trailing,
 		DefaultUser,
 	).Scan(&momID)
 
@@ -274,10 +303,11 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 		`
 		_, err = tx.Exec(ctx, insertMom,
 			label, pairID, strategyType, momentum.WindowSeconds, lookbacks, thresholds,
-			momentum.RequireAll, momentum.StopLossPct,
-			sql.NullFloat64{Float64: momentum.ProfitTargetPct, Valid: strategyType == StrategyMomentumProfit},
-			sql.NullFloat64{Float64: momentum.ActivationPct, Valid: strategyType == StrategyMomentumTrailing},
-			sql.NullFloat64{Float64: momentum.TrailingStopPct, Valid: strategyType == StrategyMomentumTrailing},
+			momentum.RequireAll,
+			momentum.StopLossPct,
+			profitTarget,
+			activation,
+			trailing,
 			DefaultUser,
 		)
 		if err != nil {
@@ -287,4 +317,34 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 
 	err = tx.Commit(ctx)
 	return err
+}
+
+// DisableStrategy sets is_enabled to false for a specific strategy pair.
+func (r *pgStrategiesRepo) DisableStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string) error {
+	// Select exchange_id and instrument_id
+	selectQuery := `
+		SELECT i.exchange_id, i.id
+		FROM trading.instruments i
+		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
+		WHERE i.name = $2 AND i.active
+	`
+	var exchangeID, instrumentID int64
+	err := db.QueryRow(ctx, selectQuery, exchangeName, symbol).Scan(
+		&exchangeID,
+		&instrumentID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to resolve exchange and instrument IDs: %w", err)
+	}
+
+	updateQuery := `
+		UPDATE trading.strategy_pairs
+		SET is_enabled = FALSE, updated_at = NOW(), updated_by = $4
+		WHERE exchange_id = $1 AND instrument_id = $2 AND strategy_type = $3 AND active
+	`
+	if _, err = db.Exec(ctx, updateQuery, exchangeID, instrumentID, strategyType, DefaultUser); err != nil {
+		return fmt.Errorf("failed to disable strategy: %w", err)
+	}
+
+	return nil
 }

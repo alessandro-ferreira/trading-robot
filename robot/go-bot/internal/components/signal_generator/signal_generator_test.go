@@ -1,6 +1,7 @@
 package signal_generator
 
 import (
+	"database/sql"
 	"io"
 	"log/slog"
 	"testing"
@@ -54,7 +55,7 @@ func TestNewSignalGenerator(t *testing.T) {
 						{LookbackSeconds: 30, Threshold: 0.01},
 					},
 					StopLossPct:     0.02,
-					ProfitTargetPct: 0.05,
+					ProfitTargetPct: sql.NullFloat64{Float64: 0.05, Valid: true},
 				},
 			},
 			wantErr: false,
@@ -71,8 +72,8 @@ func TestNewSignalGenerator(t *testing.T) {
 						{LookbackSeconds: 30, Threshold: 0.01},
 					},
 					StopLossPct:     0.02,
-					ActivationPct:   0.03,
-					TrailingStopPct: 0.01,
+					ActivationPct:   sql.NullFloat64{Float64: 0.03, Valid: true},
+					TrailingStopPct: sql.NullFloat64{Float64: 0.01, Valid: true},
 				},
 			},
 			wantErr: false,
@@ -127,8 +128,8 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 				{LookbackSeconds: 30, Threshold: 0.001},
 			},
 			StopLossPct:     0.02,
-			ActivationPct:   0.05,
-			TrailingStopPct: 0.01,
+			ActivationPct:   sql.NullFloat64{Float64: 0.05, Valid: true},
+			TrailingStopPct: sql.NullFloat64{Float64: 0.01, Valid: true},
 		},
 	}
 
@@ -161,8 +162,8 @@ func TestSignalGenerator_Sync(t *testing.T) {
 				{LookbackSeconds: 5, Threshold: 0.01},
 			},
 			StopLossPct:     0.01,
-			ActivationPct:   0.05,
-			TrailingStopPct: 0.02,
+			ActivationPct:   sql.NullFloat64{Float64: 0.05, Valid: true},
+			TrailingStopPct: sql.NullFloat64{Float64: 0.02, Valid: true},
 		},
 	}
 
@@ -188,8 +189,8 @@ func TestSignalGenerator_UpdatePrice(t *testing.T) {
 				{LookbackSeconds: 50, Threshold: 0.01},
 			},
 			StopLossPct:     0.1,
-			ActivationPct:   0.05,
-			TrailingStopPct: 0.02,
+			ActivationPct:   sql.NullFloat64{Float64: 0.05, Valid: true},
+			TrailingStopPct: sql.NullFloat64{Float64: 0.02, Valid: true},
 		},
 	}
 

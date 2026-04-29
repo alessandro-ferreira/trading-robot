@@ -13,20 +13,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var riskColumns = []string{"exchange_name", "instrument_symbol", "risk_per_trade", "max_position_size"}
+var riskColumns = []string{"exchange_name", "instrument_symbol", "risk_per_trade", "max_position_size", "created_at", "updated_at"}
 
 func getSampleRisk() RiskPair {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// Truncate to seconds to avoid precision issues with database timestamp comparisons
+	now := time.Now().Truncate(time.Second)
 	return RiskPair{
 		ExchangeName:     "binance",
 		InstrumentSymbol: "BTC/USDT",
 		RiskPerTrade:     r.Float64() * 500,
 		MaxPositionSize:  sql.NullFloat64{Float64: r.Float64() * 5, Valid: true},
+		CreatedAt:        now,
+		UpdatedAt:        sql.NullTime{Time: now, Valid: true},
 	}
 }
 
 func toRiskRow(rp RiskPair) []any {
-	return []any{rp.ExchangeName, rp.InstrumentSymbol, rp.RiskPerTrade, rp.MaxPositionSize}
+	return []any{rp.ExchangeName, rp.InstrumentSymbol, rp.RiskPerTrade, rp.MaxPositionSize, rp.CreatedAt, rp.UpdatedAt}
 }
 
 func TestPgRisksRepo_GetRiskPair(t *testing.T) {

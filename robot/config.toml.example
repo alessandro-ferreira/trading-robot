@@ -13,8 +13,9 @@ source = true     # Enable source file and line number in logs
 
 # gRPC server settings
 [grpc]
-go_bot_address = "localhost:50050"         # Not used by go-bot, but for other potential clients
-python_gateway_address = "localhost:50051" # Address for the go-bot to connect to
+go_bot_address = "localhost:50050"          # Not used by go-bot, but for other potential clients
+python_gateway_address = "0.0.0.0:50051"    # Address for the go-bot to connect to (listen on all interfaces)
+management_address = "0.0.0.0:50052"        # Address for the ML Engine to connect to (listen on all interfaces)
 
 # Database configuration for the Go bot (using TimescaleDB/PostgreSQL)
 [database]

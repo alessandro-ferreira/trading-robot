@@ -143,5 +143,24 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Comment this block to keep the strategies enabled
+    for (const auto& symbol : symbols) {
+        try {
+            string exchange = "binance";
+            auto strategy_update = engine->GenerateStrategyUpdate(exchange, symbol);
+            strategy_update.enabled = false;
+            strategy_update.momentum_params = {};
+
+            bool strategy_ok = client->UpdateStrategy(strategy_update);
+            if (strategy_ok) {
+                cout << "[" << engine->GetName() << "] Successfully disabled strategy for " << symbol << endl;
+            } else {
+                cerr << "Failed to disable strategy for " << symbol << endl;
+            }
+        } catch (const exception& e) {
+            cerr << "Unexpected error disabling strategy for " << symbol << ": " << e.what() << endl;
+        }
+    }
+
     return 0;
 }

@@ -26,6 +26,7 @@ This service is the core of the trading robot, containing the primary business l
 │   │   └── main.go               # Initializes and runs the Go components
 │   ├── gen/go/v1/                # Auto-generated Go gRPC code
 │   ├── internal/                 # All internal Go packages
+|   │   ├── api                   # gRPC services
 |   │   ├── background/           # Background tasks
 │   │   ├── components/
 │   │   │   ├── execution/        # Logic for trade execution via gRPC

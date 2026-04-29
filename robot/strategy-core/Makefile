@@ -22,13 +22,13 @@ COVERAGE_FLAGS = --coverage -fprofile-arcs -ftest-coverage
 
 .PHONY: all clean test rebuild help coverage pre-commit
 
+all: $(TARGET) ## Build the static library
+
 help: ## Show this help message
 	@echo "Usage: make <target>"
 	@echo ""
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
-
-all: $(TARGET) ## Build the static library
 
 $(TARGET): $(OBJS)
 	@mkdir -p $(dir $@)

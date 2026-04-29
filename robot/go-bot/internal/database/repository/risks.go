@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // RiskPair represents the risk parameters for a specific pair.
@@ -13,6 +14,8 @@ type RiskPair struct {
 	InstrumentSymbol string
 	RiskPerTrade     float64
 	MaxPositionSize  sql.NullFloat64
+	CreatedAt        time.Time
+	UpdatedAt        sql.NullTime
 }
 
 // RisksRepo defines the interface for managing pair risk configurations.
@@ -35,7 +38,9 @@ func (r *pgRisksRepo) GetRiskPair(ctx context.Context, db DBExecutor, exchange, 
 			e.name,
 			i.name,
 			rp.risk_per_trade,
-			rp.max_position_size
+			rp.max_position_size,
+			rp.created_at,
+			rp.updated_at
 		FROM trading.risk_pairs rp
 		INNER JOIN trading.exchanges e ON e.id = rp.exchange_id AND e.active
 		INNER JOIN trading.instruments i ON i.id = rp.instrument_id AND i.exchange_id = e.id AND i.active
@@ -48,6 +53,8 @@ func (r *pgRisksRepo) GetRiskPair(ctx context.Context, db DBExecutor, exchange, 
 		&data.InstrumentSymbol,
 		&data.RiskPerTrade,
 		&data.MaxPositionSize,
+		&data.CreatedAt,
+		&data.UpdatedAt,
 	)
 
 	if err != nil {

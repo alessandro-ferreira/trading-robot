@@ -5,11 +5,14 @@ import (
 	"flag"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	pb "trading/robot/go-bot/gen/go/v1"
+	"trading/robot/go-bot/internal/api"
 	"trading/robot/go-bot/internal/background"
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/portfolio"
@@ -19,6 +22,8 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/logger"
 	"trading/robot/go-bot/internal/orchestrator"
+
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -50,6 +55,7 @@ func main() {
 	slog.Info("Configuration loaded successfully",
 		slog.String("db_host", cfg.Database.Host),
 		slog.String("python_gateway", cfg.GRPC.PythonGatewayAddress),
+		slog.String("management_server", cfg.GRPC.ManagementAddress),
 	)
 
 	// --- Infrastructure Initialization ---
@@ -62,6 +68,8 @@ func main() {
 
 	slog.Info("Database connection pool established")
 
+	repoContainer := repository.New()
+
 	// Initialize gRPC client for the Python gateway
 	gatewayClient, err := execution.NewGatewayClient(&cfg.GRPC)
 	if err != nil {
@@ -71,7 +79,22 @@ func main() {
 	defer gatewayClient.Close()
 	slog.Info("Connected to python-gateway successfully")
 
-	repoContainer := repository.New()
+	// Initialize the management gRPC server
+	managementServer := api.NewManagementServer(slog.Default(), db, repoContainer)
+	grpcServer := grpc.NewServer()
+	pb.RegisterManagementServiceServer(grpcServer, managementServer)
+
+	lis, err := net.Listen("tcp", cfg.GRPC.ManagementAddress)
+	if err != nil {
+		slog.Error("Failed to listen for management API", "error", err, "address", cfg.GRPC.ManagementAddress)
+		os.Exit(1)
+	}
+
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil && err != grpc.ErrServerStopped {
+			slog.Error("Management gRPC server stopped with error", "error", err)
+		}
+	}()
 
 	// Initialize execution service
 	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
@@ -111,6 +134,7 @@ func main() {
 	slog.Info("Shutdown signal received. Starting graceful shutdown...")
 
 	// Perform cleanup operations.
+	grpcServer.GracefulStop()
 	bgManager.Wait()
 
 	slog.Info("All background tasks stopped. Closing connections...")

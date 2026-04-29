@@ -1,10 +1,13 @@
+// Defines the gRPC contract for communication between the Go trading bot
+// and external management systems, such as the ML Engine.
+
 syntax = "proto3";
 
 package trading.robot.management.v1;
 
 option go_package = "go-bot/gen/v1;v1";
 
-// ManagementService provides an interface for external systems, such as the AI Engine,
+// ManagementService provides an interface for external systems, such as the ML Engine,
 // to dynamically adjust the trading bot's parameters, strategy configurations, and risk limits.
 service ManagementService {
   // UpdateStrategy adjusts strategy configuration and enabling/disabling for a pair.
@@ -38,7 +41,7 @@ message UpdateStrategyRequest {
   string symbol = 2;
   string strategy_type = 3; // e.g., dummy, momentum_profit, momentum_trailing
   bool enabled = 4;
-  MomentumParams momentum_params = 5;
+  optional MomentumParams momentum_params = 5;
 }
 
 // UpdateStrategyResponse is the message returned from the UpdateStrategy RPC.
