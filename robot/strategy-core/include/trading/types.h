@@ -11,10 +11,11 @@ typedef enum { STRATEGY_FAILURE = 0, STRATEGY_SUCCESS = 1 } StrategyStatus;
 
 // Internal state of the strategy lifecycle.
 typedef enum {
-    STATE_IDLE = 0,         // Searching for entry
-    STATE_PENDING_BUY = 1,  // BUY signal sent, waiting for fill confirmation
-    STATE_ACTIVE = 2,       // Position open, tracking exit
-    STATE_PENDING_SELL = 3  // SELL signal sent, waiting for fill confirmation
+    STATE_INVALID = 0,      // Sentinel value for errors or uninitialized states
+    STATE_IDLE = 1,         // Searching for entry
+    STATE_PENDING_BUY = 2,  // BUY signal sent, waiting for fill confirmation
+    STATE_IN_POSITION = 3,  // Position open, tracking exit
+    STATE_PENDING_SELL = 4  // SELL signal sent, waiting for fill confirmation
 } StrategyState;
 
 // Defines the signal returned by the strategy evaluation.
@@ -24,11 +25,11 @@ typedef enum {
     SIGNAL_SELL = 2,     // Trigger: Exit criteria met, place SELL order
 
     // Intermediate status signals representing the strategy lifecycle
-    SIGNAL_SEARCHING_ENTRY = 3,   // State: IDLE - Evaluating entry rules (AND)
-    SIGNAL_TRACKING_EXIT = 4,     // State: ACTIVE - Evaluating exit rules (OR)
-    SIGNAL_WAITING_BUY_FILL = 5,  // State: PENDING_BUY - Awaiting BUY execution confirmation
-    SIGNAL_WAITING_SELL_FILL = 6  // State: PENDING_SELL - Awaiting SELL execution confirmation
-} Signal;
+    SIGNAL_SEARCHING_BUY_ENTRY = 3,  // State: IDLE - Evaluating entry rules (AND)
+    SIGNAL_TRACKING_SELL_EXIT = 4,   // State: IN_POSITION - Evaluating exit rules (OR)
+    SIGNAL_WAITING_BUY_FILL = 5,     // State: PENDING_BUY - Awaiting BUY execution confirmation
+    SIGNAL_WAITING_SELL_FILL = 6     // State: PENDING_SELL - Awaiting SELL execution confirmation
+} StrategySignal;
 
 // Opaque handle to a strategy instance.
 typedef void* StrategyHandle;

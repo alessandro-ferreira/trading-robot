@@ -16,31 +16,32 @@ StrategyStatus Strategy_UpdateConfig(StrategyHandle handle, StrategyConfig confi
 void Strategy_Destroy(StrategyHandle handle);
 
 // Initializes state for a fixed profit strategy.
-// Returns STRATEGY_FAILURE if the history is not in chronological order.
-StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, StrategyState state,
+// Returns STRATEGY_FAILURE if the history is not in chronological order or has non-positive price.
+StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
                                     double entry_price);
 // Initializes state for a trailing stop strategy.
 // highest_price: The highest price seen since the position was opened, required to restore the trailing stop phase.
-// Returns STRATEGY_FAILURE if the history is not in chronological order.
-StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, StrategyState state,
+// Returns STRATEGY_FAILURE if the history is not in chronological order or has non-positive price.
+StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
                                       double entry_price, double highest_price);
+
+// Sets the strategy's position state.
+// Used to align the strategy with the actual position after a filled order.
+void Strategy_SetInPosition(StrategyHandle handle, int in_position, double entry_price, double highest_price);
 
 // Feeds a live price tick. Also tracks the highest price seen while in position.
 // Returns STRATEGY_FAILURE if the tick seems corrupted (e.g. timestamp in the past, non-positive price, or unrealistic
 // price jump).
 StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long long timestamp);
 
-// Returns the current state of the strategy.
-StrategyState Strategy_GetState(StrategyHandle handle);
-
 // Evaluates entry or exit rules and transitions internal state.
-Signal Strategy_GetSignal(StrategyHandle handle);
-// Confirms that a pending signal has been filled, allowing the strategy to transition state.
-void Strategy_ConfirmSignal(StrategyHandle handle, Signal signal, double fill_price);
-// Cancels a pending signal, returning the strategy to its previous state.
-void Strategy_CancelSignal(StrategyHandle handle, Signal signal);
-// Resets the strategy to IDLE state (e.g. on order cancellation or external fill).
-void Strategy_ResetSignal(StrategyHandle handle);
+// Must be called exactly once per tick after UpdatePrice.
+// Returns SIGNAL_INVALID if the strategy is in a corrupted state (e.g. entry price not set while ACTIVE).
+StrategySignal Strategy_GetSignal(StrategyHandle handle);
+
+// Retries the signal. It should be used in case of error when placing an order.
+// Only valid for order placement signals (BUY or SELL) when pending confirmation, otherwise is ignored.
+void Strategy_RetrySignal(StrategyHandle handle, StrategySignal signal);
 
 #ifdef __cplusplus
 }

@@ -111,6 +111,23 @@ TEST(SlidingWindowTest, InitFailsWithUnsortedHistory) {
     EXPECT_FALSE(state.Init(history));
 }
 
+TEST(SlidingWindowTest, InitFailsWithNonPositivePrice) {
+    SlidingWindowPriceState state(100);
+    vector<PricePoint> history = {{100, 10.0}, {101, -1.0}};
+    EXPECT_FALSE(state.Init(history));
+}
+
+TEST(SlidingWindowTest, InitSkipsUnrealisticPriceJumps) {
+    SlidingWindowPriceState state(100);
+    // MAX_TICK_PRICE_CHANGE is 0.05 (5%). 10.0 -> 11.0 is a 10% jump.
+    // The point {101, 11.0} should be skipped.
+    vector<PricePoint> history = {{100, 10.0}, {101, 11.0}, {102, 10.2}};
+    EXPECT_TRUE(state.Init(history));
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 10.2);
+    // Verify the jumpy point was skipped and the lookback still works against the first point.
+    EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(2), 10.0);
+}
+
 TEST(SlidingWindowTest, UpdatePriceFailsWithStaleTick) {
     SlidingWindowPriceState state(100);
     state.UpdatePrice({200, 10.0});

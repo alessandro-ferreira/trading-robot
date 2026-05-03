@@ -19,16 +19,13 @@ Strategy::Strategy(unique_ptr<MarketState> state, vector<unique_ptr<EntryRule>> 
     highest_price_since_entry_ = 0.0;
 }
 
-bool Strategy::Init(const vector<PricePoint>& history, StrategyState state, double entry_price, double highest_price) {
+bool Strategy::Init(const vector<PricePoint>& history, bool in_position, double entry_price, double highest_price) {
     if (!history.empty()) {
         if (!market_state_->Init(history)) {
             return false;
         }
     }
-    state_ = state;
-    entry_price_ = entry_price;
-    // Restore the persisted peak so the two-phase exit rule uses the correct phase on restart.
-    highest_price_since_entry_ = (state == STATE_ACTIVE || state == STATE_PENDING_SELL) ? highest_price : 0.0;
+    SetInPosition(in_position, entry_price, highest_price);
     return true;
 }
 
@@ -37,11 +34,23 @@ void Strategy::UpdateRules(vector<unique_ptr<EntryRule>> entry_rules, vector<uni
     exit_rules_ = std::move(exit_rules);
 }
 
+void Strategy::SetInPosition(bool in_position, double entry_price, double highest_price) {
+    if (in_position) {
+        state_ = STATE_IN_POSITION;
+        entry_price_ = entry_price;
+        highest_price_since_entry_ = std::max(highest_price_since_entry_, std::max(highest_price, entry_price));
+    } else {
+        state_ = STATE_IDLE;
+        entry_price_ = 0.0;
+        highest_price_since_entry_ = 0.0;
+    }
+}
+
 bool Strategy::UpdatePrice(const PricePoint& tick) {
     if (!market_state_->UpdatePrice(tick)) {
         return false;
     }
-    if (state_ == STATE_ACTIVE || state_ == STATE_PENDING_SELL) {
+    if (state_ == STATE_IN_POSITION || state_ == STATE_PENDING_SELL) {
         if (tick.price > highest_price_since_entry_) {
             highest_price_since_entry_ = tick.price;
         }
@@ -49,13 +58,18 @@ bool Strategy::UpdatePrice(const PricePoint& tick) {
     return true;
 }
 
-Signal Strategy::GetSignal() {
+StrategySignal Strategy::GetSignal() {
     switch (state_) {
         case STATE_IDLE:
+            // If no entry rules are defined, stay in searching mode.
+            if (entry_rules_.empty()) {
+                return SIGNAL_SEARCHING_BUY_ENTRY;
+            }
+
             // Check Entry Rules: All rules must be satisfied to enter (AND logic).
             for (const auto& rule : entry_rules_) {
                 if (!rule->Check(*market_state_)) {
-                    return SIGNAL_SEARCHING_ENTRY;
+                    return SIGNAL_SEARCHING_BUY_ENTRY;
                 }
             }
 
@@ -64,7 +78,18 @@ Signal Strategy::GetSignal() {
             state_ = STATE_PENDING_BUY;
             return SIGNAL_BUY;
 
-        case STATE_ACTIVE:
+        case STATE_IN_POSITION:
+            // If entry price is not set to a valid value, the strategy is corrupted.
+            // The user needs to use Init or SetInPosition to fix it.
+            if (entry_price_ <= 0.0) {
+                return SIGNAL_INVALID;
+            }
+
+            // If no price has been processed yet, we stay in tracking mode.
+            if (market_state_->GetCurrentPrice() <= 0.0) {
+                return SIGNAL_TRACKING_SELL_EXIT;
+            }
+
             // Check Exit Rules: If any rule is satisfied, we exit (OR logic).
             for (const auto& rule : exit_rules_) {
                 if (rule->Check(*market_state_, entry_price_, highest_price_since_entry_)) {
@@ -74,7 +99,7 @@ Signal Strategy::GetSignal() {
                     return SIGNAL_SELL;
                 }
             }
-            return SIGNAL_TRACKING_EXIT;
+            return SIGNAL_TRACKING_SELL_EXIT;
 
         case STATE_PENDING_BUY:
             return SIGNAL_WAITING_BUY_FILL;
@@ -83,34 +108,17 @@ Signal Strategy::GetSignal() {
             return SIGNAL_WAITING_SELL_FILL;
 
         default:
-            // This case should be unreachable with a valid state, but we return a sentinel.
             return SIGNAL_INVALID;
     }
 }
 
-void Strategy::ConfirmSignal(Signal signal, double fill_price) {
-    if (signal == SIGNAL_BUY) {
-        state_ = STATE_ACTIVE;
-        entry_price_ = fill_price;
-        highest_price_since_entry_ = fill_price;
-    } else if (signal == SIGNAL_SELL) {
-        // For sells, we just return to IDLE
-        ResetSignal();
-    }
-}
-
-void Strategy::CancelSignal(Signal signal) {
+void Strategy::RetrySignal(StrategySignal signal) {
     if (signal == SIGNAL_BUY && state_ == STATE_PENDING_BUY) {
-        ResetSignal();
-    } else if (signal == SIGNAL_SELL && state_ == STATE_PENDING_SELL) {
-        state_ = STATE_ACTIVE;
+        state_ = STATE_IDLE;
     }
-}
-
-void Strategy::ResetSignal() {
-    state_ = STATE_IDLE;
-    entry_price_ = 0.0;
-    highest_price_since_entry_ = 0.0;
+    if (signal == SIGNAL_SELL && state_ == STATE_PENDING_SELL) {
+        state_ = STATE_IN_POSITION;
+    }
 }
 
 }  // namespace trading

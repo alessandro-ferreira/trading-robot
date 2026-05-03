@@ -19,8 +19,10 @@ class MockMarketState : public MarketState {
    public:
     double current_price_ = 0.0;
     long long last_timestamp_ = 0;
+    bool should_fail_update_ = false;
     bool Init([[maybe_unused]] const vector<PricePoint>& history) override { return true; }
     bool UpdatePrice(const PricePoint& tick) override {
+        if (should_fail_update_) return false;
         current_price_ = tick.price;
         last_timestamp_ = tick.timestamp;
         return true;
@@ -76,7 +78,33 @@ class StrategyTest : public ::testing::Test {
 
 TEST_F(StrategyTest, StartsWithNoSignal) {
     strategy_->UpdatePrice({1, 100.0});
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_BUY_ENTRY);
+}
+
+TEST_F(StrategyTest, UpdatePriceReturnsFalseOnStateFailure) {
+    mock_state_->should_fail_update_ = true;
+    EXPECT_FALSE(strategy_->UpdatePrice({1, 100.0}));
+}
+
+TEST_F(StrategyTest, GetSignalReturnsSearchingWhenRulesEmpty) {
+    // Clear rules to test the empty guard
+    strategy_->UpdateRules({}, {});
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_BUY_ENTRY);
+}
+
+TEST_F(StrategyTest, GetSignalReturnsInvalidWhenEntryPriceIsZeroInActiveState) {
+    // Manually force an in-position state with an invalid entry price.
+    strategy_->SetInPosition(true, 0.0, 0.0);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_INVALID);
+}
+
+TEST_F(StrategyTest, GetSignalReturnsTrackingWhenPriceIsZeroInActiveState) {
+    // Force active state via Init without updating price first (price remains 0.0)
+    strategy_->Init({}, true, 100.0, 100.0);
+    mock_exit_->should_trigger_ = true;
+
+    // Should stay in tracking mode despite exit trigger because price is 0
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_SELL_EXIT);
 }
 
 TEST_F(StrategyTest, EntersPositionWhenEntryRuleTriggers) {
@@ -94,7 +122,7 @@ TEST_F(StrategyTest, TracksHighestPriceWhileInPosition) {
     EXPECT_EQ(strategy_->GetSignal(), SIGNAL_BUY);
 
     // Confirm fill to move from PENDING_BUY to ACTIVE
-    strategy_->ConfirmSignal(SIGNAL_BUY, 100.0);
+    strategy_->SetInPosition(true, 100.0, 100.0);
 
     // Price moves up to 110
     strategy_->UpdatePrice({2, 110.0});
@@ -122,12 +150,12 @@ TEST_F(StrategyTest, ExitsPositionWhenExitRuleTriggers) {
     mock_entry_->should_trigger_ = true;
     strategy_->UpdatePrice({1, 100.0});
     EXPECT_EQ(strategy_->GetSignal(), SIGNAL_BUY);  // BUY
-    strategy_->ConfirmSignal(SIGNAL_BUY, 100.0);
+    strategy_->SetInPosition(true, 100.0, 100.0);
 
     // Update Price (Holding)
     mock_entry_->should_trigger_ = false;  // Entry rule doesn't matter anymore
     strategy_->UpdatePrice({2, 105.0});
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_EXIT);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_SELL_EXIT);
 
     // Exit Trigger
     mock_exit_->should_trigger_ = true;
@@ -139,21 +167,22 @@ TEST_F(StrategyTest, ResetsAfterExit) {
     mock_entry_->should_trigger_ = true;
     strategy_->UpdatePrice({1, 100.0});
     strategy_->GetSignal();  // Transition to PENDING_BUY
-    strategy_->ConfirmSignal(SIGNAL_BUY, 100.0);
+    strategy_->SetInPosition(true, 100.0, 100.0);
 
     // Sell to exit the position
     mock_exit_->should_trigger_ = true;
     strategy_->GetSignal();  // Transition to PENDING_SELL
-    strategy_->ConfirmSignal(SIGNAL_SELL, 90.0);
+    strategy_->SetInPosition(false, 0.0, 0.0);
 
     // Next tick: Ensure no new entry or exit is triggered. The strategy should be reset.
     mock_entry_->should_trigger_ = false;
     mock_exit_->should_trigger_ = false;
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 TEST_F(StrategyTest, InitCorrectly) {
-    strategy_->Init({}, STATE_ACTIVE, 100.0, 100.0);
+    strategy_->UpdatePrice({1, 100.0});
+    strategy_->Init({}, true, 100.0, 100.0);
 
     // Now that we are in a position, an exit rule should be able to trigger
     mock_exit_->should_trigger_ = true;
@@ -165,7 +194,7 @@ TEST_F(StrategyTest, InitWithEmptyHistoryPreservesExistingBuffer) {
     strategy_->UpdatePrice({1, 100.0});
 
     // Rehydrate trade metadata but pass empty history
-    strategy_->Init({}, STATE_ACTIVE, 100.0, 100.0);
+    strategy_->Init({}, true, 100.0, 100.0);
 
     // If history was wiped, mock_state_ would be empty.
     // We verify by checking if an update still works sequentially.
@@ -175,7 +204,8 @@ TEST_F(StrategyTest, InitWithEmptyHistoryPreservesExistingBuffer) {
 
 TEST_F(StrategyTest, InitRestoresHighestPrice) {
     // Simulate restart: position entered at 100, peak was 120 before restart.
-    strategy_->Init({}, STATE_ACTIVE, 100.0, 120.0);
+    strategy_->UpdatePrice({1, 100.0});
+    strategy_->Init({}, true, 100.0, 120.0);
 
     // The highest price passed to the exit rule must be 120, not 100.
     mock_exit_->should_trigger_ = false;
@@ -199,14 +229,14 @@ TEST_F(StrategyTest, ConfirmBuyMovesToActive) {
     strategy_->UpdatePrice({1, 100.0});
     strategy_->GetSignal();
 
-    strategy_->ConfirmSignal(SIGNAL_BUY, 105.0);
+    strategy_->SetInPosition(true, 105.0, 105.0);
 
     strategy_->UpdatePrice({2, 106.0});
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_EXIT);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_SELL_EXIT);
 }
 
 TEST_F(StrategyTest, PendingSellStateLocksSignal) {
-    strategy_->Init({}, STATE_ACTIVE, 100.0, 100.0);
+    strategy_->Init({}, true, 100.0, 100.0);
     mock_exit_->should_trigger_ = true;
     strategy_->UpdatePrice({1, 90.0});
 
@@ -217,41 +247,64 @@ TEST_F(StrategyTest, PendingSellStateLocksSignal) {
     EXPECT_EQ(strategy_->GetSignal(), SIGNAL_WAITING_SELL_FILL);
 }
 
-TEST_F(StrategyTest, CancelBuyReturnsToIdle) {
+TEST_F(StrategyTest, RetryBuyReturnsToIdle) {
     mock_entry_->should_trigger_ = true;
     strategy_->UpdatePrice({1, 100.0});
     strategy_->GetSignal();  // PENDING_BUY
 
-    strategy_->CancelSignal(SIGNAL_BUY);
+    strategy_->RetrySignal(SIGNAL_BUY);
 
     mock_entry_->should_trigger_ = false;
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
-TEST_F(StrategyTest, CancelSellReturnsToActiveAndPreservesState) {
+TEST_F(StrategyTest, RetryBuyIsIgnoredWhenNotInPendingBuy) {
+    // Call RetrySignal(SIGNAL_BUY) while in STATE_IDLE
+    strategy_->RetrySignal(SIGNAL_BUY);
+    EXPECT_EQ(strategy_->GetState(), STATE_IDLE);
+
+    // Call RetrySignal(SIGNAL_BUY) while in STATE_IN_POSITION
+    strategy_->SetInPosition(true, 100.0, 100.0);
+    strategy_->RetrySignal(SIGNAL_BUY);
+    // It should NOT have reverted to STATE_IDLE
+    EXPECT_EQ(strategy_->GetState(), STATE_IN_POSITION);
+}
+
+TEST_F(StrategyTest, RetrySellReturnsToActiveAndPreservesState) {
     // Init in active state
-    strategy_->Init({}, STATE_ACTIVE, 100.0, 120.0);
+    strategy_->Init({}, true, 100.0, 120.0);
     mock_exit_->should_trigger_ = true;
     strategy_->UpdatePrice({1, 90.0});
     strategy_->GetSignal();  // PENDING_SELL
 
-    strategy_->CancelSignal(SIGNAL_SELL);
+    strategy_->RetrySignal(SIGNAL_SELL);
 
     mock_exit_->should_trigger_ = false;
     // Verify we are back to tracking and highest_price (120) is preserved
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_EXIT);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_TRACKING_SELL_EXIT);
     EXPECT_DOUBLE_EQ(mock_exit_->last_highest_price_, 120.0);
 }
 
-TEST_F(StrategyTest, ResetSignalReturnsToIdle) {
+TEST_F(StrategyTest, RetrySellIsIgnoredWhenNotInPendingSell) {
+    // Call RetrySignal(SIGNAL_SELL) while in STATE_IDLE
+    strategy_->RetrySignal(SIGNAL_SELL);
+    EXPECT_EQ(strategy_->GetState(), STATE_IDLE);
+
+    // Call RetrySignal(SIGNAL_SELL) while in STATE_IN_POSITION
+    strategy_->SetInPosition(true, 100.0, 100.0);
+    strategy_->RetrySignal(SIGNAL_SELL);
+    EXPECT_EQ(strategy_->GetState(), STATE_IN_POSITION);
+}
+
+TEST_F(StrategyTest, ResetReturnsToIdle) {
     mock_entry_->should_trigger_ = true;
     strategy_->UpdatePrice({1, 100.0});
     strategy_->GetSignal();
 
-    strategy_->ResetSignal();
+    strategy_->RetrySignal(SIGNAL_BUY);
 
     mock_entry_->should_trigger_ = false;  // Ensure it doesn't immediately re-trigger a buy
-    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(strategy_->GetSignal(), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 }  // namespace trading

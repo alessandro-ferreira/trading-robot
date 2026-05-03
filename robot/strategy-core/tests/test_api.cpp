@@ -104,9 +104,9 @@ TEST_F(ApiTest, InitDoesNotTriggerSignal) {
     // Load history that does NOT meet the signal threshold.
     // 0.5% gain (100 -> 100.5) over 1h is below the 1% threshold.
     PricePoint ticks[] = {{0, 100.0}, {7200, 100.5}};
-    Strategy_Init_Trailing(handle_, ticks, 2, STATE_IDLE, 0.0, 0.0);
+    Strategy_Init_Trailing(handle_, ticks, 2, 0, 0.0, 0.0);
 
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 TEST_F(ApiTest, UpdateConfigChangesParametersWithoutClearingHistory) {
@@ -121,7 +121,7 @@ TEST_F(ApiTest, UpdateConfigChangesParametersWithoutClearingHistory) {
     EXPECT_EQ(Strategy_UpdateConfig(handle_, config_), STRATEGY_SUCCESS);
 
     // If history was cleared, engine wouldn't be ready.
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 TEST_F(ApiTest, UpdatePriceTriggersSignal) {
@@ -129,10 +129,10 @@ TEST_F(ApiTest, UpdatePriceTriggersSignal) {
 
     // Warm up: window not ready yet.
     Strategy_UpdatePrice(handle_, 100.0, 0);
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 
     Strategy_UpdatePrice(handle_, 100.0, 3600);
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 
     // Window ready; 1h-ago price is 100, current is 102 -> 2% gain >= 1% threshold.
     Strategy_UpdatePrice(handle_, 102.0, 7200);
@@ -157,7 +157,7 @@ TEST_F(ApiTest, MatchAllConfigurationRespected) {
     Strategy_UpdatePrice(handle_, 100.0, 7200);
     Strategy_UpdatePrice(handle_, 102.0, 10800);
 
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 TEST_F(ApiTest, InitPositionEnablesExitRules) {
@@ -165,7 +165,7 @@ TEST_F(ApiTest, InitPositionEnablesExitRules) {
 
     // Restore state: in position at 100, peak also 100. Current price is 90 (10% loss).
     // Stop loss is 5%, so this triggers a Phase 1 exit.
-    Strategy_Init_Trailing(handle_, nullptr, 0, STATE_ACTIVE, 100.0, 100.0);
+    Strategy_Init_Trailing(handle_, nullptr, 0, 1, 100.0, 100.0);
     Strategy_UpdatePrice(handle_, 90.0, 1);
 
     EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SELL);
@@ -177,26 +177,13 @@ TEST_F(ApiTest, InitProfitPositionEnablesExitRules) {
     handle_ = Strategy_Create(config_);
 
     // Restore state: in position at 100. Current price is 111 (11% gain > 10% target).
-    Strategy_Init_Profit(handle_, nullptr, 0, STATE_ACTIVE, 100.0);
+    Strategy_Init_Profit(handle_, nullptr, 0, 1, 100.0);
     Strategy_UpdatePrice(handle_, 111.0, 1);
 
     EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SELL);
 }
 
-TEST_F(ApiTest, GetStateExposesInternalState) {
-    handle_ = Strategy_Create(config_);
-    EXPECT_EQ(Strategy_GetState(handle_), STATE_IDLE);
-
-    // Trigger a BUY signal
-    Strategy_UpdatePrice(handle_, 100.0, 0);
-    Strategy_UpdatePrice(handle_, 100.0, 3600);
-    Strategy_UpdatePrice(handle_, 102.0, 7200);
-    Strategy_GetSignal(handle_);
-
-    EXPECT_EQ(Strategy_GetState(handle_), STATE_PENDING_BUY);
-}
-
-TEST_F(ApiTest, ConfirmSignalTransitionsState) {
+TEST_F(ApiTest, ConfirmBuyTransitionsState) {
     handle_ = Strategy_Create(config_);
     // Trigger BUY
     Strategy_UpdatePrice(handle_, 100.0, 0);
@@ -205,14 +192,14 @@ TEST_F(ApiTest, ConfirmSignalTransitionsState) {
     EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_BUY);
 
     // Confirm BUY at 102.0
-    Strategy_ConfirmSignal(handle_, SIGNAL_BUY, 102.0);
+    Strategy_SetInPosition(handle_, 1, 102.0, 102.0);
 
     // Next tick should be tracking exit
     Strategy_UpdatePrice(handle_, 103.0, 7300);
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_TRACKING_EXIT);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_TRACKING_SELL_EXIT);
 }
 
-TEST_F(ApiTest, CancelSignalRevertsState) {
+TEST_F(ApiTest, RetrySignalRevertsState) {
     handle_ = Strategy_Create(config_);
     // Trigger BUY
     Strategy_UpdatePrice(handle_, 100.0, 0);
@@ -220,12 +207,12 @@ TEST_F(ApiTest, CancelSignalRevertsState) {
     Strategy_UpdatePrice(handle_, 102.0, 7200);
     EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_BUY);
 
-    // Cancel BUY
-    Strategy_CancelSignal(handle_, SIGNAL_BUY);
+    // Cancel BUY: Use RetrySignal to return to IDLE
+    Strategy_RetrySignal(handle_, SIGNAL_BUY);
 
     // Supply neutral price
     Strategy_UpdatePrice(handle_, 100.5, 7201);
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 TEST_F(ApiTest, ResetSignalTransitionsState) {
@@ -236,12 +223,12 @@ TEST_F(ApiTest, ResetSignalTransitionsState) {
     Strategy_UpdatePrice(handle_, 102.0, 7200);
     EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_BUY);
 
-    // Reset
-    Strategy_ResetSignal(handle_);
+    // Reset: Use RetrySignal to return to IDLE
+    Strategy_RetrySignal(handle_, SIGNAL_BUY);
 
     // Supply a neutral price so it doesn't immediately re-trigger
     Strategy_UpdatePrice(handle_, 100.5, 7201);
-    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_ENTRY);
+    EXPECT_EQ(Strategy_GetSignal(handle_), SIGNAL_SEARCHING_BUY_ENTRY);
 }
 
 }  // namespace trading

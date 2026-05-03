@@ -20,11 +20,14 @@ class Strategy {
 
     // Initializes the strategy with history and position state.
     // highest_price must be the highest price seen since the position was opened (persisted by the caller).
-    // Returns false if the history is not in chronological order.
-    bool Init(const vector<PricePoint>& history, StrategyState state, double entry_price, double highest_price);
+    // Returns false if the history is not in chronological order or has non-positive price.
+    bool Init(const vector<PricePoint>& history, bool in_position, double entry_price, double highest_price);
 
     // Updates the entry and exit rules without resetting the market state history.
     void UpdateRules(vector<unique_ptr<EntryRule>> entry_rules, vector<unique_ptr<ExitRule>> exit_rules);
+
+    // Sets the strategy's position state and prices.
+    void SetInPosition(bool in_position, double entry_price, double highest_price);
 
     // Feeds a live price tick. Also tracks the highest price seen while in position.
     // Returns false if the tick seems corrupted (e.g. timestamp in the past, non-positive price, or unrealistic price
@@ -36,16 +39,12 @@ class Strategy {
 
     // Evaluates entry or exit rules and transitions internal state.
     // Must be called exactly once per tick after UpdatePrice.
-    Signal GetSignal();
+    // Returns SIGNAL_INVALID if the strategy is in a corrupted state (e.g. entry price not set while ACTIVE).
+    StrategySignal GetSignal();
 
-    // Confirms that a pending signal has been filled, allowing the strategy to transition state.
-    void ConfirmSignal(Signal signal, double fill_price);
-
-    // Cancels a pending signal, returning the strategy to its previous state without wiping data.
-    void CancelSignal(Signal signal);
-
-    // Resets the strategy to IDLE state (e.g. on order cancellation or external fill).
-    void ResetSignal();
+    // Changes the internal state to resend the specified signal.
+    // Only valid for order placement signals (BUY or SELL) when pending confirmation, otherwise is ignored.
+    void RetrySignal(StrategySignal signal);
 
    private:
     // Components (Composition)

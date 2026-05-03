@@ -18,8 +18,8 @@ bool MomentumEntryRule::Check(const MarketState& state) {
         return false;
     }
 
+    double current = momentum_state->GetCurrentPrice();
     for (const auto& [lookback_seconds, threshold] : windows_) {
-        double current = momentum_state->GetCurrentPrice();
         double past = momentum_state->GetPriceSecondsAgo(lookback_seconds);
 
         // A non-positive past price indicates that the lookback period went beyond the available history.

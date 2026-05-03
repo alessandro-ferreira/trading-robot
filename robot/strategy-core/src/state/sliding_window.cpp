@@ -27,20 +27,37 @@ bool SlidingWindowPriceState::Init(const vector<PricePoint>& history) {
         return true;
     }
 
-    // Validate that history is sorted by timestamp
-    for (size_t i = 1; i < history.size(); ++i) {
-        if (history[i].timestamp < history[i - 1].timestamp) {
+    std::vector<PricePoint> hist;
+    hist.reserve(history.size());
+
+    // Validate that history is sorted by timestamp and price integrity
+    for (size_t i = 0; i < history.size(); ++i) {
+        const auto& p = history[i];
+        if (p.price <= 0.0) {
             return false;
         }
+
+        if (!hist.empty()) {
+            const auto& prev = hist.back();
+            if (p.timestamp < prev.timestamp) {
+                return false;
+            }
+
+            if (std::abs((p.price - prev.price) / prev.price) > MAX_TICK_PRICE_CHANGE) {
+                continue;
+            }
+        }
+
+        hist.push_back(p);
     }
 
     // Efficiently bulk-load all but the last point without triggering logic.
-    if (history.size() > 1) {
-        entries_.insert(entries_.end(), history.begin(), history.end() - 1);
+    if (hist.size() > 1) {
+        entries_.insert(entries_.end(), hist.begin(), hist.end() - 1);
     }
 
     // Process the final point using the main update logic to correctly set readiness and perform the initial eviction.
-    return UpdatePrice(history.back());
+    return UpdatePrice(hist.back());
 }
 
 bool SlidingWindowPriceState::UpdatePrice(const PricePoint& tick) {

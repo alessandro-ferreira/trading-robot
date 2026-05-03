@@ -119,26 +119,33 @@ static vector<trading::PricePoint> ToHistory(const PricePoint* ticks, int count)
     return vector<trading::PricePoint>(ticks, ticks + count);
 }
 
-StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, StrategyState state,
+StrategyStatus Strategy_Init_Profit(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
                                     double entry_price) {
     if (handle) {
         auto strategy = static_cast<trading::Strategy*>(handle);
-        bool success = strategy->Init(ToHistory(ticks, count), state, entry_price, 0.0);
+        bool success = strategy->Init(ToHistory(ticks, count), in_position != 0, entry_price, 0.0);
 
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
     return STRATEGY_FAILURE;
 }
 
-StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, StrategyState state,
+StrategyStatus Strategy_Init_Trailing(StrategyHandle handle, const PricePoint* ticks, int count, int in_position,
                                       double entry_price, double highest_price) {
     if (handle) {
         auto strategy = static_cast<trading::Strategy*>(handle);
-        bool success = strategy->Init(ToHistory(ticks, count), state, entry_price, highest_price);
+        bool success = strategy->Init(ToHistory(ticks, count), in_position != 0, entry_price, highest_price);
 
         return success ? STRATEGY_SUCCESS : STRATEGY_FAILURE;
     }
     return STRATEGY_FAILURE;
+}
+
+void Strategy_SetInPosition(StrategyHandle handle, int in_position, double entry_price, double highest_price) {
+    if (handle) {
+        auto strategy = static_cast<trading::Strategy*>(handle);
+        strategy->SetInPosition(in_position != 0, entry_price, highest_price);
+    }
 }
 
 StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long long timestamp) {
@@ -151,37 +158,18 @@ StrategyStatus Strategy_UpdatePrice(StrategyHandle handle, double price, long lo
     return STRATEGY_FAILURE;
 }
 
-StrategyState Strategy_GetState(StrategyHandle handle) {
-    if (!handle) return STATE_IDLE;
-    auto strategy = static_cast<trading::Strategy*>(handle);
-    return strategy->GetState();
-}
-
-Signal Strategy_GetSignal(StrategyHandle handle) {
+StrategySignal Strategy_GetSignal(StrategyHandle handle) {
     if (!handle) return SIGNAL_INVALID;
 
     auto strategy = static_cast<trading::Strategy*>(handle);
     return strategy->GetSignal();
 }
 
-void Strategy_ConfirmSignal(StrategyHandle handle, Signal signal, double fill_price) {
+void Strategy_RetrySignal(StrategyHandle handle, StrategySignal signal) {
     if (handle) {
         auto strategy = static_cast<trading::Strategy*>(handle);
-        strategy->ConfirmSignal(signal, fill_price);
+        strategy->RetrySignal(signal);
     }
 }
 
-void Strategy_CancelSignal(StrategyHandle handle, Signal signal) {
-    if (handle) {
-        auto strategy = static_cast<trading::Strategy*>(handle);
-        strategy->CancelSignal(signal);
-    }
-}
-
-void Strategy_ResetSignal(StrategyHandle handle) {
-    if (handle) {
-        auto strategy = static_cast<trading::Strategy*>(handle);
-        strategy->ResetSignal();
-    }
-}
-}
+}  // extern "C"
