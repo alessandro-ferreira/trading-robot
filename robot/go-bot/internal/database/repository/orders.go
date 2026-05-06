@@ -21,6 +21,8 @@ const (
 const (
 	OrderTypeLimit  = "limit"
 	OrderTypeMarket = "market"
+	OrderTypeStopLimit  = "stop_limit"
+	OrderTypeStopMarket = "stop_market"
 )
 
 // Order Side constants
@@ -147,8 +149,10 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 			o.updated_at
 		FROM trading.orders o
 		INNER JOIN trading.exchanges e ON o.exchange_id = e.id AND e.name = $1 AND e.active
-		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id AND ($2 = '' OR i.name = $2) AND i.active
-		WHERE o.active AND (array_length($3, 1) IS NULL OR $3::trading.order_status[] @> ARRAY[o.order_status])
+		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id 
+			AND ($2 = '' OR i.name = $2) AND i.active
+		WHERE o.active
+			AND (array_length($3::trading.order_status[], 1) IS NULL OR o.order_status = ANY($3::trading.order_status[]))
 		ORDER BY o.created_at DESC
 		LIMIT $4
 	`
@@ -229,7 +233,8 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 			created_at,
 			created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6::trading.order_type, $7, $8, $9, $10, $11, $12, $13::trading.order_status, $14, $15, NOW(), $16
+			$1, $2, $3, $4, $5, $6::trading.order_type, $7, $8, $9, $10, 
+			$11, $12, $13::trading.order_status, $14, $15, NOW(), $16
 		)
 		RETURNING id
 	`

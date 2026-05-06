@@ -14,6 +14,12 @@ const (
 	StrategyMomentumTrailing = "momentum_trailing"
 )
 
+const (
+	StrategyEnabled         = "enabled"
+	StrategyPendingDisabled = "pending_disabled"
+	StrategyDisabled        = "disabled"
+)
+
 // DefaultWarmupWindow is used when a strategy configuration (like dummy) doesn't specify a window.
 const DefaultWarmupWindow = 300
 
@@ -39,6 +45,7 @@ type StrategyPair struct {
 	ExchangeName     string
 	InstrumentSymbol string
 	Type             string
+	Status           string
 	WarmupWindow     int
 	Momentum         StrategyMomentum
 	CreatedAt        time.Time
@@ -47,9 +54,20 @@ type StrategyPair struct {
 
 // StrategiesRepo defines the interface for managing strategy configurations.
 type StrategiesRepo interface {
-	GetStrategyPairs(ctx context.Context, db DBExecutor, onlyEnabled bool) ([]StrategyPair, error)
-	UpsertEnabledStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType, label string, momentum StrategyMomentum) error
-	DisableStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string) error
+	GetStrategyPairs(
+		ctx context.Context, db DBExecutor, statuses []string,
+	) ([]StrategyPair, error)
+	UpsertEnabledStrategy(
+		ctx context.Context, db DBExecutor,
+		exchangeName, symbol, strategyType, label string,
+		momentum StrategyMomentum,
+	) error
+	RequestStrategyDisable(
+		ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string,
+	) error
+	ApplyStrategyDisable(
+		ctx context.Context, db DBExecutor, exchangeName, symbol string,
+	) error
 }
 
 type pgStrategiesRepo struct{}
@@ -59,16 +77,21 @@ func NewStrategiesRepo() StrategiesRepo {
 	return &pgStrategiesRepo{}
 }
 
-// GetStrategyPairs retrieves strategy pairs with optional filtering by enabled status.
-func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, onlyEnabled bool) ([]StrategyPair, error) {
+// GetStrategyPairs retrieves strategy pairs with optional filtering by status.
+func (r *pgStrategiesRepo) GetStrategyPairs(
+	ctx context.Context, db DBExecutor, statuses []string,
+) ([]StrategyPair, error) {
 	query := `
 		SELECT
 			e.name AS exchange_name,
 			i.name AS instrument_symbol,
 			sp.strategy_type,
+			sp.status,
 			sm.window_seconds,
-			ARRAY(SELECT (m).lookback_seconds FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds) AS lookbacks,
-			ARRAY(SELECT (m).threshold FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds) AS thresholds,
+			ARRAY(SELECT (m).lookback_seconds FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds) 
+				AS lookbacks,
+			ARRAY(SELECT (m).threshold FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds) 
+				AS thresholds,
 			sm.require_all,
 			sm.stop_loss_pct,
 			sm.profit_target_pct,
@@ -80,10 +103,11 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 		INNER JOIN trading.exchanges e ON e.id = sp.exchange_id AND e.active
 		INNER JOIN trading.instruments i ON i.id = sp.instrument_id AND i.exchange_id = sp.exchange_id AND i.active
 		LEFT JOIN trading.strategy_momentum sm ON sp.id = sm.strategy_pair_id AND sm.is_enabled AND sm.active
-		WHERE (sp.is_enabled OR NOT $1) AND sp.active
+		WHERE sp.active
+			AND (array_length($1::trading.strategy_status[], 1) IS NULL OR sp.status = ANY($1::trading.strategy_status[]))
 	`
 
-	rows, err := db.Query(ctx, query, onlyEnabled)
+	rows, err := db.Query(ctx, query, statuses)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query strategy pairs: %w", err)
 	}
@@ -102,6 +126,7 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 			&p.ExchangeName,
 			&p.InstrumentSymbol,
 			&p.Type,
+			&p.Status,
 			&windowSeconds,
 			&lookbacks,
 			&thresholds,
@@ -148,12 +173,17 @@ func (r *pgStrategiesRepo) GetStrategyPairs(ctx context.Context, db DBExecutor, 
 }
 
 // UpsertEnabledStrategy dynamically changes or creates the enabled strategy and configuration for a pair.
-func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType, label string, momentum StrategyMomentum) (err error) {
+func (r *pgStrategiesRepo) UpsertEnabledStrategy(
+	ctx context.Context, db DBExecutor,
+	exchangeName, symbol, strategyType, label string,
+	momentum StrategyMomentum,
+) (err error) {
 	// Validate strategy-specific requirements to prevent saving NULLs for required fields.
 	if strategyType == StrategyMomentumProfit && !momentum.ProfitTargetPct.Valid {
 		return fmt.Errorf("profit_target_pct is required for %s", strategyType)
 	}
-	if strategyType == StrategyMomentumTrailing && (!momentum.ActivationPct.Valid || !momentum.TrailingStopPct.Valid) {
+	if strategyType == StrategyMomentumTrailing &&
+		(!momentum.ActivationPct.Valid || !momentum.TrailingStopPct.Valid) {
 		return fmt.Errorf("activation_pct and trailing_stop_pct are required for %s", strategyType)
 	}
 
@@ -187,22 +217,25 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 	// Disable the currently enabled strategy for this specific pair to prevent unique index collisions.
 	disablePair := `
 		UPDATE trading.strategy_pairs
-		SET is_enabled = FALSE, updated_at = NOW(), updated_by = $3
-		WHERE exchange_id = $1 AND instrument_id = $2 AND is_enabled AND active
+		SET status = 'disabled', updated_at = NOW(), updated_by = $3
+		WHERE exchange_id = $1 AND instrument_id = $2 
+			AND status IN ('enabled', 'pending_disabled') AND active
 	`
 	if _, err = tx.Exec(ctx, disablePair, exchangeID, instrumentID, DefaultUser); err != nil {
 		return fmt.Errorf("failed to disable current strategy pair: %w", err)
 	}
 
-	// Try to update the target strategy pair to enabled.
+	// Try to update the target strategy pair to 'enabled'.
 	updatePair := `
 		UPDATE trading.strategy_pairs
-		SET is_enabled = TRUE, updated_at = NOW(), updated_by = $4
+		SET status = 'enabled', updated_at = NOW(), updated_by = $4
 		WHERE exchange_id = $1 AND instrument_id = $2 AND strategy_type = $3 AND active
 		RETURNING id
 	`
 	var pairID int64
-	err = tx.QueryRow(ctx, updatePair, exchangeID, instrumentID, strategyType, DefaultUser).Scan(&pairID)
+	err = tx.QueryRow(
+		ctx, updatePair, exchangeID, instrumentID, strategyType, DefaultUser,
+	).Scan(&pairID)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to update strategy pair: %w", err)
@@ -211,11 +244,14 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 	if errors.Is(err, sql.ErrNoRows) {
 		// Insert the strategy pair if it does not exist.
 		insertPair := `
-			INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, is_enabled, active, created_by)
-			VALUES ($1, $2, $3, TRUE, TRUE, $4)
+			INSERT INTO trading.strategy_pairs 
+				(exchange_id, instrument_id, strategy_type, status, active, created_by)
+			VALUES ($1, $2, $3, 'enabled', TRUE, $4)
 			RETURNING id
 		`
-		if err = tx.QueryRow(ctx, insertPair, exchangeID, instrumentID, strategyType, DefaultUser).Scan(&pairID); err != nil {
+		if err = tx.QueryRow(
+			ctx, insertPair, exchangeID, instrumentID, strategyType, DefaultUser,
+		).Scan(&pairID); err != nil {
 			return fmt.Errorf("failed to insert strategy pair: %w", err)
 		}
 	}
@@ -260,7 +296,8 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 		SET
 			is_enabled = TRUE,
 			window_seconds = $4,
-			momentum_windows = ARRAY(SELECT ROW(l, t)::trading.momentum_window FROM unnest($5::int[], $6::numeric[]) AS x(l, t)),
+			momentum_windows = 
+				ARRAY(SELECT ROW(l, t)::trading.momentum_window FROM unnest($5::int[], $6::numeric[]) AS x(l, t)),
 			require_all = $7,
 			stop_loss_pct = $8,
 			profit_target_pct = $9,
@@ -319,8 +356,10 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, db DBExecu
 	return err
 }
 
-// DisableStrategy sets is_enabled to false for a specific strategy pair.
-func (r *pgStrategiesRepo) DisableStrategy(ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string) error {
+// RequestStrategyDisable sets status to 'pending_disable' scheduling a disable for a pair.
+func (r *pgStrategiesRepo) RequestStrategyDisable(
+	ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string,
+) error {
 	// Select exchange_id and instrument_id
 	selectQuery := `
 		SELECT i.exchange_id, i.id
@@ -339,11 +378,45 @@ func (r *pgStrategiesRepo) DisableStrategy(ctx context.Context, db DBExecutor, e
 
 	updateQuery := `
 		UPDATE trading.strategy_pairs
-		SET is_enabled = FALSE, updated_at = NOW(), updated_by = $4
-		WHERE exchange_id = $1 AND instrument_id = $2 AND strategy_type = $3 AND active
+		SET status = 'pending_disabled', updated_at = NOW(), updated_by = $4
+		WHERE exchange_id = $1 AND instrument_id = $2 AND strategy_type = $3 
+			AND status = 'enabled' AND active 
 	`
-	if _, err = db.Exec(ctx, updateQuery, exchangeID, instrumentID, strategyType, DefaultUser); err != nil {
+	if _, err = db.Exec(
+		ctx, updateQuery, exchangeID, instrumentID, strategyType, DefaultUser,
+	); err != nil {
 		return fmt.Errorf("failed to disable strategy: %w", err)
+	}
+
+	return nil
+}
+
+// ApplyStrategyDisable sets status to 'disabled' for a pair currently in 'pending_disabled'.
+func (r *pgStrategiesRepo) ApplyStrategyDisable(
+	ctx context.Context, db DBExecutor, exchangeName, symbol string,
+) error {
+	selectQuery := `
+		SELECT i.exchange_id, i.id
+		FROM trading.instruments i
+		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
+		WHERE i.name = $2 AND i.active
+	`
+	var exchangeID, instrumentID int64
+	if err := db.QueryRow(
+		ctx, selectQuery, exchangeName, symbol,
+	).Scan(&exchangeID, &instrumentID); err != nil {
+		return fmt.Errorf("failed to resolve exchange and instrument IDs: %w", err)
+	}
+
+	updateQuery := `
+		UPDATE trading.strategy_pairs
+		SET status = 'disabled', updated_at = NOW(), updated_by = $3
+		WHERE exchange_id = $1 AND instrument_id = $2 AND status = 'pending_disabled' AND active
+	`
+	if _, err := db.Exec(
+		ctx, updateQuery, exchangeID, instrumentID, DefaultUser,
+	); err != nil {
+		return fmt.Errorf("failed to finalize strategy disablement: %w", err)
 	}
 
 	return nil

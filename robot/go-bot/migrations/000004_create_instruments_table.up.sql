@@ -15,9 +15,12 @@ CREATE TABLE IF NOT EXISTS trading.instruments (
     active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-ALTER TABLE trading.instruments ADD CONSTRAINT fk_instruments_exchange FOREIGN KEY (exchange_id) REFERENCES trading.exchanges(id) ON UPDATE CASCADE ON DELETE RESTRICT;
-ALTER TABLE trading.instruments ADD CONSTRAINT fk_instruments_base_asset FOREIGN KEY (base_asset_id) REFERENCES trading.assets(id) ON UPDATE CASCADE ON DELETE RESTRICT;
-ALTER TABLE trading.instruments ADD CONSTRAINT fk_instruments_quote_asset FOREIGN KEY (quote_asset_id) REFERENCES trading.assets(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.instruments ADD CONSTRAINT fk_instruments_exchange FOREIGN KEY (exchange_id)
+    REFERENCES trading.exchanges(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.instruments ADD CONSTRAINT fk_instruments_base_asset FOREIGN KEY (base_asset_id)
+    REFERENCES trading.assets(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.instruments ADD CONSTRAINT fk_instruments_quote_asset FOREIGN KEY (quote_asset_id)
+    REFERENCES trading.assets(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 -- Ensure symbols are unique per exchange among active records
 CREATE UNIQUE INDEX idx_instruments_exchange_name_active ON trading.instruments(exchange_id, name) WHERE active;

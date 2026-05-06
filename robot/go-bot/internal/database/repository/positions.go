@@ -12,8 +12,9 @@ import (
 
 // Position Side constants
 const (
-	PositionSideLong  = "long"
-	PositionSideShort = "short"
+	PositionSideLong = "long"
+	// Go-robot does not support short operations currently
+	// PositionSideShort = "short"
 )
 
 // PositionData represents the position details persisted in the database.
@@ -21,11 +22,13 @@ type PositionData struct {
 	ID               int64
 	ExchangeName     string
 	InstrumentSymbol string
+	OrderID          sql.NullInt64
 	Side             string
 	Quantity         float64
 	EntryPrice       float64
 	HighestPrice     float64
-	StrategyState    string
+	StopLossBlock    bool
+	UnknownOrigin    bool
 	Active           bool
 	CreatedAt        time.Time
 	UpdatedAt        sql.NullTime
@@ -33,8 +36,12 @@ type PositionData struct {
 
 // PositionsRepo defines the interface for interacting with positions.
 type PositionsRepo interface {
-	GetPosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) (PositionData, error)
-	GetOpenPositions(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) ([]PositionData, error)
+	GetPosition(
+		ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
+	) (PositionData, error)
+	GetActivePositions(
+		ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
+	) ([]PositionData, error)
 	UpsertPosition(ctx context.Context, db DBExecutor, pos PositionData) error
 	DeletePosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) error
 }
@@ -48,23 +55,28 @@ func NewPositionsRepo() PositionsRepo {
 }
 
 // GetPosition retrieves a specific position.
-func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) (PositionData, error) {
+func (r *pgPositionsRepo) GetPosition(
+	ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
+) (PositionData, error) {
 	query := `
 		SELECT
 			p.id,
 			e.name AS exchange_name,
 			i.name AS instrument_symbol,
+			p.order_id,
 			p.side,
 			p.quantity,
 			p.entry_price,
 			p.highest_price,
-			p.strategy_state,
+			p.stop_loss_block,
+			p.unknown_origin,
 			p.active,
 			p.created_at,
 			p.updated_at
 		FROM trading.positions p
 		INNER JOIN trading.exchanges e ON e.id = p.exchange_id AND e.name = $1 AND e.active
-		INNER JOIN trading.instruments i ON i.id = p.instrument_id AND i.exchange_id = p.exchange_id AND i.name = $2 AND i.active
+		INNER JOIN trading.instruments i ON i.id = p.instrument_id AND i.exchange_id = p.exchange_id
+			AND i.name = $2 AND i.active
 		WHERE p.active
 	`
 
@@ -73,11 +85,13 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 		&pos.ID,
 		&pos.ExchangeName,
 		&pos.InstrumentSymbol,
+		&pos.OrderID,
 		&pos.Side,
 		&pos.Quantity,
 		&pos.EntryPrice,
 		&pos.HighestPrice,
-		&pos.StrategyState,
+		&pos.StopLossBlock,
+		&pos.UnknownOrigin,
 		&pos.Active,
 		&pos.CreatedAt,
 		&pos.UpdatedAt,
@@ -90,17 +104,21 @@ func (r *pgPositionsRepo) GetPosition(ctx context.Context, db DBExecutor, exchan
 }
 
 // GetOpenPositions retrieves all active positions across all exchanges.
-func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) ([]PositionData, error) {
+func (r *pgPositionsRepo) GetActivePositions(
+	ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
+) ([]PositionData, error) {
 	query := `
 		SELECT
 			p.id,
 			e.name AS exchange_name,
 			i.name AS instrument_symbol,
+			p.order_id,
 			p.side,
 			p.quantity,
 			p.entry_price,
 			p.highest_price,
-			p.strategy_state,
+			p.stop_loss_block,
+			p.unknown_origin,
 			p.active,
 			p.created_at,
 			p.updated_at
@@ -120,9 +138,9 @@ func (r *pgPositionsRepo) GetOpenPositions(ctx context.Context, db DBExecutor, e
 	for rows.Next() {
 		var pos PositionData
 		if err := rows.Scan(
-			&pos.ID, &pos.ExchangeName, &pos.InstrumentSymbol, &pos.Side,
-			&pos.Quantity, &pos.EntryPrice, &pos.HighestPrice,
-			&pos.StrategyState, &pos.Active, &pos.CreatedAt, &pos.UpdatedAt,
+			&pos.ID, &pos.ExchangeName, &pos.InstrumentSymbol, &pos.OrderID, &pos.Side,
+			&pos.Quantity, &pos.EntryPrice, &pos.HighestPrice, &pos.StopLossBlock,
+			&pos.UnknownOrigin, &pos.Active, &pos.CreatedAt, &pos.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
 		}
@@ -153,12 +171,14 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 	updateQuery := `
 		UPDATE trading.positions
 		SET
-			quantity = $3,
-			entry_price = $4,
-			highest_price = $5,
-			strategy_state = $6::trading.strategy_state,
+			order_id = $3,
+			quantity = $4,
+			entry_price = $5,
+			highest_price = $6,
+			stop_loss_block = $7,
+			unknown_origin = $8,
 			updated_at = NOW(),
-			updated_by = $7
+			updated_by = $9
 		WHERE exchange_id = $1 AND instrument_id = $2 AND active
 		RETURNING id
 	`
@@ -167,10 +187,12 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 	err = db.QueryRow(ctx, updateQuery,
 		exchangeID,
 		instrumentID,
+		pos.OrderID,
 		pos.Quantity,
 		pos.EntryPrice,
 		pos.HighestPrice,
-		pos.StrategyState,
+		pos.StopLossBlock,
+		pos.UnknownOrigin,
 		DefaultUser,
 	).Scan(&id)
 
@@ -187,27 +209,31 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 		INSERT INTO trading.positions (
 			exchange_id,
 			instrument_id,
+			order_id,
 			side,
 			quantity,
 			entry_price,
 			highest_price,
-			strategy_state,
+			stop_loss_block,
+			unknown_origin,
 			active,
 			created_at,
 			created_by
 		) VALUES (
-			$1, $2, $3::trading.position_side, $4, $5, $6, $7::trading.strategy_state, TRUE, NOW(), $8
+			$1, $2, $3, $4::trading.position_side, $5, $6, $7, $8, $9, TRUE, NOW(), $10
 		)
 	`
 
 	_, err = db.Exec(ctx, insertQuery,
 		exchangeID,
 		instrumentID,
+		pos.OrderID,
 		pos.Side,
 		pos.Quantity,
 		pos.EntryPrice,
 		pos.HighestPrice,
-		pos.StrategyState,
+		pos.StopLossBlock,
+		pos.UnknownOrigin,
 		DefaultUser,
 	)
 
@@ -219,7 +245,9 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 }
 
 // DeletePosition marks a position as inactive (soft delete).
-func (r *pgPositionsRepo) DeletePosition(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string) error {
+func (r *pgPositionsRepo) DeletePosition(
+	ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
+) error {
 	// Select exchange_id and instrument_id
 	selectQuery := `
 		SELECT i.exchange_id, i.id

@@ -24,6 +24,9 @@ service ExchangeService {
   // CreateOrder places a new order on the exchange.
   rpc CreateOrder(CreateOrderRequest) returns (OrderResponse) {}
 
+  // CreateStopOrder places a stop-loss or stop-limit order on the exchange.
+  rpc CreateStopOrder(CreateStopOrderRequest) returns (OrderResponse) {}
+
   // CancelOrder cancels an existing order.
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse) {}
 
@@ -31,10 +34,10 @@ service ExchangeService {
   rpc GetOrder(GetOrderRequest) returns (OrderResponse) {}
 
   // GetOpenOrders fetches all open orders for a symbol.
-  rpc GetOpenOrders(GetOrdersRequest) returns (OrdersResponse) {}
+  rpc GetOpenOrders(GetOpenOrdersRequest) returns (OrdersResponse) {}
 
   // GetRecentTrades fetches recent execution history for a symbol.
-  rpc GetRecentTrades(GetOrdersRequest) returns (OrdersResponse) {}
+  rpc GetRecentTrades(GetRecentTradesRequest) returns (OrdersResponse) {}
 
   // ResetState resets the state of the exchange.
   // WARN: This method is intended for testing purposes only.
@@ -87,7 +90,17 @@ message CreateOrderRequest {
   string side = 3; // "buy" or "sell"
   string type = 4; // "limit" or "market"
   double amount = 5;
-  double price = 6;
+  optional double price = 6;
+}
+
+// CreateStopOrderRequest is the message sent to the CreateStopOrder RPC.
+message CreateStopOrderRequest {
+  string exchange = 1;
+  string symbol = 2;
+  string side = 3; // "buy" or "sell"
+  double amount = 4;
+  double stop_price = 5;
+  optional double limit_price = 6; // If provided, creates a STOP_LIMIT; otherwise STOP_MARKET
 }
 
 // OrderResponse is the message returned from order-related RPCs.
@@ -120,19 +133,26 @@ message CancelOrderResponse {
   string status = 2;
 }
 
-// GetOrderRequest is the message sent to the GetOrder and GetRecentTrades RPCs.
+// GetOrderRequest is the message sent to the GetOrder RPC.
 message GetOrderRequest {
   string exchange = 1;
   string id = 2;
   string symbol = 3;
 }
 
-// GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC and GetRecentTrades RPCs.
-message GetOrdersRequest {
+// GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC.
+message GetOpenOrdersRequest {
   string exchange = 1;
   optional string symbol = 2; // Optional: if empty, fetches all open orders for the exchange
-  optional int64 since = 3; // Optional: millisecond timestamp for date-based pagination
-  optional int32 limit = 4; // Optional: limit the number of results returned
+  optional int32 limit = 3;   // Optional: limit the number of results returned
+}
+
+// GetRecentTradesRequest is the message sent to the GetRecentTrades RPC.
+message GetRecentTradesRequest {
+  string exchange = 1;
+  optional string symbol = 2; // Optional: if empty, fetches all recent trades for the exchange
+  optional int64 since = 3;    // Optional: millisecond timestamp for date-based pagination
+  optional int32 limit = 4;    // Optional: limit the number of results returned
 }
 
 // OpenOrdersResponse is the message returned from the GetOpenOrders RPC.

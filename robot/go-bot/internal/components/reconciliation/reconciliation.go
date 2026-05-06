@@ -1,7 +1,8 @@
-package reconciliation
+package reconcil
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"trading/robot/go-bot/internal/components/execution"
+	"trading/robot/go-bot/internal/components/portfolio"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
 )
@@ -18,77 +20,101 @@ const (
 	limitTrades     = 100
 )
 
-// auditLookback defines how far back (24h) the Audit Pipe looks for trade history.
-const auditLookback = 24 * time.Hour
-
 // promotionMaxAge defines the maximum age of an execution record to be considered
-// for automatic promotion of an 'unmanaged' position to 'active'.
-const promotionMaxAge = 15 * time.Minute
+// for automatic promotion of an 'unknown origin' position to 'active'.
+const promotionMaxAge = 1 * time.Hour
 
 // maxFeeMargin defines the maximum expected discrepancy (2%) between a gross trade
 // quantity and the net wallet balance to account for exchange trading fees.
-const maxFeeMargin = 0.02
+const maxFeeMargin = 0.05
 
 const epsilon = 1e-9
 
-// isZero checks if a value is effectively zero within an epsilon margin.
-func isZero(val float64) bool {
+// isZeroEps checks if a value is effectively zero within an epsilon margin.
+func isZeroEps(val float64) bool {
 	return math.Abs(val) <= epsilon
 }
 
-// isEqual checks if two values are effectively equal within an epsilon margin.
-func isEqual(a, b float64) bool {
+// isEqualEps checks if two values are effectively equal within an epsilon margin.
+func isEqualEps(a, b float64) bool {
 	return math.Abs(a-b) <= epsilon
 }
 
+type Reconciler interface {
+	SyncOrders(ctx context.Context, exchange, instrumentSymbol string) error
+	SyncPositions(ctx context.Context, exchange, instrumentSymbol string) error
+	SyncTradeHistory(
+		ctx context.Context, exchange, instrumentSymbol string, lookback time.Duration,
+	) error
+}
+
 // Reconciler checks the alignment between the Exchange truth and the Database state.
-type Reconciler struct {
+type reconciler struct {
 	logger *slog.Logger
 	db     *database.DB
 	repo   *repository.Container
 	exec   execution.Service
+	pf     portfolio.Portfolio
 }
 
 // NewReconciler creates a new instance of the Reconciler.
-func NewReconciler(logger *slog.Logger, db *database.DB, repo *repository.Container, exec execution.Service) *Reconciler {
-	return &Reconciler{
+func NewReconciler(
+	logger *slog.Logger,
+	db *database.DB,
+	repo *repository.Container,
+	exec execution.Service,
+	pf portfolio.Portfolio,
+) Reconciler {
+	return &reconciler{
 		logger: logger,
 		db:     db,
 		repo:   repo,
 		exec:   exec,
+		pf:     pf,
 	}
 }
 
 // SyncOrders synchronizes open orders from the exchange with the local database.
 // It handles non-persisted orders, status drift, partial fills, and external cancellations.
-func (r *Reconciler) SyncOrders(ctx context.Context, exchange, symbol string) error {
-	// Fetch truth from Exchange. Execution service handles DB synchronization.
-	resp, err := r.exec.GetOpenOrders(ctx, exchange, symbol, limitOpenOrders)
-	if err != nil {
-		return fmt.Errorf("order sync: gateway call failed: %w", err)
-	}
-
-	// Map for quick lookup of exchange truth
-	exchangeOrders := make(map[string]bool)
-	for _, o := range resp.Orders {
-		exchangeOrders[o.Id] = true
+func (r *reconciler) SyncOrders(
+	ctx context.Context, exchange, instrumentSymbol string,
+) error {
+	log := r.logger.With("exchange", exchange)
+	if instrumentSymbol != "" {
+		log = log.With("symbol", instrumentSymbol)
 	}
 
 	// --- Resolve Vanished Orders ---
 	// Fetch orders our DB thinks are new or open.
 	statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
-	dbOrders, err := r.repo.Orders.GetOrders(ctx, r.db, exchange, symbol, statuses, 100)
+	dbOrders, err := r.repo.Orders.GetOrders(
+		ctx, r.db, exchange, instrumentSymbol, statuses, limitOpenOrders,
+	)
 	if err != nil {
 		return fmt.Errorf("order sync: db fetch failed: %w", err)
 	}
 
 	for _, dbo := range dbOrders {
-		if !exchangeOrders[dbo.ExchangeOrderID] {
-			// If an order is active in the database but missing from the exchange open list,
-			// fetch the individual status to determine if it was filled or canceled.
-			r.logger.Info("Investigating fate of vanished order", "id", dbo.ExchangeOrderID, "symbol", dbo.InstrumentSymbol, "status", dbo.Status)
-			if _, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID); err != nil {
-				r.logger.Error("Failed to resolve fate for vanished order", "id", dbo.ExchangeOrderID, "error", err)
+		// Fetch the individual status from the exchange to determine if it was already filled or canceled.
+		// Execution service GetOrder handles DB synchronization of the order record.
+		res, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID)
+		if err != nil {
+			log.Error(
+				"Order sync: failed to fetch individual order status",
+				"id", dbo.ExchangeOrderID, "error", err,
+			)
+			continue
+		}
+
+		if res.Status == repository.OrderStatusClosed {
+			fillPrice := res.AveragePrice.Float64
+			if fillPrice <= 0 {
+				fillPrice = res.Price.Float64
+			}
+			if err := r.pf.CreatePosition(
+				ctx, exchange, res.InstrumentSymbol, res.Filled, fillPrice, dbo.ID,
+			); err != nil {
+				log.Error("Failed to create position for filled order", "error", err)
 			}
 		}
 	}
@@ -98,7 +124,11 @@ func (r *Reconciler) SyncOrders(ctx context.Context, exchange, symbol string) er
 
 // SyncPositions aligns database positions with exchange balances.
 // It handles external liquidations, manual trades, and quantity drift due to fees or dust.
-func (r *Reconciler) SyncPositions(ctx context.Context, exchange, symbol string) error {
+func (r *reconciler) SyncPositions(
+	ctx context.Context, exchange, instrumentSymbol string,
+) error {
+	log := r.logger.With("exchange", exchange)
+
 	// Fetch liquid truth
 	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db)
 	if err != nil {
@@ -112,8 +142,8 @@ func (r *Reconciler) SyncPositions(ctx context.Context, exchange, symbol string)
 		}
 	}
 
-	// Fetch all open positions for the exchange to detect base asset collisions.
-	dbPositions, err := r.repo.Positions.GetOpenPositions(ctx, r.db, exchange, "")
+	// Fetch all actives positions for the exchange to detect base asset collisions.
+	dbPositions, err := r.repo.Positions.GetActivePositions(ctx, r.db, exchange, "")
 	if err != nil {
 		return fmt.Errorf("position sync: db fetch failed: %w", err)
 	}
@@ -134,71 +164,92 @@ func (r *Reconciler) SyncPositions(ctx context.Context, exchange, symbol string)
 			positionQty += p.Quantity
 		}
 
-		if isZero(walletQty) {
+		if isZeroEps(walletQty) {
 			// If the wallet balance is zero, all associated trading positions must be closed.
 			for _, p := range positions {
-				r.logger.Warn("Reconciliation: Closing position (External liquidation detected)", "symbol", p.InstrumentSymbol)
-				if err := r.repo.Positions.DeletePosition(ctx, r.db, exchange, p.InstrumentSymbol); err != nil {
-					r.logger.Error("Failed to close position in DB", "symbol", p.InstrumentSymbol, "error", err)
+				log.Warn(
+					"Reconciliation: Closing position (External liquidation detected)",
+					"symbol", p.InstrumentSymbol,
+				)
+				if err := r.pf.DeletePosition(ctx, exchange, p.InstrumentSymbol); err != nil {
+					log.Error(
+						"Failed to close position in DB",
+						"symbol", p.InstrumentSymbol, "error", err,
+					)
 				}
 			}
-		} else if !isEqual(positionQty, walletQty) {
+
+		} else if !isEqualEps(positionQty, walletQty) {
 			// If the total quantity drifted, we can only auto-correct if there is exactly one position for this base asset.
 			// We snap to the exchange truth. This naturally reconciles deductions for trading fees or minor 'dust' remains.
-			if len(positions) == 1 {
-				posData := positions[0]
-				r.logger.Info("Reconciliation: Adjusting position quantity", "symbol", posData.InstrumentSymbol, "old", posData.Quantity, "new", walletQty)
-				posData.Quantity = walletQty
-				_ = r.repo.Positions.UpsertPosition(ctx, r.db, posData)
-			} else {
-				r.logger.Error("Reconciliation: Ambiguous quantity drift detected for multi-pair asset", "asset", asset, "wallet_qty", walletQty, "position_qty", positionQty)
+			if len(positions) != 1 {
+				log.Error(
+					"Reconciliation: Ambiguous quantity drift detected for multi-pair asset",
+					"asset", asset, "wallet_qty", walletQty, "position_qty", positionQty,
+				)
+				continue
+			}
+
+			posData := positions[0]
+			log.Info(
+				"Reconciliation: Adjusting position quantity",
+				"symbol", posData.InstrumentSymbol, "old", posData.Quantity, "new", walletQty,
+			)
+			err = r.pf.UpdatePosition(
+				ctx, exchange, posData.InstrumentSymbol, repository.PositionData{Quantity: walletQty},
+			)
+			if err != nil {
+				log.Error("Failed to update position for adjusting quantity", "error", err)
 			}
 		}
 	}
 
-	// --- Handle adoptions of ghost balances or manual trades. ----
-	// Validate exchange wallet balances against DB existing positions to detect 'ghost' balances or manual trades.
-	var targets []string
-	if symbol != "" {
-		targets = append(targets, symbol)
+	// --- Handle adoptions of ghost balances or manual and untracked trades. ----
+	// Validate exchange wallet balances against DB existing positions.
+	var instruments []string
+	if instrumentSymbol != "" {
+		instruments = append(instruments, instrumentSymbol)
 	} else {
-		pairs, err := r.repo.Strategies.GetStrategyPairs(ctx, r.db, false)
+		statuses := []string{
+			repository.StrategyEnabled,
+			repository.StrategyPendingDisabled,
+		}
+		pairs, err := r.repo.Strategies.GetStrategyPairs(ctx, r.db, statuses)
 		if err == nil {
 			for _, p := range pairs {
 				if p.ExchangeName == exchange {
-					targets = append(targets, p.InstrumentSymbol)
+					instruments = append(instruments, p.InstrumentSymbol)
 				}
 			}
 		}
 	}
 
-	// If no specific symbol is provided, we iterate through all enabled pairs for the exchange.
-	for _, target := range targets {
-		asset, _ := splitSymbol(target)
-		walletQty := walletBalances[asset]
-
-		positions, exists := positionsByAsset[asset]
-		var positionQty float64
-		if exists {
-			for _, p := range positions {
-				positionQty += p.Quantity
-			}
+	for _, iSymbol := range instruments {
+		// If there are open orders in DB, no need to adopt, the position will be created when the order is filled.
+		statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
+		openOrders, err := r.repo.Orders.GetOrders(ctx, r.db, exchange, instrumentSymbol, statuses, 1)
+		if err != nil {
+			log.Error("Failed querying open orders", "symbol", iSymbol, "error", err)
+			continue
+		}
+		if len(openOrders) > 0 {
+			continue
 		}
 
-		if (!exists || isZero(positionQty)) && !isZero(walletQty) {
-			// If we have a wallet balance but no corresponding position in the DB, we adopt it as a new 'unmanaged' position.
-			// This prevents trading positions using inaccurate prices until SyncTradeHistory finds the true execution record.
-			r.logger.Info("Reconciliation: Adopting ghost balance as unmanaged position", "symbol", target, "qty", walletQty)
-			_ = r.repo.Positions.UpsertPosition(ctx, r.db, repository.PositionData{
-				ExchangeName:     exchange,
-				InstrumentSymbol: target,
-				Side:             repository.PositionSideLong,
-				Quantity:         walletQty,
-				EntryPrice:       0.0,
-				HighestPrice:     0.0,
-				StrategyState:    "unmanaged",
-				Active:           true,
-			})
+		asset, _ := splitSymbol(iSymbol)
+		walletQty := walletBalances[asset]
+		_, existsPosition := positionsByAsset[asset]
+
+		// If we have a wallet balance but no open order or position in the DB, we adopt it as a unlinked position.
+		if !isZeroEps(walletQty) && !existsPosition {
+			log.Info(
+				"Reconciliation: Adopting ghost balance as unlinked position",
+				"symbol", iSymbol, "qty", walletQty,
+			)
+			err = r.pf.CreatePosition(ctx, exchange, iSymbol, walletQty, 0, 0)
+			if err != nil {
+				log.Error("Failed to create position for ghost balance", "error", err)
+			}
 		}
 	}
 
@@ -207,77 +258,122 @@ func (r *Reconciler) SyncPositions(ctx context.Context, exchange, symbol string)
 
 // SyncTradeHistory fetches recent execution history to ensure all trades (including external ones)
 // are recorded locally for reporting and position promotion.
-func (r *Reconciler) SyncTradeHistory(ctx context.Context, exchange, symbol string) error {
-	// Fetch recent trades from the exchange. Execution service handles DB synchronization.
-	since := time.Now().Add(-auditLookback).UnixMilli()
-	resp, err := r.exec.GetRecentTrades(ctx, exchange, symbol, since, limitTrades)
-	if err != nil {
-		return fmt.Errorf("trade history sync: %w", err)
-	}
-	orders := resp.Orders
+func (r *reconciler) SyncTradeHistory(
+	ctx context.Context,
+	exchange, instrumentSymbol string,
+	lookback time.Duration,
+) error {
+	log := r.logger.With("exchange", exchange)
 
-	// If no orders are returned and no symbol is provided, we perform a per-symbol audit for all active pairs.
-	if len(orders) == 0 && symbol == "" {
-		pairs, err := r.repo.Strategies.GetStrategyPairs(ctx, r.db, false)
+	// Fetch recent trades from the exchange. Execution service handles DB synchronization.
+	since := time.Now().Add(-lookback).UnixMilli()
+	orders, err := r.exec.GetRecentTrades(ctx, exchange, instrumentSymbol, since, limitTrades)
+	if err != nil {
+		return fmt.Errorf("trade history sync: gateway call failed: %w", err)
+	}
+
+	// If no orders are returned and no symbol is provided, we perform a per-symbol audit for all enabled pairs.
+	if len(orders) == 0 && instrumentSymbol == "" {
+		statuses := []string{
+			repository.StrategyEnabled,
+			repository.StrategyPendingDisabled,
+		}
+		pairs, err := r.repo.Strategies.GetStrategyPairs(ctx, r.db, statuses)
 		if err != nil {
-			return fmt.Errorf("audit: failed to load pairs: %w", err)
+			return fmt.Errorf("trade history sync: failed to load pairs: %w", err)
 		}
 
 		for _, p := range pairs {
 			if p.ExchangeName == exchange {
-				resp, err := r.exec.GetRecentTrades(ctx, exchange, p.InstrumentSymbol, since, limitTrades)
+				ordersPerSymbol, err := r.exec.GetRecentTrades(
+					ctx, exchange, p.InstrumentSymbol, since, limitTrades,
+				)
 				if err != nil {
-					r.logger.Error("Failed to fetch trade history for symbol during audit", "symbol", p.InstrumentSymbol, "error", err)
+					log.Error(
+						"Failed to fetch trade history for symbol during audit",
+						"symbol", p.InstrumentSymbol, "error", err,
+					)
 					continue
 				}
-				orders = append(orders, resp.Orders...)
+				orders = append(orders, ordersPerSymbol...)
 			}
 		}
 	}
 
 	// --- Promotion Logic ---
 	for _, o := range orders {
-		pos, err := r.repo.Positions.GetPosition(ctx, r.db, exchange, o.Symbol)
+		pos, err := r.pf.GetPosition(ctx, exchange, o.InstrumentSymbol)
 		if err != nil {
-			return fmt.Errorf("trade history sync: failed to lookup position for %s: %w", o.Symbol, err)
+			log.Error(
+				"Trade history sync: failed to lookup position",
+				"symbol", o.InstrumentSymbol, "error", err,
+			)
+			continue
 		}
 
-		// If a trade exists for a symbol currently in 'unmanaged' state, we promote it to 'active'.
-		if pos.StrategyState == "unmanaged" {
-			diff := o.Filled - pos.Quantity
-			allowedMargin := o.Filled * maxFeeMargin
-			// Validate that the trade quantity matches the unmanaged position quantity set by the Position Sync.
-			// This ensures we don't promote a position that is unrelated to the discovered trade.
-			// We allow for a small margin to account for exchange fees.
-			if diff < 0 || diff > allowedMargin {
-				r.logger.Debug("Trade found but quantity mismatch beyond fee margin, skipping promotion",
-					"symbol", o.Symbol, "trade_qty", o.Filled, "pos_qty", pos.Quantity)
+		// If a trade exists for a position from unknown origin, we linked and promote it to active.
+		if pos.UnknownOrigin || pos.EntryPrice == 0 {
+			// Check if the execution is not too old to be promoted automatically.
+			if !o.ExchangeTimestamp.Valid || time.Since(o.ExchangeTimestamp.Time) > promotionMaxAge {
+				log.Warn(
+					"Execution found but too old for automatic promotion",
+					"symbol", o.InstrumentSymbol, "id", o.ExchangeOrderID,
+				)
 				continue
 			}
 
-			// Do not promote if the execution is too old, as the entry and highest prices
-			// would likely be stale compared to current market reality.
-			if o.Timestamp == 0 || time.Since(time.UnixMilli(o.Timestamp)) > promotionMaxAge {
-				r.logger.Warn("Execution found but too old for automatic promotion",
-					"symbol", o.Symbol, "id", o.Id)
+			diff := o.Filled - pos.Quantity
+			allowedMargin := o.Filled * maxFeeMargin
+			// Validate that the trade quantity matches the unmanaged position quantity set by the Position Sync.
+			// This ensures we don't promote a position that is completely unrelated to the discovered trade.
+			// We allow a reasonable margin to cover exchange rates and other possible discrepancies.
+			if diff < 0 || diff > allowedMargin {
+				log.Debug(
+					"Trade found but quantity mismatch beyond fee margin, skipping promotion",
+					"symbol", o.InstrumentSymbol, "trade_qty", o.Filled, "pos_qty", pos.Quantity,
+				)
 				continue
 			}
 
 			// Use Average Price if available (common for filled orders), otherwise Limit Price.
-			executionPrice := o.Average
+			executionPrice := o.AveragePrice.Float64
 			if executionPrice <= 0 {
-				executionPrice = o.Price
+				executionPrice = o.Price.Float64
 			}
 
 			if executionPrice > 0 {
-				r.logger.Info("Reconciliation: Promoting unmanaged position to active from trade history",
-					"symbol", pos.InstrumentSymbol, "price", executionPrice)
+				log.Info(
+					"Reconciliation: Promoting unlinked position to active from trade history",
+					"symbol", pos.InstrumentSymbol, "price", executionPrice, "order_id", o.ExchangeOrderID,
+				)
 
-				pos.EntryPrice = executionPrice
-				pos.HighestPrice = executionPrice
-				pos.StrategyState = "active"
-				if err := r.repo.Positions.UpsertPosition(ctx, r.db, pos); err != nil {
-					r.logger.Error("Failed to promote position to active", "symbol", pos.InstrumentSymbol, "error", err)
+				// Try to find the local order ID for a high-fidelity link
+				dbOrder, err := r.repo.Orders.GetOrder(ctx, r.db, o.ExchangeOrderID, exchange)
+				if err == nil {
+					err = r.pf.UpdatePosition(
+						ctx,
+						exchange,
+						pos.InstrumentSymbol,
+						repository.PositionData{
+							OrderID:       sql.NullInt64{Int64: dbOrder.ID, Valid: true},
+							EntryPrice:    executionPrice,
+							HighestPrice:  executionPrice,
+							Quantity:      pos.Quantity,
+							UnknownOrigin: false,
+						},
+					)
+				} else {
+					// For manual trades where no local order exists, use UpdatePosition for concurrency-safe state transition
+					err = r.pf.UpdatePosition(ctx, exchange, pos.InstrumentSymbol, repository.PositionData{
+						EntryPrice:    executionPrice,
+						HighestPrice:  executionPrice,
+						Quantity:      pos.Quantity,
+						UnknownOrigin: true,
+					})
+				}
+
+				if err != nil {
+					log.Error("Failed to unlinked position from trade history", "error", err)
 				}
 			}
 		}

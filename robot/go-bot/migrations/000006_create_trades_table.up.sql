@@ -21,10 +21,14 @@ CREATE TABLE IF NOT EXISTS trading.trades (
 );
 
 -- Foreign keys linking trades to orders, exchanges, and instruments
-ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_order FOREIGN KEY (order_id) REFERENCES trading.orders(id) ON UPDATE CASCADE ON DELETE RESTRICT;
-ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_exchange FOREIGN KEY (exchange_id) REFERENCES trading.exchanges(id) ON UPDATE CASCADE ON DELETE RESTRICT;
-ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_instrument FOREIGN KEY (instrument_id) REFERENCES trading.instruments(id) ON UPDATE CASCADE ON DELETE RESTRICT;
-ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_fee_asset FOREIGN KEY (fee_asset_id) REFERENCES trading.assets(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_order FOREIGN KEY (order_id)
+    REFERENCES trading.orders(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_exchange FOREIGN KEY (exchange_id)
+    REFERENCES trading.exchanges(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_instrument FOREIGN KEY (instrument_id)
+    REFERENCES trading.instruments(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE trading.trades ADD CONSTRAINT fk_trades_fee_asset FOREIGN KEY (fee_asset_id)
+    REFERENCES trading.assets(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 -- Indexes for querying trades by order, time, or external ID
 CREATE INDEX idx_trades_order_id ON trading.trades(order_id);

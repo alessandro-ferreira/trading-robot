@@ -4,131 +4,107 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
-	"trading/robot/go-bot/internal/strategy"
 )
 
-// CashBalance represents the available liquidity for a specific asset on an exchange.
-type CashBalance struct {
-	Exchange string
-	Asset    string
-	Free     float64
-	Used     float64
-	Total    float64
+type Portfolio interface {
+	// --- Portfolio Management ---
+	LoadState(ctx context.Context) error
+	RefreshState(ctx context.Context, exchange, instrumentSymbol string) error
+	GetActivePositionsCount() int
+	GetTotalValue(ctx context.Context) (map[string]float64, error)
+
+	// --- Position Operations (CRUD) ---
+	GetPosition(ctx context.Context, exchange, instrumentSymbol string) (repository.PositionData, error)
+	CreatePosition(
+		ctx context.Context, exchange, instrumentSymbol string, quantity, price float64, orderID int64,
+	) error
+	UpdatePosition(
+		ctx context.Context, exchange, instrumentSymbol string, updates repository.PositionData,
+	) error
+	DeletePosition(ctx context.Context, exchange, instrumentSymbol string) error
 }
 
-// Position represents the current holding of a specific asset.
-type Position struct {
-	Exchange           string
-	Symbol             string
-	Quantity           float64
-	EntryPrice         float64
-	CurrentPrice       float64
-	HighestPrice       float64 // High-water mark for trailing stops
-	StrategyState      strategy.StrategyState
-	UnrealizedPnL      float64
-	AssociatedOrderIDs []string // Tracks open orders (e.g., Stop Loss) related to this position
-}
-
-// Portfolio manages the state of assets and positions.
-type Portfolio struct {
+// portfolio manages the porfollio of actives holdings of assets.
+type portfolio struct {
 	mu     sync.RWMutex
 	logger *slog.Logger
 	db     *database.DB
 	repo   *repository.Container
 
-	// cashBalances tracks liquid assets per exchange and per currency using key "exchange|asset".
-	cashBalances map[string]*CashBalance
-
-	// positions maps "exchange|symbol" to the current Position.
-	positions map[string]*Position
+	// positions maps "exchange|symbol" to the actives positions.
+	positions map[string]struct{}
 }
 
 // NewPortfolio creates a new Portfolio instance.
-func NewPortfolio(logger *slog.Logger, db *database.DB, repo *repository.Container) *Portfolio {
-	return &Portfolio{
-		logger:       logger,
-		db:           db,
-		repo:         repo,
-		cashBalances: make(map[string]*CashBalance),
-		positions:    make(map[string]*Position),
+func NewPortfolio(logger *slog.Logger, db *database.DB, repo *repository.Container) Portfolio {
+	return &portfolio{
+		logger:    logger,
+		db:        db,
+		repo:      repo,
+		positions: make(map[string]struct{}),
 	}
 }
 
-// LoadState hydrates the portfolio state from the persistent storage.
-// This should be called on application startup or when a full refresh is needed.
-func (p *Portfolio) LoadState(ctx context.Context) error {
+// LoadState
+func (p *portfolio) LoadState(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Hydrate liquid cash balances
-	balances, err := p.repo.Balances.GetAllBalances(ctx, p.db)
-	if err != nil {
-		return fmt.Errorf("load state: failed to fetch balances: %w", err)
-	}
-
-	p.cashBalances = make(map[string]*CashBalance)
-	for _, b := range balances {
-		key := makeKey(b.ExchangeName, b.AssetSymbol)
-		p.cashBalances[key] = &CashBalance{
-			Exchange: b.ExchangeName,
-			Asset:    b.AssetSymbol,
-			Free:     b.Free,
-			Used:     b.Used,
-			Total:    b.Total,
-		}
-	}
-
-	// Hydrate open positions
-	positions, err := p.repo.Positions.GetOpenPositions(ctx, p.db, "", "")
+	positions, err := p.repo.Positions.GetActivePositions(ctx, p.db, "", "")
 	if err != nil {
 		return fmt.Errorf("load state: failed to fetch positions: %w", err)
 	}
 
-	p.positions = make(map[string]*Position)
+	p.positions = make(map[string]struct{})
 	for _, posData := range positions {
 		key := makeKey(posData.ExchangeName, posData.InstrumentSymbol)
-		p.positions[key] = &Position{
-			Exchange:      posData.ExchangeName,
-			Symbol:        posData.InstrumentSymbol,
-			Quantity:      posData.Quantity,
-			EntryPrice:    posData.EntryPrice,
-			HighestPrice:  posData.HighestPrice,
-			StrategyState: toState(posData.StrategyState),
-		}
+		p.positions[key] = struct{}{}
 	}
 	return nil
 }
 
+// RefreshState reloads the presence of a specific position from the database.
+func (p *portfolio) RefreshState(ctx context.Context, exchange, instrumentSymbol string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	key := makeKey(exchange, instrumentSymbol)
+	if _, err := p.repo.Positions.GetPosition(ctx, p.db, exchange, instrumentSymbol); err != nil {
+		delete(p.positions, key)
+		return nil
+	}
+	p.positions[key] = struct{}{}
+	return nil
+}
+
+// GetActivePositionsCount returns the number of currently active positions.
+func (p *portfolio) GetActivePositionsCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.positions)
+}
+
+// GetTotalValue returns the aggregated totals for all assets held across all exchanges based on the balances table.
+func (p *portfolio) GetTotalValue(ctx context.Context) (map[string]float64, error) {
+	totals := make(map[string]float64)
+
+	// Aggregate Cash Balances
+	balances, err := p.repo.Balances.GetAllBalances(ctx, p.db)
+	if err != nil {
+		return nil, fmt.Errorf("total value: failed to fetch balances: %w", err)
+	}
+	for _, b := range balances {
+		totals[b.AssetSymbol] += b.Total
+	}
+
+	return totals, nil
+}
+
 // makeKey creates a unique key for the positions map.
-func makeKey(exchange, symbol string) string {
-	return fmt.Sprintf("%s|%s", exchange, symbol)
-}
-
-// splitSymbol extracts base and quote assets from a symbol (e.g., "BTC/USDT" -> "BTC", "USDT").
-func splitSymbol(symbol string) (string, string) {
-	parts := strings.Split(symbol, "/")
-	if len(parts) != 2 {
-		return symbol, ""
-	}
-	return parts[0], parts[1]
-}
-
-func toState(s string) strategy.StrategyState {
-	switch s {
-	case "idle":
-		return strategy.StateIdle
-	case "pending_buy":
-		return strategy.StatePendingBuy
-	case "active":
-		return strategy.StateActive
-	case "pending_sell":
-		return strategy.StatePendingSell
-	default:
-		return strategy.StateIdle
-	}
+func makeKey(exchange, instrumentSymbol string) string {
+	return fmt.Sprintf("%s|%s", exchange, instrumentSymbol)
 }

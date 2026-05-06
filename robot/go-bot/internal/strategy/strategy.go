@@ -18,47 +18,24 @@ const (
 	StrategyDummy            StrategyType = C.STRATEGY_DUMMY
 	StrategyMomentumProfit   StrategyType = C.STRATEGY_MOMENTUM_PROFIT
 	StrategyMomentumTrailing StrategyType = C.STRATEGY_MOMENTUM_TRAILING
+
+	MaxMomentumWindows = C.MAX_MOMENTUM_WINDOWS
 )
-
-// StrategyState defines the internal lifecycle state of the strategy.
-type StrategyState int
-
-const (
-	StateIdle        StrategyState = C.STATE_IDLE
-	StatePendingBuy  StrategyState = C.STATE_PENDING_BUY
-	StateActive      StrategyState = C.STATE_ACTIVE
-	StatePendingSell StrategyState = C.STATE_PENDING_SELL
-)
-
-func (s StrategyState) String() string {
-	switch s {
-	case StateIdle:
-		return "idle"
-	case StatePendingBuy:
-		return "pending_buy"
-	case StateActive:
-		return "active"
-	case StatePendingSell:
-		return "pending_sell"
-	default:
-		return "idle"
-	}
-}
 
 // Signal defines the trading signal returned by the strategy.
-type Signal int
+type StrategySignal int
 
 const (
-	SignalInvalid         Signal = C.SIGNAL_INVALID
-	SignalBuy             Signal = C.SIGNAL_BUY
-	SignalSell            Signal = C.SIGNAL_SELL
-	SignalSearchingEntry  Signal = C.SIGNAL_SEARCHING_ENTRY
-	SignalTrackingExit    Signal = C.SIGNAL_TRACKING_EXIT
-	SignalWaitingBuyFill  Signal = C.SIGNAL_WAITING_BUY_FILL
-	SignalWaitingSellFill Signal = C.SIGNAL_WAITING_SELL_FILL
+	SignalInvalid           StrategySignal = C.SIGNAL_INVALID
+	SignalBuy               StrategySignal = C.SIGNAL_BUY
+	SignalSell              StrategySignal = C.SIGNAL_SELL
+	SignalSearchingBuyEntry StrategySignal = C.SIGNAL_SEARCHING_BUY_ENTRY
+	SignalTrackingSellExit  StrategySignal = C.SIGNAL_TRACKING_SELL_EXIT
+	SignalWaitingBuyFill    StrategySignal = C.SIGNAL_WAITING_BUY_FILL
+	SignalWaitingSellFill   StrategySignal = C.SIGNAL_WAITING_SELL_FILL
 )
 
-func (s Signal) String() string {
+func (s StrategySignal) String() string {
 	switch s {
 	case SignalInvalid:
 		return "invalid"
@@ -66,10 +43,10 @@ func (s Signal) String() string {
 		return "buy"
 	case SignalSell:
 		return "sell"
-	case SignalSearchingEntry:
-		return "searching_entry"
-	case SignalTrackingExit:
-		return "tracking_exit"
+	case SignalSearchingBuyEntry:
+		return "searching_buy_entry"
+	case SignalTrackingSellExit:
+		return "tracking_sell_exit"
 	case SignalWaitingBuyFill:
 		return "waiting_buy_fill"
 	case SignalWaitingSellFill:
@@ -114,7 +91,9 @@ func NewStrategy(cfg StrategyConfig) (*Strategy, error) {
 	cCfg := toCConfig(cfg)
 	handle := C.Strategy_Create(cCfg)
 	if handle == nil {
-		return nil, errors.New("failed to create strategy: invalid/unrecognized config type or invalid parameters")
+		return nil, errors.New(
+			"failed to create strategy: invalid/unrecognized config type or invalid parameters",
+		)
 	}
 	return &Strategy{
 		handle: handle,
@@ -147,67 +126,87 @@ func (s *Strategy) UpdateConfig(cfg StrategyConfig) error {
 }
 
 // InitProfit initializes the strategy state for profit-target based logic with historical data.
-func (s *Strategy) InitProfit(ticks []PricePoint, state StrategyState, entryPrice float64) error {
+func (s *Strategy) InitProfit(ticks []PricePoint, inPosition bool, entryPrice float64) error {
 	var cTicks *C.PricePoint
 	count := len(ticks)
 	if count > 0 {
 		cTicks = (*C.PricePoint)(unsafe.Pointer(&ticks[0]))
 	}
 
-	res := C.Strategy_Init_Profit(s.handle, (*C.PricePoint)(cTicks), C.int(count), C.StrategyState(state), C.double(entryPrice))
+	var inPos C.int = 0
+	if inPosition {
+		inPos = 1
+	}
+	res := C.Strategy_Init_Profit(
+		s.handle, (*C.PricePoint)(cTicks), C.int(count), inPos, C.double(entryPrice),
+	)
 	if res == C.STRATEGY_FAILURE {
-		return errors.New("failed to initialize profit strategy: the history is not in chronological order")
+		return errors.New(
+			"failed to initialize profit strategy: the history is not in chronological order",
+		)
 	}
 	return nil
 }
 
 // InitTrailing initializes the strategy state for trailing-stop based logic with historical data.
-func (s *Strategy) InitTrailing(ticks []PricePoint, state StrategyState, entryPrice, highestPrice float64) error {
+func (s *Strategy) InitTrailing(
+	ticks []PricePoint,
+	inPosition bool,
+	entryPrice, highestPrice float64,
+) error {
 	var cTicks *C.PricePoint
 	count := len(ticks)
 	if count > 0 {
 		cTicks = (*C.PricePoint)(unsafe.Pointer(&ticks[0]))
 	}
 
-	res := C.Strategy_Init_Trailing(s.handle, (*C.PricePoint)(cTicks), C.int(count), C.StrategyState(state), C.double(entryPrice), C.double(highestPrice))
+	var inPos C.int = 0
+	if inPosition {
+		inPos = 1
+	}
+	res := C.Strategy_Init_Trailing(
+		s.handle, (*C.PricePoint)(cTicks), C.int(count), inPos, C.double(entryPrice), C.double(highestPrice),
+	)
 	if res == C.STRATEGY_FAILURE {
-		return errors.New("failed to initialize trailing strategy: the history is not in chronological order")
+		return errors.New(
+			"failed to initialize trailing strategy: the history is not in chronological order",
+		)
 	}
 	return nil
+}
+
+// SetInPosition sets strategy in-position state with the given entry price and highest price since entry.
+func (s *Strategy) SetInPosition(inPosition bool, entryPrice, highestPrice float64) {
+	var inPos C.int = 0
+	if inPosition {
+		inPos = 1
+	}
+	C.Strategy_SetInPosition(s.handle, inPos, C.double(entryPrice), C.double(highestPrice))
 }
 
 // UpdatePrice feeds a new price tick into the strategy engine.
 func (s *Strategy) UpdatePrice(price float64, timestamp int64) error {
 	res := C.Strategy_UpdatePrice(s.handle, C.double(price), C.longlong(timestamp))
 	if res == C.STRATEGY_FAILURE {
-		return errors.New("failed to update price: tick rejected (invalid timestamp, non-positive price, or unrealistic jump)")
+		return errors.New(
+			"failed to update price: tick rejected (invalid timestamp, non-positive price, or unrealistic jump)",
+		)
 	}
 	return nil
 }
 
-// GetState returns the current internal state of the strategy machine.
-func (s *Strategy) GetState() StrategyState {
-	return StrategyState(C.Strategy_GetState(s.handle))
+// GetSignal queries the strategy for the current trading signal.
+func (s *Strategy) GetSignal() StrategySignal {
+	return StrategySignal(C.Strategy_GetSignal(s.handle))
 }
 
-// GetSignal queries the strategy for the current trading signal (Buy, Sell, or Hold).
-func (s *Strategy) GetSignal() Signal {
-	return Signal(C.Strategy_GetSignal(s.handle))
-}
-
-// ConfirmSignal confirms that a pending signal has been filled.
-func (s *Strategy) ConfirmSignal(signal Signal, fillPrice float64) {
-	C.Strategy_ConfirmSignal(s.handle, C.Signal(signal), C.double(fillPrice))
-}
-
-// CancelSignal cancels a pending signal, returning the strategy to its previous state.
-func (s *Strategy) CancelSignal(signal Signal) {
-	C.Strategy_CancelSignal(s.handle, C.Signal(signal))
-}
-
-// ResetSignal explicitly returns the strategy to the IDLE state.
-func (s *Strategy) ResetSignal() {
-	C.Strategy_ResetSignal(s.handle)
+// RetrySignal should be used in case of error when placing an order.
+func (s *Strategy) RetrySignal(signal StrategySignal) error {
+	if signal != SignalBuy && signal != SignalSell {
+		return errors.New("invalid signal for retry: only BUY or SELL can be retried")
+	}
+	C.Strategy_RetrySignal(s.handle, C.StrategySignal(signal))
+	return nil
 }
 
 // toCConfig maps the Go StrategyConfig to the C struct.
@@ -228,8 +227,8 @@ func toCConfig(cfg StrategyConfig) C.StrategyConfig {
 	}
 
 	count := len(cfg.MomentumWindows)
-	if count > C.MAX_MOMENTUM_WINDOWS {
-		count = C.MAX_MOMENTUM_WINDOWS
+	if count > MaxMomentumWindows {
+		count = MaxMomentumWindows
 	}
 	cCfg.num_momentum_windows = C.int(count)
 

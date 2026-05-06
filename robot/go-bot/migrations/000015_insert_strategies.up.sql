@@ -22,16 +22,16 @@ BEGIN
     VALUES (v_dummy_id, v_btc_id, 'momentum_trailing', v_created_by)
     RETURNING id INTO v_btc_trailing_id;
 
-    INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, is_enabled, created_by)
-    VALUES (v_dummy_id, v_btc_id, 'momentum_profit', FALSE, v_created_by)
+    INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, status, created_by)
+    VALUES (v_dummy_id, v_btc_id, 'momentum_profit', 'disabled', v_created_by)
     RETURNING id INTO v_btc_profit_id;
 
-    INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, is_enabled, created_by)
-    VALUES (v_dummy_id, v_eth_id, 'momentum_trailing', FALSE, v_created_by)
+    INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, status, created_by)
+    VALUES (v_dummy_id, v_eth_id, 'momentum_trailing', 'disabled', v_created_by)
     RETURNING id INTO v_eth_trailing_id;
 
-    INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, is_enabled, created_by)
-    VALUES (v_dummy_id, v_eth_id, 'momentum_profit', TRUE, v_created_by)
+    INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, status, created_by)
+    VALUES (v_dummy_id, v_eth_id, 'momentum_profit', 'enabled', v_created_by)
     RETURNING id INTO v_eth_profit_id;
 
     INSERT INTO trading.strategy_pairs (exchange_id, instrument_id, strategy_type, created_by)

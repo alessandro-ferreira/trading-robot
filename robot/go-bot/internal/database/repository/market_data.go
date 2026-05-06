@@ -16,7 +16,9 @@ type MarketDataTick struct {
 
 // MarketDataRepo defines the interface for interacting with market data.
 type MarketDataRepo interface {
-	GetMarketDataTicks(ctx context.Context, db DBExecutor, exchangeName, symbol string, limit int) ([]MarketDataTick, error)
+	GetMarketDataTicks(
+		ctx context.Context, db DBExecutor, exchangeName, symbol string, limit int,
+	) ([]MarketDataTick, error)
 	InsertTick(ctx context.Context, db DBExecutor, tick MarketDataTick) error
 }
 
@@ -27,14 +29,17 @@ func NewMarketDataRepo() MarketDataRepo {
 	return &pgMarketDataRepo{}
 }
 
-func (r *pgMarketDataRepo) GetMarketDataTicks(ctx context.Context, db DBExecutor, exchangeName, symbol string, limit int) ([]MarketDataTick, error) {
+func (r *pgMarketDataRepo) GetMarketDataTicks(
+	ctx context.Context, db DBExecutor, exchangeName, symbol string, limit int,
+) ([]MarketDataTick, error) {
 	query := `
 		SELECT tick_unix_at, price
 		FROM (
 			SELECT t.tick_unix_at, t.price
 			FROM trading.market_data_ticks t
 			INNER JOIN trading.exchanges e ON e.id = t.exchange_id AND e.name = $1 AND e.active
-			INNER JOIN trading.instruments i ON i.id = t.instrument_id AND i.exchange_id = t.exchange_id AND i.name = $2 AND i.active
+			INNER JOIN trading.instruments i ON i.id = t.instrument_id AND i.exchange_id = t.exchange_id 
+				AND i.name = $2 AND i.active
 			ORDER BY t.tick_unix_at DESC
 			LIMIT $3
 		) sub
@@ -65,7 +70,8 @@ func (r *pgMarketDataRepo) InsertTick(ctx context.Context, db DBExecutor, tick M
 		SELECT i.exchange_id, i.id, t.tick_unix_at
 		FROM trading.instruments i
 		INNER JOIN trading.exchanges e ON e.id = i.exchange_id AND e.name = $1 AND e.active
-		LEFT JOIN trading.market_data_ticks t ON t.exchange_id = i.exchange_id AND t.instrument_id = i.id AND t.tick_unix_at = $3
+		LEFT JOIN trading.market_data_ticks t ON t.exchange_id = i.exchange_id 
+			AND t.instrument_id = i.id AND t.tick_unix_at = $3
 		WHERE i.name = $2 AND i.active
 	`
 

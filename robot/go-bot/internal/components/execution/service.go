@@ -18,13 +18,30 @@ import (
 
 // Service defines the interface for trade execution and order management.
 type Service interface {
-	GetTicker(ctx context.Context, exchangeName, symbol string) (*pb.TickerResponse, error)
-	GetBalance(ctx context.Context, exchangeName, assetSymbol string) (*pb.BalanceResponse, error)
-	CreateOrder(ctx context.Context, exchangeName, symbol, side, orderType string, amount, price float64) (*pb.OrderResponse, error)
-	CancelOrder(ctx context.Context, exchangeName, symbol, exchangeOrderID string) error
-	GetOrder(ctx context.Context, exchangeName, symbol, exchangeOrderID string) (*pb.OrderResponse, error)
-	GetOpenOrders(ctx context.Context, exchangeName, symbol string, limit int) (*pb.OrdersResponse, error)
-	GetRecentTrades(ctx context.Context, exchangeName, symbol string, since int64, limit int) (*pb.OrdersResponse, error)
+	GetTicker(
+		ctx context.Context, exchange, instrumentSymbol string,
+	) (repository.MarketDataTick, error)
+	GetBalance(
+		ctx context.Context, exchange, assetSymbol string,
+	) ([]repository.BalanceData, error)
+	CreateOrder(
+		ctx context.Context, exchange, instrumentSymbol, side, orderType string, amount, price float64,
+	) (repository.OrderData, error)
+	CreateStopOrder(
+		ctx context.Context, exchange, instrumentSymbol, side string, amount, stopPrice, limitPrice float64,
+	) (repository.OrderData, error)
+	CancelOrder(
+		ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
+	) error
+	GetOrder(
+		ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
+	) (repository.OrderData, error)
+	GetOpenOrders(
+		ctx context.Context, exchange, instrumentSymbol string, limit int,
+	) ([]repository.OrderData, error)
+	GetRecentTrades(
+		ctx context.Context, exchange, instrumentSymbol string, since int64, limit int,
+	) ([]repository.OrderData, error)
 }
 
 type service struct {
@@ -35,7 +52,12 @@ type service struct {
 }
 
 // NewService creates a new execution Service.
-func NewService(logger *slog.Logger, db *database.DB, client GatewayClient, repo *repository.Container) Service {
+func NewService(
+	logger *slog.Logger,
+	db *database.DB,
+	client GatewayClient,
+	repo *repository.Container,
+) Service {
 	return &service{
 		logger: logger,
 		db:     db,
@@ -45,49 +67,54 @@ func NewService(logger *slog.Logger, db *database.DB, client GatewayClient, repo
 }
 
 // GetTicker fetches the current ticker for a given symbol on a specific exchange.
-func (s *service) GetTicker(ctx context.Context, exchangeName, symbol string) (*pb.TickerResponse, error) {
-	s.logger.Info("Fetching ticker from exchange", "exchange", exchangeName, "symbol", symbol)
+func (s *service) GetTicker(
+	ctx context.Context, exchange, instrumentSymbol string,
+) (repository.MarketDataTick, error) {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
+	log.Info("Fetching ticker from exchange")
 
 	// Fetch from Exchange via gRPC
-	resp, err := s.client.GetTicker(ctx, exchangeName, symbol)
+	resp, err := s.client.GetTicker(ctx, exchange, instrumentSymbol)
 	if err != nil {
-		s.logger.Error("Failed to fetch ticker from gateway", "error", err, "exchange", exchangeName, "symbol", symbol)
-		return nil, fmt.Errorf("failed to fetch ticker from gateway: %w", err)
+		return repository.MarketDataTick{}, fmt.Errorf("failed to fetch ticker from gateway: %w", err)
 	}
 
-	s.logger.Info("Ticker received", "symbol", resp.Symbol, "price", resp.Price)
+	log.Info("Ticker received", "price", resp.Price)
 
 	// Persist the tick to the database for historical analysis and strategy warm-up
 	tick := repository.MarketDataTick{
-		ExchangeName: exchangeName,
-		Symbol:       symbol,
+		ExchangeName: exchange,
+		Symbol:       instrumentSymbol,
 		Price:        resp.Price,
 		TickUnixAt:   time.Now().Unix(),
 	}
 
 	if err := s.repo.MarketData.InsertTick(ctx, s.db, tick); err != nil {
-		s.logger.Error("Failed to persist market data tick", "error", err, "symbol", symbol)
-		return resp, fmt.Errorf("ticker received but failed to persist tick: %w", err)
+		return tick, fmt.Errorf("ticker received but failed to persist tick: %w", err)
 	}
 
-	return resp, nil
+	return tick, nil
 }
 
 // GetBalance retrieves the balance for a specific asset on a specific exchange.
-func (s *service) GetBalance(ctx context.Context, exchangeName, assetSymbol string) (*pb.BalanceResponse, error) {
+func (s *service) GetBalance(
+	ctx context.Context, exchange, assetSymbol string,
+) ([]repository.BalanceData, error) {
+	log := s.logger.With("exchange", exchange)
 	if assetSymbol != "" {
-		s.logger.Info("Fetching balance for asset from exchange", "exchange", exchangeName, "asset", assetSymbol)
-	} else {
-		s.logger.Info("Fetching all balances from exchange", "exchange", exchangeName)
+		log = log.With("symbol", assetSymbol)
 	}
+
+	log.Info("Fetching balances from exchange")
 
 	// Fetch from Exchange via gRPC.
-	resp, err := s.client.GetBalance(ctx, exchangeName, assetSymbol)
+	resp, err := s.client.GetBalance(ctx, exchange, assetSymbol)
 	if err != nil {
-		s.logger.Error("Failed to fetch balances from gateway", "error", err, "exchange", exchangeName)
-		return nil, fmt.Errorf("failed to fetch balance from gateway: %w", err)
+		return nil, fmt.Errorf("failed to fetch balances from gateway: %w", err)
 	}
 
+	collected := make([]repository.BalanceData, 0, len(resp.Balances))
 	// Iterate through all assets returned by the exchange to update the database
 	for _, b := range resp.Balances {
 		symbol := b.Asset
@@ -98,12 +125,14 @@ func (s *service) GetBalance(ctx context.Context, exchangeName, assetSymbol stri
 		// Validate that the numbers add up, accounting for float precision.
 		const epsilon = 1e-9
 		if math.Abs(total-(free+used)) > epsilon {
-			s.logger.Warn("Balance inconsistency detected from exchange",
-				"asset", symbol, "free", free, "used", used, "total", total, "discrepancy", total-(free+used))
+			log.Warn(
+				"Balance inconsistency detected from exchange",
+				"asset", symbol, "free", free, "used", used, "total", total, "discrepancy", total-(free+used),
+			)
 		}
 
 		balance := repository.BalanceData{
-			ExchangeName: exchangeName,
+			ExchangeName: exchange,
 			AssetSymbol:  symbol,
 			Free:         free,
 			Used:         used,
@@ -114,44 +143,49 @@ func (s *service) GetBalance(ctx context.Context, exchangeName, assetSymbol stri
 		if err != nil {
 			// if assetSymbol is specified, we treat failure to persist as an error.
 			if assetSymbol != "" {
-				s.logger.Error("Failed to persist balance", "error", err, "exchange", exchangeName, "asset", symbol)
 				return nil, fmt.Errorf("failed to persist balance: %w", err)
 			}
-			s.logger.Warn("Failed to persist balance", "error", err, "exchange", exchangeName, "asset", symbol)
+			log.Warn("Failed to persist balance", "error", err)
 			continue
 		}
 		balance.ID = id
+		collected = append(collected, balance)
 	}
 
-	return resp, nil
+	return collected, nil
 }
 
 // CreateOrder places a new order on the exchange and persists it to the database.
-func (s *service) CreateOrder(ctx context.Context, exchangeName, symbol, side, orderType string, amount, price float64) (*pb.OrderResponse, error) {
-	s.logger.Info("Creating order", "exchange", exchangeName, "symbol", symbol, "side", side, "type", orderType, "amount", amount, "price", price)
+func (s *service) CreateOrder(
+	ctx context.Context, exchange, instrumentSymbol, side, orderType string, amount, price float64,
+) (repository.OrderData, error) {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
+	log.Info("Creating order", "side", side, "type", orderType, "amount", amount, "price", price)
 
 	// Create order on exchange
 	req := &pb.CreateOrderRequest{
-		Exchange: exchangeName,
-		Symbol:   symbol,
+		Exchange: exchange,
+		Symbol:   instrumentSymbol,
 		Side:     side,
 		Type:     orderType,
 		Amount:   amount,
-		Price:    price,
+	}
+	if price > 0 {
+		req.Price = &price
 	}
 
 	resp, err := s.client.CreateOrder(ctx, req)
 	if err != nil {
-		s.logger.Error("Failed to create order on exchange", "error", err, "exchange", exchangeName, "symbol", symbol)
-		return nil, fmt.Errorf("failed to create order on gateway: %w", err)
+		return repository.OrderData{}, fmt.Errorf("failed to create order on gateway: %w", err)
 	}
 
-	s.logger.Info("Order created on exchange", "exchange_order_id", resp.Id, "status", resp.Status)
+	log.Info("Order created on exchange", "exchange_order_id", resp.Id, "status", resp.Status)
 
 	// Persist to Database
 	orderData := repository.OrderData{
-		ExchangeName:      exchangeName,
-		InstrumentSymbol:  symbol,
+		ExchangeName:      exchange,
+		InstrumentSymbol:  instrumentSymbol,
 		ExchangeOrderID:   resp.Id,
 		Side:              side,
 		OrderType:         orderType,
@@ -167,169 +201,297 @@ func (s *service) CreateOrder(ctx context.Context, exchangeName, symbol, side, o
 
 	id, err := s.repo.Orders.CreateOrder(ctx, s.db, orderData)
 	if err != nil {
-		s.logger.Error("Failed to persist created order", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", resp.Id)
-		return resp, fmt.Errorf("order created but failed to persist: %w", err)
+		return orderData, fmt.Errorf("order created but failed to persist: %w", err)
 	}
 
-	s.logger.Info("Order persisted successfully", "internal_id", id, "exchange_order_id", resp.Id)
+	log.Info("Order persisted successfully", "internal_id", id, "exchange_order_id", resp.Id)
+	orderData.ID = id
 
-	return resp, nil
+	return orderData, nil
+}
+
+// CreateStopOrder places a stop-loss or take-profit order (market or limit trigger) and persists it.
+func (s *service) CreateStopOrder(
+	ctx context.Context, exchange, instrumentSymbol, side string, amount, stopPrice, limitPrice float64,
+) (repository.OrderData, error) {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
+	orderType := repository.OrderTypeStopMarket
+	if limitPrice > 0 {
+		orderType = repository.OrderTypeStopLimit
+	}
+
+	log.Info("Creating stop order", "side", side, "type", orderType, "amount", amount, "stop_price", stopPrice)
+
+	req := &pb.CreateStopOrderRequest{
+		Exchange:  exchange,
+		Symbol:    instrumentSymbol,
+		Side:      side,
+		Amount:    amount,
+		StopPrice: stopPrice,
+	}
+	if limitPrice > 0 {
+		req.LimitPrice = &limitPrice
+	}
+
+	resp, err := s.client.CreateStopOrder(ctx, req)
+	if err != nil {
+		return repository.OrderData{}, fmt.Errorf("failed to create stop order on gateway: %w", err)
+	}
+
+	log.Info("Stop order created on exchange", "exchange_order_id", resp.Id, "status", resp.Status)
+
+	// Persist to Database
+	orderData := repository.OrderData{
+		ExchangeName:      exchange,
+		InstrumentSymbol:  instrumentSymbol,
+		ExchangeOrderID:   resp.Id,
+		Side:              side,
+		OrderType:         orderType,
+		Amount:            amount,
+		Filled:            resp.Filled,
+		Remaining:         resp.Remaining,
+		Cost:              resp.Cost,
+		Status:            resp.Status,
+		Price:             sql.NullFloat64{Float64: stopPrice, Valid: stopPrice > 0},
+		AveragePrice:      sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
+		ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(resp.Timestamp), Valid: resp.Timestamp > 0},
+	}
+
+	id, err := s.repo.Orders.CreateOrder(ctx, s.db, orderData)
+	if err != nil {
+		return orderData, fmt.Errorf("stop order created but failed to persist: %w", err)
+	}
+
+	log.Info("Stop order persisted successfully", "internal_id", id, "exchange_order_id", resp.Id)
+	orderData.ID = id
+
+	return orderData, nil
 }
 
 // CancelOrder cancels an existing order on the exchange and updates the database.
-func (s *service) CancelOrder(ctx context.Context, exchangeName, symbol, exchangeOrderID string) error {
-	s.logger.Info("Canceling order", "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
+func (s *service) CancelOrder(
+	ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
+) error {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
+	log.Info("Canceling order", "exchange_order_id", exchangeOrderID)
 
 	// Cancel on Exchange
-	_, err := s.client.CancelOrder(ctx, exchangeName, symbol, exchangeOrderID)
+	_, err := s.client.CancelOrder(ctx, exchange, instrumentSymbol, exchangeOrderID)
 	if err != nil {
-		s.logger.Error("Failed to cancel order on gateway", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 		return fmt.Errorf("failed to cancel order on gateway: %w", err)
 	}
 
 	// Fetch latest order state from Exchange to ensure we have correct fill amounts
 	//    Cancellation might result in a final fill or partial fill state.
-	orderResp, err := s.client.GetOrder(ctx, exchangeName, symbol, exchangeOrderID)
+	orderResp, err := s.client.GetOrder(ctx, exchange, instrumentSymbol, exchangeOrderID)
 	if err != nil {
-		s.logger.Error("Failed to fetch order details after cancellation", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 		return fmt.Errorf("failed to fetch order details after cancellation: %w", err)
 	}
 
-	s.logger.Info("Order canceled and fetched", "exchange_order_id", orderResp.Id, "status", orderResp.Status, "filled", orderResp.Filled)
+	log.Info(
+		"Order canceled and fetched",
+		"exchange_order_id", orderResp.Id, "status", orderResp.Status, "filled", orderResp.Filled,
+	)
 
 	// Update Database
 	orderData := repository.OrderData{
-		ExchangeName:      exchangeName,
-		ExchangeOrderID:   orderResp.Id,
-		Filled:            orderResp.Filled,
-		Remaining:         orderResp.Remaining,
-		Cost:              orderResp.Cost,
-		Status:            orderResp.Status,
-		AveragePrice:      sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
-		ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(orderResp.Timestamp), Valid: orderResp.Timestamp > 0},
+		ExchangeName:     exchange,
+		InstrumentSymbol: orderResp.Symbol,
+		ExchangeOrderID:  orderResp.Id,
+		ClientOrderID: sql.NullString{
+			String: orderResp.ClientOrderId,
+			Valid:  orderResp.ClientOrderId != "",
+		},
+		Side:         orderResp.Side,
+		OrderType:    orderResp.Type,
+		Price:        sql.NullFloat64{Float64: orderResp.Price, Valid: orderResp.Price > 0},
+		Amount:       orderResp.Amount,
+		Filled:       orderResp.Filled,
+		Remaining:    orderResp.Remaining,
+		AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
+		Cost:         orderResp.Cost,
+		Status:       orderResp.Status,
+		ExchangeTimestamp: sql.NullTime{
+			Time:  time.UnixMilli(orderResp.Timestamp),
+			Valid: orderResp.Timestamp > 0,
+		},
 	}
 
 	id, err := s.repo.Orders.UpdateOrder(ctx, s.db, orderData)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			s.logger.Warn("Canceled order not found in database, creating new record", "exchange_order_id", orderResp.Id)
+			log.Warn(
+				"Canceled order not found in database, creating new record",
+				"exchange_order_id", orderResp.Id,
+			)
 			id, err = s.repo.Orders.CreateOrder(ctx, s.db, orderData)
 		}
 		if err != nil {
-			s.logger.Error("Failed to persist canceled order state", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
 			return fmt.Errorf("order canceled but failed to update db: %w", err)
 		}
 	}
 
-	s.logger.Info("Canceled order updated in database", "internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status)
+	log.Info(
+		"Canceled order updated in database",
+		"internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status,
+	)
+
 	return nil
 }
 
 // GetOrder fetches the latest order details from the exchange and updates the database.
-func (s *service) GetOrder(ctx context.Context, exchangeName, symbol, exchangeOrderID string) (*pb.OrderResponse, error) {
-	s.logger.Info("Fetching order from exchange", "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
+func (s *service) GetOrder(
+	ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
+) (repository.OrderData, error) {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
+	log.Info("Fetching order from exchange", "exchange_order_id", exchangeOrderID)
 
 	// Fetch latest order state from Exchange
-	orderResp, err := s.client.GetOrder(ctx, exchangeName, symbol, exchangeOrderID)
+	orderResp, err := s.client.GetOrder(ctx, exchange, instrumentSymbol, exchangeOrderID)
 	if err != nil {
-		s.logger.Error("Failed to fetch order from gateway", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
-		return nil, fmt.Errorf("failed to fetch order from gateway: %w", err)
+		return repository.OrderData{}, fmt.Errorf("failed to fetch order from gateway: %w", err)
 	}
 
-	s.logger.Info("Order fetched from exchange", "exchange_order_id", orderResp.Id, "status", orderResp.Status, "filled", orderResp.Filled)
+	log.Info(
+		"Order fetched from exchange",
+		"exchange_order_id", orderResp.Id, "status", orderResp.Status, "filled", orderResp.Filled,
+	)
 
 	// Update Database with the latest state
 	orderData := repository.OrderData{
-		ExchangeName:      exchangeName,
-		ExchangeOrderID:   orderResp.Id,
-		Filled:            orderResp.Filled,
-		Remaining:         orderResp.Remaining,
-		Cost:              orderResp.Cost,
-		Status:            orderResp.Status,
-		AveragePrice:      sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
-		ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(orderResp.Timestamp), Valid: orderResp.Timestamp > 0},
+		ExchangeName:     exchange,
+		InstrumentSymbol: orderResp.Symbol,
+		ExchangeOrderID:  orderResp.Id,
+		ClientOrderID: sql.NullString{
+			String: orderResp.ClientOrderId,
+			Valid:  orderResp.ClientOrderId != "",
+		},
+		Side:         orderResp.Side,
+		OrderType:    orderResp.Type,
+		Price:        sql.NullFloat64{Float64: orderResp.Price, Valid: orderResp.Price > 0},
+		Amount:       orderResp.Amount,
+		Filled:       orderResp.Filled,
+		Remaining:    orderResp.Remaining,
+		AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
+		Cost:         orderResp.Cost,
+		Status:       orderResp.Status,
+		ExchangeTimestamp: sql.NullTime{
+			Time:  time.UnixMilli(orderResp.Timestamp),
+			Valid: orderResp.Timestamp > 0,
+		},
 	}
 
 	id, err := s.repo.Orders.UpdateOrder(ctx, s.db, orderData)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			s.logger.Warn("Order not found in database, creating new record", "exchange_order_id", orderResp.Id)
+			log.Warn(
+				"Order not found in database, creating new record",
+				"exchange_order_id", orderResp.Id,
+			)
 			id, err = s.repo.Orders.CreateOrder(ctx, s.db, orderData)
 		}
 		if err != nil {
-			s.logger.Error("Failed to persist fetched order state", "error", err, "exchange", exchangeName, "symbol", symbol, "exchange_order_id", exchangeOrderID)
-			return orderResp, fmt.Errorf("order fetched but failed to update db: %w", err)
+			return orderData, fmt.Errorf("order fetched but failed to update db: %w", err)
 		}
 	}
 
-	s.logger.Info("Fetched order updated in database", "internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status)
-	return orderResp, nil
+	log.Info(
+		"Fetched order updated in database",
+		"internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status,
+	)
+	orderData.ID = id
+
+	return orderData, nil
 }
 
 // GetOpenOrders fetches all open orders for a symbol from the exchange and updates the database.
-func (s *service) GetOpenOrders(ctx context.Context, exchangeName, symbol string, limit int) (*pb.OrdersResponse, error) {
-	s.logger.Info("Fetching open orders from exchange", "exchange", exchangeName, "symbol", symbol, "limit", limit)
+func (s *service) GetOpenOrders(
+	ctx context.Context, exchange, instrumentSymbol string, limit int,
+) ([]repository.OrderData, error) {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
-	resp, err := s.client.GetOpenOrders(ctx, exchangeName, symbol, limit)
+	log.Info("Fetching open orders from exchange", "limit", limit)
+
+	resp, err := s.client.GetOpenOrders(ctx, exchange, instrumentSymbol, limit)
 	if err != nil {
-		s.logger.Error("Failed to fetch open orders from gateway", "error", err, "exchange", exchangeName, "symbol", symbol)
 		return nil, fmt.Errorf("failed to fetch open orders from gateway: %w", err)
 	}
 
-	s.logger.Info("Open orders fetched", "count", len(resp.Orders))
+	log.Info("Open orders fetched", "count", len(resp.Orders))
 
+	collected := make([]repository.OrderData, 0, len(resp.Orders))
 	for _, orderResp := range resp.Orders {
 		orderData := repository.OrderData{
-			ExchangeName:      exchangeName,
-			InstrumentSymbol:  orderResp.Symbol,
-			ExchangeOrderID:   orderResp.Id,
-			ClientOrderID:     sql.NullString{String: orderResp.ClientOrderId, Valid: orderResp.ClientOrderId != ""},
-			Side:              orderResp.Side,
-			OrderType:         orderResp.Type,
-			Price:             sql.NullFloat64{Float64: orderResp.Price, Valid: orderResp.Price > 0},
-			Amount:            orderResp.Amount,
-			Filled:            orderResp.Filled,
-			Remaining:         orderResp.Remaining,
-			AveragePrice:      sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
-			Cost:              orderResp.Cost,
-			Status:            orderResp.Status,
-			ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(orderResp.Timestamp), Valid: orderResp.Timestamp > 0},
+			ExchangeName:     exchange,
+			InstrumentSymbol: orderResp.Symbol,
+			ExchangeOrderID:  orderResp.Id,
+			ClientOrderID: sql.NullString{
+				String: orderResp.ClientOrderId,
+				Valid:  orderResp.ClientOrderId != "",
+			},
+			Side:         orderResp.Side,
+			OrderType:    orderResp.Type,
+			Price:        sql.NullFloat64{Float64: orderResp.Price, Valid: orderResp.Price > 0},
+			Amount:       orderResp.Amount,
+			Filled:       orderResp.Filled,
+			Remaining:    orderResp.Remaining,
+			AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
+			Cost:         orderResp.Cost,
+			Status:       orderResp.Status,
+			ExchangeTimestamp: sql.NullTime{
+				Time:  time.UnixMilli(orderResp.Timestamp),
+				Valid: orderResp.Timestamp > 0,
+			},
 		}
 
 		id, err := s.repo.Orders.UpdateOrder(ctx, s.db, orderData)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				s.logger.Warn("Open order not found in database, creating new record", "exchange_order_id", orderResp.Id)
 				id, err = s.repo.Orders.CreateOrder(ctx, s.db, orderData)
 			}
 			if err != nil {
-				s.logger.Warn("Failed to sync open order state", "error", err, "exchange_order_id", orderResp.Id)
+				log.Warn(
+					"Failed to sync open order state",
+					"error", err, "exchange_order_id", orderResp.Id,
+				)
 				// Continue to the next order even if one fails to update.
 				continue
 			}
 		}
 
-		s.logger.Info("Open order processed", "internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status)
+		log.Info(
+			"Open order processed",
+			"internal_id", id, "exchange_order_id", orderResp.Id, "status", orderResp.Status,
+		)
+		orderData.ID = id
+		collected = append(collected, orderData)
 	}
 
-	s.logger.Info("Open orders processed and database updated", "exchange", exchangeName, "symbol", symbol)
+	log.Info("Open orders processed and database updated")
 
-	return resp, nil
+	return collected, nil
 }
 
 // GetRecentTrades fetches recent executions from the exchange and ensures they are persisted.
-func (s *service) GetRecentTrades(ctx context.Context, exchangeName, symbol string, since int64, limit int) (*pb.OrdersResponse, error) {
-	s.logger.Info("Fetching trade history from exchange", "exchange", exchangeName, "symbol", symbol, "since", since, "limit", limit)
+func (s *service) GetRecentTrades(
+	ctx context.Context, exchange, instrumentSymbol string, since int64, limit int,
+) ([]repository.OrderData, error) {
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
-	resp, err := s.client.GetRecentTrades(ctx, exchangeName, symbol, since, limit)
+	log.Info("Fetching trade history from exchange", "since", since, "limit", limit)
+
+	resp, err := s.client.GetRecentTrades(ctx, exchange, instrumentSymbol, since, limit)
 	if err != nil {
-		s.logger.Error("Failed to fetch trade history from gateway", "error", err, "exchange", exchangeName)
 		return nil, fmt.Errorf("failed to fetch trades from gateway: %w", err)
 	}
 
+	collected := make([]repository.OrderData, 0, len(resp.Orders))
 	for _, o := range resp.Orders {
 		trade := repository.OrderData{
-			ExchangeName:      exchangeName,
+			ExchangeName:      exchange,
 			InstrumentSymbol:  o.Symbol,
 			ExchangeOrderID:   o.Id,
 			ClientOrderID:     sql.NullString{String: o.ClientOrderId, Valid: o.ClientOrderId != ""},
@@ -346,20 +508,26 @@ func (s *service) GetRecentTrades(ctx context.Context, exchangeName, symbol stri
 		}
 
 		// Sync historical execution to DB
-		_, err := s.repo.Orders.UpdateOrder(ctx, s.db, trade)
+		id, err := s.repo.Orders.UpdateOrder(ctx, s.db, trade)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				s.logger.Warn("Historical trade not found in database, creating new record", "exchange_order_id", o.Id)
-				_, err = s.repo.Orders.CreateOrder(ctx, s.db, trade)
+				log.Warn(
+					"Historical trade not found in database, creating new record",
+					"exchange_order_id", o.Id,
+				)
+				id, err = s.repo.Orders.CreateOrder(ctx, s.db, trade)
 			}
 			if err != nil {
-				s.logger.Warn("Failed to sync historical trade", "error", err, "exchange_order_id", o.Id)
+				log.Warn("Failed to sync historical trade", "error", err, "exchange_order_id", o.Id)
 				// Continue to the next trade even if one fails to update.
 				continue
 			}
 		}
+		trade.ID = id
+		collected = append(collected, trade)
 	}
 
-	s.logger.Info("Trade history processed", "count", len(resp.Orders), "exchange", exchangeName)
-	return resp, nil
+	log.Info("Trade history processed", "count", len(resp.Orders))
+
+	return collected, nil
 }

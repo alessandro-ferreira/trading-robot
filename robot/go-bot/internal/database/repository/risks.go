@@ -32,7 +32,9 @@ func NewRisksRepo() RisksRepo {
 }
 
 // GetRiskPair retrieves the risk configuration for a specific exchange and instrument.
-func (r *pgRisksRepo) GetRiskPair(ctx context.Context, db DBExecutor, exchange, symbol string) (RiskPair, error) {
+func (r *pgRisksRepo) GetRiskPair(
+	ctx context.Context, db DBExecutor, exchange, symbol string,
+) (RiskPair, error) {
 	query := `
 		SELECT
 			e.name,
@@ -77,7 +79,8 @@ func (r *pgRisksRepo) UpsertRiskPair(ctx context.Context, db DBExecutor, data Ri
 		WHERE e.name = $1 AND i.name = $2 AND e.active AND i.active
 	`
 	var exchangeID, instrumentID int64
-	if err := db.QueryRow(ctx, selectQuery, data.ExchangeName, data.InstrumentSymbol).Scan(&exchangeID, &instrumentID); err != nil {
+	if err := db.QueryRow(
+		ctx, selectQuery, data.ExchangeName, data.InstrumentSymbol).Scan(&exchangeID, &instrumentID); err != nil {
 		return fmt.Errorf("failed to resolve exchange and instrument IDs for risk: %w", err)
 	}
 
@@ -89,7 +92,9 @@ func (r *pgRisksRepo) UpsertRiskPair(ctx context.Context, db DBExecutor, data Ri
 		RETURNING id
 	`
 	var id int64
-	err := db.QueryRow(ctx, updateQuery, exchangeID, instrumentID, data.RiskPerTrade, data.MaxPositionSize, DefaultUser).Scan(&id)
+	err := db.QueryRow(
+		ctx, updateQuery, exchangeID, instrumentID, data.RiskPerTrade, data.MaxPositionSize, DefaultUser,
+	).Scan(&id)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to update risk pair: %w", err)
@@ -101,7 +106,9 @@ func (r *pgRisksRepo) UpsertRiskPair(ctx context.Context, db DBExecutor, data Ri
 			INSERT INTO trading.risk_pairs (exchange_id, instrument_id, risk_per_trade, max_position_size, created_by)
 			VALUES ($1, $2, $3, $4, $5)
 		`
-		if _, err := db.Exec(ctx, insertQuery, exchangeID, instrumentID, data.RiskPerTrade, data.MaxPositionSize, DefaultUser); err != nil {
+		if _, err := db.Exec(
+			ctx, insertQuery, exchangeID, instrumentID, data.RiskPerTrade, data.MaxPositionSize, DefaultUser,
+		); err != nil {
 			return fmt.Errorf("failed to insert risk pair: %w", err)
 		}
 	}
