@@ -1,6 +1,6 @@
 import time
-from typing import Any, Dict, Optional
-from .base import Exchange, Ticker
+from typing import Any, Dict, List, Optional
+from .base import Exchange, Ticker, OrderType
 
 
 class DummyExchange(Exchange):
@@ -120,6 +120,47 @@ class DummyExchange(Exchange):
         self._orders[order_id] = order
         return order
 
+    def create_stop_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        stop_price: float,
+        limit_price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Simulates creating a stop order and stores it in memory."""
+        self._order_id_counter += 1
+        timestamp = int(time.time() * 1000) + self._order_id_counter
+        order_id = f"dummy-stop-{timestamp}-{self._order_id_counter}"
+
+        order_type = OrderType.STOP_LIMIT if limit_price else OrderType.STOP_MARKET
+        status = "open"
+
+        order = {
+            "id": order_id,
+            "clientOrderId": f"dummy-client-{self._order_id_counter}",
+            "timestamp": timestamp,
+            "datetime": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp / 1000)
+            ),
+            "lastTradeTimestamp": None,
+            "symbol": symbol,
+            "type": order_type,
+            "side": side,
+            "price": limit_price or stop_price,
+            "amount": amount,
+            "cost": 0.0,
+            "average": None,
+            "filled": 0.0,
+            "remaining": amount,
+            "status": status,
+            "fee": None,
+            "trades": [],
+            "info": {"status": status, "stopPrice": stop_price},
+        }
+        self._orders[order_id] = order
+        return order
+
     def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Simulates canceling an order by updating its status."""
         order = self._orders.get(id)
@@ -166,8 +207,11 @@ class DummyExchange(Exchange):
         return open_orders[:limit] if limit else open_orders
 
     def fetch_my_trades(
-        self, symbol: Optional[str] = None, limit: Optional[int] = None
-    ) -> list:
+        self,
+        symbol: Optional[str] = None,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Returns a list of trades from the in-memory store.
         """

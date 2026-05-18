@@ -1,5 +1,14 @@
 import unittest
-from exchange.exchanges.base import Exchange, ExchangeConfig, OrderType
+from exchange.exchanges.base import (
+    Exchange,
+    ExchangeConfig,
+    OrderType,
+    ExchangeError,
+    ExchangeNetworkError,
+    AuthenticationError,
+    InsufficientFundsError,
+    BadRequestError,
+)
 from exchange.exchanges.ccxt import CCXTExchange
 
 
@@ -21,6 +30,8 @@ class TestExchangeBase(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             ex.create_order("BTC/USDT", OrderType.LIMIT, "buy", 1.0, 50000.0)
         with self.assertRaises(NotImplementedError):
+            ex.create_stop_order("BTC/USDT", "sell", 1.0, 40000.0)
+        with self.assertRaises(NotImplementedError):
             ex.cancel_order("order_id", "BTC/USDT")
         with self.assertRaises(NotImplementedError):
             ex.fetch_order("order_id", "BTC/USDT")
@@ -28,6 +39,14 @@ class TestExchangeBase(unittest.TestCase):
             ex.fetch_open_orders("BTC/USDT")
         with self.assertRaises(NotImplementedError):
             ex.fetch_my_trades("BTC/USDT")
+
+    def test_exception_hierarchy(self):
+        """Verify that custom exceptions correctly inherit from ExchangeError."""
+        self.assertTrue(issubclass(ExchangeNetworkError, ExchangeError))
+        self.assertTrue(issubclass(AuthenticationError, ExchangeError))
+        self.assertTrue(issubclass(InsufficientFundsError, ExchangeError))
+        self.assertTrue(issubclass(BadRequestError, ExchangeError))
+        self.assertIsInstance(ExchangeError(), Exception)
 
     def test_base_init_ccxt_mapping(self):
         """

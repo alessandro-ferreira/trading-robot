@@ -9,6 +9,32 @@ from core.config import ExchangeConfig
 
 
 class ExchangeError(Exception):
+    """Base class for all exceptions raised by exchange connectors."""
+
+    pass
+
+
+class ExchangeNetworkError(ExchangeError):
+    """Raised for retryable network errors, typically during GET requests."""
+
+    pass
+
+
+class AuthenticationError(ExchangeError):
+    """Raised when the exchange returns 401 or 403."""
+
+    pass
+
+
+class InsufficientFundsError(ExchangeError):
+    """Raised when an order fails due to lack of balance."""
+
+    pass
+
+
+class BadRequestError(ExchangeError):
+    """Raised for 400 errors like invalid symbols or prices."""
+
     pass
 
 
@@ -25,6 +51,8 @@ class Ticker:
 class OrderType:
     MARKET = "market"
     LIMIT = "limit"
+    STOP_MARKET = "stop_market"
+    STOP_LIMIT = "stop_limit"
 
 
 class OrderSide:
@@ -113,6 +141,21 @@ class Exchange(ABC):
         :return: A dictionary containing the order details.
         """
         raise NotImplementedError("create_order not implemented for this exchange")
+
+    def create_stop_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        stop_price: float,
+        limit_price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Creates a new stop order (market or limit trigger).
+        :param stop_price: The price that triggers the order.
+        :param limit_price: The execution price (optional, makes it a stop-limit).
+        """
+        raise NotImplementedError("create_stop_order not implemented for this exchange")
 
     def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """

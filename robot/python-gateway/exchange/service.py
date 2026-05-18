@@ -2,18 +2,13 @@ import logging
 from typing import Any
 
 import grpc
-import ccxt
 
 from v1 import exchange_pb2
 from v1 import exchange_pb2_grpc
-from exchange.factory import (
-    ExchangeConfigurationError,
-    ExchangeFactory,
-    ExchangeNotConfigured,
-)
+from exchange.factory import ExchangeFactory
 from core.config import Config
-from .exchanges.base import Exchange
 from .exchanges import SUPPORTED_ASSETS
+from . import utils
 
 
 class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
@@ -35,103 +30,28 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             except Exception as e:
                 logging.exception(f"Failed to initialize exchange {exchange.name}: {e}")
 
-    def _getExchange(self, request: Any, context: grpc.ServicerContext) -> Exchange:
-        """Helper method to retrieve the exchange instance based on the request."""
-        ex_name = request.exchange
-        if not ex_name:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Exchange name is required")
-        try:
-            exchange = self.factory.get(ex_name)
-        except ExchangeNotConfigured as e:
-            logging.exception(f"Exchange not configured: {e}")
-            context.abort(grpc.StatusCode.NOT_FOUND, str(e))
-        except ExchangeConfigurationError as e:
-            logging.exception(f"Exchange configuration error: {e}")
-            context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
-
-        return exchange
-
-    def _handle_exchange_error(
-        self, context: grpc.ServicerContext, e: Exception, action: str
-    ):
-        """Helper to map ccxt exceptions to gRPC status codes."""
-        logging.exception(f"Error {action}: {e}")
-
-        if isinstance(e, ccxt.NetworkError):
-            context.abort(grpc.StatusCode.UNAVAILABLE, f"Exchange network error: {e}")
-        elif isinstance(e, ccxt.AuthenticationError):
-            context.abort(
-                grpc.StatusCode.UNAUTHENTICATED, f"Exchange authentication failed: {e}"
-            )
-        elif isinstance(e, ccxt.InsufficientFunds):
-            context.abort(
-                grpc.StatusCode.FAILED_PRECONDITION, f"Insufficient funds: {e}"
-            )
-        elif isinstance(e, ccxt.InvalidOrder):
-            context.abort(
-                grpc.StatusCode.INVALID_ARGUMENT, f"Invalid order parameters: {e}"
-            )
-        else:
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
-
-    def _map_order(
-        self, order: dict, req: Any = None, is_trade: bool = False
-    ) -> exchange_pb2.OrderResponse:
-        """Helper to map a CCXT order or trade dictionary to a gRPC OrderResponse."""
-        if not order:
-            return exchange_pb2.OrderResponse()
-
-        # Prefer 'order' (parent ID) over 'id' (specific execution ID).
-        if is_trade:
-            oid = str(order.get("order") or order.get("id") or "")
-        else:
-            oid = str(order.get("id") or "")
-
-        # Trades are implicitly closed. Orders have an explicit status.
-        status = order.get("status", "closed" if "order" in order else "")
-
-        filled = order.get("filled")
-        average = order.get("average")
-
-        return exchange_pb2.OrderResponse(
-            id=oid,
-            symbol=order.get("symbol", getattr(req, "symbol", "")),
-            side=order.get("side", getattr(req, "side", "")),
-            type=order.get("type", getattr(req, "type", "")),
-            amount=float(order.get("amount") or getattr(req, "amount", 0.0)),
-            price=float(order.get("price") or getattr(req, "price", 0.0)),
-            status=status,
-            filled=float(filled if filled is not None else order.get("amount", 0.0)),
-            remaining=float(order.get("remaining") or 0.0),
-            cost=float(order.get("cost") or 0.0),
-            average=float(average if average is not None else order.get("price", 0.0)),
-            client_order_id=str(order.get("clientOrderId") or ""),
-            timestamp=int(order.get("timestamp") or 0),
-        )
-
     def Ping(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.PingResponse:
         """Handles the Ping RPC. This is a simple health check."""
-        logging.info("Received Ping request from Go client.")
+        logging.info("Ping: received")
         return exchange_pb2.PingResponse(message="Pong from Python gateway!")
 
     def GetTicker(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.TickerResponse:
         """Handles the GetTicker RPC."""
-        logging.info(
-            f"Received GetTicker request for exchange: {request.exchange}, symbol: {request.symbol}"
-        )
-
-        exchange = self._getExchange(request, context)
+        logging.info(f"GetTicker: {request.exchange} {request.symbol}")
+        exchange = utils.get_exchange(self.factory, request, context)
         ticker, price = None, None
         try:
-            ticker = exchange.fetch_ticker(request.symbol)
+            ticker = utils.retry_network_call(exchange.fetch_ticker, request.symbol)
             price = float(ticker.last)
         except Exception as e:
-            self._handle_exchange_error(context, e, "fetching ticker")
+            utils.handle_exchange_error(context, e, "fetching ticker")
 
+        logging.info(f"GetTicker Success: symbol={request.symbol} price={price}")
+        logging.info(f"raw_ticker: {ticker}")
         return exchange_pb2.TickerResponse(symbol=ticker.symbol, price=price)
 
     def GetBalance(
@@ -139,13 +59,12 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     ) -> exchange_pb2.BalanceResponse:
         """Handles the GetBalance RPC."""
         logging.info(
-            f"Received GetBalance request for exchange: {request.exchange}, currency: {request.currency}"
+            f"GetBalance: {request.exchange} asset={request.currency or 'ALL'}"
         )
-
-        exchange = self._getExchange(request, context)
+        exchange = utils.get_exchange(self.factory, request, context)
         balances = []
         try:
-            balance = exchange.fetch_balance()
+            balance = utils.retry_network_call(exchange.fetch_balance)
             free_map = balance.get("free", {})
             used_map = balance.get("used", {})
             total_map = balance.get("total", {})
@@ -170,19 +89,30 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                         exchange_pb2.BalanceObject(asset=asset, free=f, used=u, total=t)
                     )
         except Exception as e:
-            self._handle_exchange_error(context, e, "fetching balance")
+            utils.handle_exchange_error(context, e, "fetching balance")
 
+        logging.info(f"GetBalance Success: assets_count={len(balances)}")
+
+        # Filter raw balance for logging to include only supported assets.
+        pruned = {
+            cat: {a: v for a, v in d.items() if a in SUPPORTED_ASSETS}
+            for cat, d in balance.items()
+            if isinstance(d, dict) and cat in ("free", "used", "total")
+        }
+        logging.info(f"raw_balance: {pruned}")
         return exchange_pb2.BalanceResponse(balances=balances)
 
     def CreateOrder(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrderResponse:
         """Handles the CreateOrder RPC."""
+        p_val = f" price={request.price}" if request.HasField("price") else ""
         logging.info(
-            f"Received CreateOrder request for exchange: {request.exchange}, symbol: {request.symbol}, side: {request.side}, type: {request.type}, amount: {request.amount}, price: {request.price}"
+            f"CreateOrder: {request.exchange} sym={request.symbol} "
+            f"side={request.side} type={request.type} qty={request.amount}{p_val}"
         )
 
-        exchange = self._getExchange(request, context)
+        exchange = utils.get_exchange(self.factory, request, context)
         order = None
         try:
             order = exchange.create_order(
@@ -190,28 +120,70 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 type=request.type,
                 side=request.side,
                 amount=request.amount,
-                price=request.price,
+                price=request.price if request.HasField("price") else None,
             )
         except Exception as e:
-            self._handle_exchange_error(context, e, "creating order")
+            utils.handle_exchange_error(context, e, "creating order")
 
-        return self._map_order(order, request)
+        logging.info(
+            f"CreateOrder Success: id={order.get('id')} "
+            f"status={order.get('status')} fill={order.get('filled', 0.0)}"
+        )
+        logging.info(f"raw_order: {order}")
+        return utils.map_order(order, request)
+
+    def CreateStopOrder(
+        self, request: Any, context: grpc.ServicerContext
+    ) -> exchange_pb2.OrderResponse:
+        """Handles the CreateStopOrder RPC."""
+        l_val = (
+            f" limit={request.limit_price}" if request.HasField("limit_price") else ""
+        )
+        logging.info(
+            f"CreateStopOrder: {request.exchange} sym={request.symbol} "
+            f"side={request.side} qty={request.amount} stop={request.stop_price}{l_val}"
+        )
+
+        exchange = utils.get_exchange(self.factory, request, context)
+        order = None
+        try:
+            order = exchange.create_stop_order(
+                symbol=request.symbol,
+                side=request.side,
+                amount=request.amount,
+                stop_price=request.stop_price,
+                limit_price=request.limit_price
+                if request.HasField("limit_price")
+                else None,
+            )
+        except Exception as e:
+            utils.handle_exchange_error(context, e, "creating stop order")
+
+        logging.info(
+            f"CreateStopOrder Success: id={order.get('id')} "
+            f"status={order.get('status')} fill={order.get('filled', 0.0)}"
+        )
+        logging.info(f"raw_stop_order: {order}")
+        return utils.map_order(order, request)
 
     def CancelOrder(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.CancelOrderResponse:
         """Handles the CancelOrder RPC."""
         logging.info(
-            f"Received CancelOrder request for exchange: {request.exchange}, ID: {request.id}, symbol: {request.symbol}"
+            f"CancelOrder: {request.exchange} id={request.id} sym={request.symbol}"
         )
-
-        exchange = self._getExchange(request, context)
+        exchange = utils.get_exchange(self.factory, request, context)
         result = {}
         try:
             result = exchange.cancel_order(request.id, symbol=request.symbol)
         except Exception as e:
-            self._handle_exchange_error(context, e, "canceling order")
+            utils.handle_exchange_error(context, e, "canceling order")
 
+        logging.info(
+            f"CancelOrder Success: id={request.id} status={result.get('status')}"
+        )
+        logging.info(f"raw_response: {result}")
         return exchange_pb2.CancelOrderResponse(
             id=str(result.get("id", request.id)), status=result.get("status", "")
         )
@@ -220,56 +192,67 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrderResponse:
         """Handles the GetOrder RPC."""
-        logging.info(
-            f"Received GetOrder request for exchange: {request.exchange}, ID: {request.id}"
-        )
-
-        exchange = self._getExchange(request, context)
+        logging.info(f"GetOrder: {request.exchange} id={request.id}")
+        exchange = utils.get_exchange(self.factory, request, context)
         order = None
         try:
-            order = exchange.fetch_order(request.id, symbol=request.symbol)
+            order = utils.retry_network_call(
+                exchange.fetch_order, request.id, symbol=request.symbol
+            )
         except Exception as e:
-            self._handle_exchange_error(context, e, "fetching order")
+            utils.handle_exchange_error(context, e, "fetching order")
 
-        return self._map_order(order, request)
+        logging.info(
+            f"GetOrder Success: id={order.get('id')} "
+            f"status={order.get('status')} fill={order.get('filled', 0.0)}"
+        )
+        logging.info(f"raw_order: {order}")
+        return utils.map_order(order, request)
 
     def GetOpenOrders(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrdersResponse:
         """Handles the GetOpenOrders RPC."""
-        logging.info(
-            f"Received GetOpenOrders request for exchange: {request.exchange}, symbol: {request.symbol}"
-        )
-
-        exchange = self._getExchange(request, context)
+        logging.info(f"GetOpenOrders: {request.exchange} sym={request.symbol or 'ALL'}")
+        exchange = utils.get_exchange(self.factory, request, context)
         orders = []
         try:
             symbol = request.symbol if request.symbol else None
             limit = request.limit if request.limit > 0 else None
-            orders = exchange.fetch_open_orders(symbol, limit=limit)
+            orders = utils.retry_network_call(
+                exchange.fetch_open_orders, symbol, limit=limit
+            )
         except Exception as e:
-            self._handle_exchange_error(context, e, "fetching open orders")
+            utils.handle_exchange_error(context, e, "fetching open orders")
 
+        logging.info(f"GetOpenOrders Success: count={len(orders)}")
         return exchange_pb2.OrdersResponse(
-            orders=[self._map_order(o, request) for o in orders[:limit]]
+            orders=[utils.map_order(o, request) for o in orders[:limit]]
         )
 
     def GetRecentTrades(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrdersResponse:
         """Handles the GetRecentTrades RPC. Fetches historical executions."""
-        exchange = self._getExchange(request, context)
+        logging.info(
+            f"GetRecentTrades: {request.exchange} {request.symbol or 'ALL'} "
+            f"since:{request.since} limit:{request.limit}"
+        )
+        exchange = utils.get_exchange(self.factory, request, context)
         trades = []
         try:
             symbol = request.symbol if request.symbol else None
             since = request.since if request.since > 0 else None
             limit = request.limit if request.limit > 0 else None
-            trades = exchange.fetch_my_trades(symbol, since=since, limit=limit)
+            trades = utils.retry_network_call(
+                exchange.fetch_my_trades, symbol, since=since, limit=limit
+            )
         except Exception as e:
-            self._handle_exchange_error(context, e, "fetching recent trades")
+            utils.handle_exchange_error(context, e, "fetching recent trades")
 
+        logging.info(f"GetRecentTrades Success: count={len(trades)}")
         return exchange_pb2.OrdersResponse(
-            orders=[self._map_order(t, request, True) for t in trades[:limit]]
+            orders=[utils.map_order(t, request, True) for t in trades[:limit]]
         )
 
     def ResetState(

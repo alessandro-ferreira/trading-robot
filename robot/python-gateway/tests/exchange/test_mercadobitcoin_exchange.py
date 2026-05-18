@@ -3,8 +3,15 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
+import requests
 from core import config
-from exchange.exchanges.base import ExchangeError, OrderType
+from exchange.exchanges.base import (
+    ExchangeError,
+    ExchangeNetworkError,
+    AuthenticationError,
+    BadRequestError,
+    OrderType,
+)
 from exchange.exchanges.mercadobitcoin import MercadoBitcoinExchange
 
 TEST_DATA_DIR = "tests/exchange/testdata"
@@ -46,9 +53,12 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         with self.assertRaises(ExchangeError):
             self.exchange._authenticate()
 
-    @patch("requests.get")
-    def test_fetch_ticker_success(self, mock_get):
+    @patch("requests.request")
+    def test_fetch_ticker_success(self, mock_request):
         """Verify ticker fetching and nanosecond-to-millisecond timestamp conversion."""
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
         # Mock ticker response
         mock_response = MagicMock()
         mock_response.status_code = http.client.OK
@@ -65,7 +75,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
                 "date": 1672531200000000000,  # Nanoseconds
             }
         ]
-        mock_get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         ticker = self.exchange.fetch_ticker("BTC/BRL")
 
@@ -76,16 +86,30 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         # Timestamp converted to ms: 1672531200000000 / 1000 = 1672531200000
         self.assertEqual(ticker.timestamp, 1672531200000)
 
-    @patch("requests.get")
-    def test_fetch_ticker_failure(self, mock_get):
+    @patch("requests.request")
+    def test_fetch_ticker_failure(self, mock_request):
         """Verify error handling for invalid market pairs."""
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
         mock_response = MagicMock()
         mock_response.status_code = http.client.NOT_FOUND
         mock_response.text = "Not Found"
-        mock_get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         with self.assertRaises(ExchangeError):
             self.exchange.fetch_ticker("INVALID/PAIR")
+
+    @patch("requests.request")
+    def test_fetch_ticker_network_error(self, mock_request):
+        """Verify mapping of requests.RequestException to ExchangeNetworkError."""
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        mock_request.side_effect = requests.exceptions.ConnectionError("Refused")
+        with self.assertRaises(ExchangeNetworkError) as cm:
+            self.exchange.fetch_ticker("BTC/BRL")
+        self.assertIn("Network error during GET", str(cm.exception))
 
     @patch("requests.request")
     @patch("requests.post")  # For authentication
@@ -202,7 +226,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_response.text = "Invalid quantity"
         mock_request.return_value = mock_response
 
-        with self.assertRaises(ExchangeError) as cm:
+        with self.assertRaises(BadRequestError) as cm:
             self.exchange.create_order("BTC/BRL", OrderType.MARKET, "buy", 0.1)
         self.assertIn("MercadoBitcoin API Error: 400", str(cm.exception))
 
@@ -226,6 +250,64 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "DELETE")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders/ord_123?async=false", args[1])
+
+    @patch("requests.request")
+    def test_create_stop_order_market_simulation(self, mock_request):
+        """Verify stop-market simulation with 40% slippage and rounding."""
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.OK
+        mock_response.json.return_value = {
+            "orderId": "stop_123",
+            "status": "created",
+            "clientOrderId": "c_123",
+        }
+        mock_request.return_value = mock_response
+
+        # Stop price 100,000. Sell order -> limit = 100,000 * 0.6 = 60,000
+        order = self.exchange.create_stop_order("BTC/BRL", "sell", 0.1, 100000.0)
+
+        args, kwargs = mock_request.call_args
+        payload = kwargs["json"]
+        self.assertEqual(payload["stopPrice"], 100000.0)
+        self.assertEqual(payload["limitPrice"], 60000)
+        self.assertEqual(order["price"], 100000.0)
+        self.assertEqual(order["clientOrderId"], "c_123")
+
+    @patch("requests.request")
+    def test_create_stop_order_limit(self, mock_request):
+        """Verify explicit stop-limit creation without slippage override."""
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.OK
+        mock_response.json.return_value = {"orderId": "sl_123", "status": "working"}
+        mock_request.return_value = mock_response
+
+        self.exchange.create_stop_order(
+            "BTC/BRL", "buy", 0.1, 100000.0, limit_price=101000.0
+        )
+
+        kwargs = mock_request.call_args.kwargs
+        self.assertEqual(kwargs["json"]["limitPrice"], 101000.0)
+
+    def test_handle_http_errors_mapping(self):
+        """Verify mapping of HTTP status codes to custom exceptions."""
+        mock_resp = MagicMock()
+        mock_resp.text = "Error"
+
+        mock_resp.status_code = 401
+        self.assertRaises(
+            AuthenticationError, self.exchange._handle_http_errors, mock_resp
+        )
+
+        mock_resp.status_code = 400
+        self.assertRaises(BadRequestError, self.exchange._handle_http_errors, mock_resp)
 
     def test_cancel_order_missing_symbol(self):
         """Verify that MB requires a symbol for cancellation."""
@@ -470,6 +552,6 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
 
 # To run this test directly, use:
-#   python -m tests.exchange.test_mercadobitcoin
+#   python -m tests.exchange.test_mercadobitcoin_exchange
 if __name__ == "__main__":
     unittest.main()

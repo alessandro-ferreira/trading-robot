@@ -95,6 +95,38 @@ class TestCCXTExchange(unittest.TestCase):
         )
         self.assertEqual(order["id"], "123")
 
+    def test_create_stop_order_market(self):
+        """Tests creating a stop market order via CCXT."""
+        self.mock_ccxt.create_order.return_value = {"id": "stop-123"}
+        order = self.exchange.create_stop_order("BTC/USDT", "sell", 0.1, 40000.0)
+
+        self.mock_ccxt.create_order.assert_called_with(
+            "BTC/USDT",
+            "market",
+            "sell",
+            0.1,
+            None,
+            {"triggerPrice": 40000.0, "stopPrice": 40000.0},
+        )
+        self.assertEqual(order["id"], "stop-123")
+
+    def test_create_stop_order_limit(self):
+        """Tests creating a stop limit order via CCXT."""
+        self.mock_ccxt.create_order.return_value = {"id": "stop-limit-123"}
+        order = self.exchange.create_stop_order(
+            "BTC/USDT", "sell", 0.1, 40000.0, 39500.0
+        )
+
+        self.mock_ccxt.create_order.assert_called_with(
+            "BTC/USDT",
+            "limit",
+            "sell",
+            0.1,
+            39500.0,
+            {"triggerPrice": 40000.0, "stopPrice": 40000.0},
+        )
+        self.assertEqual(order["id"], "stop-limit-123")
+
     def test_cancel_order(self):
         """Tests canceling an order via CCXT."""
         self.mock_ccxt.cancel_order.return_value = {
@@ -160,6 +192,6 @@ class TestCCXTExchange(unittest.TestCase):
 
 
 # To run this test directly, use:
-#   python -m tests.exchange.test_base_exchange
+#   python -m tests.exchange.test_ccxt_exchange
 if __name__ == "__main__":
     unittest.main()

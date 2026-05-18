@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from .base import Exchange, Ticker, ExchangeError
+from .base import Exchange, Ticker, ExchangeError, OrderType
 
 
 class CCXTExchange(Exchange):
@@ -73,6 +73,30 @@ class CCXTExchange(Exchange):
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
         return self._ccxt.create_order(symbol, type, side, amount, price)
+
+    def create_stop_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        stop_price: float,
+        limit_price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Creates a new stop order via CCXT using unified trigger parameters."""
+        if not self._ccxt:
+            raise ExchangeError("Underlying exchange not available")
+
+        # CCXT uses 'triggerPrice' as the unified alias for stop/trigger prices.
+        # We provide both 'triggerPrice' and 'stopPrice' to maximize compatibility
+        # across older and newer exchange implementations.
+        params = {"triggerPrice": stop_price, "stopPrice": stop_price}
+
+        # CCXT requires base types for the request; the trigger intent is handled via params.
+        request_type = OrderType.LIMIT if limit_price is not None else OrderType.MARKET
+
+        return self._ccxt.create_order(
+            symbol, request_type, side, amount, limit_price, params
+        )
 
     def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Cancels an existing order via CCXT."""

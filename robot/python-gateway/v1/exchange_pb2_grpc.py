@@ -55,6 +55,11 @@ class ExchangeServiceStub(object):
                 request_serializer=v1_dot_exchange__pb2.CreateOrderRequest.SerializeToString,
                 response_deserializer=v1_dot_exchange__pb2.OrderResponse.FromString,
                 _registered_method=True)
+        self.CreateStopOrder = channel.unary_unary(
+                '/v1.ExchangeService/CreateStopOrder',
+                request_serializer=v1_dot_exchange__pb2.CreateStopOrderRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OrderResponse.FromString,
+                _registered_method=True)
         self.CancelOrder = channel.unary_unary(
                 '/v1.ExchangeService/CancelOrder',
                 request_serializer=v1_dot_exchange__pb2.CancelOrderRequest.SerializeToString,
@@ -67,12 +72,12 @@ class ExchangeServiceStub(object):
                 _registered_method=True)
         self.GetOpenOrders = channel.unary_unary(
                 '/v1.ExchangeService/GetOpenOrders',
-                request_serializer=v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+                request_serializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
                 response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
                 _registered_method=True)
         self.GetRecentTrades = channel.unary_unary(
                 '/v1.ExchangeService/GetRecentTrades',
-                request_serializer=v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+                request_serializer=v1_dot_exchange__pb2.GetRecentTradesRequest.SerializeToString,
                 response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
                 _registered_method=True)
         self.ResetState = channel.unary_unary(
@@ -110,6 +115,13 @@ class ExchangeServiceServicer(object):
 
     def CreateOrder(self, request, context):
         """CreateOrder places a new order on the exchange.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateStopOrder(self, request, context):
+        """CreateStopOrder places a stop-loss or stop-limit order on the exchange.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -174,6 +186,11 @@ def add_ExchangeServiceServicer_to_server(servicer, server):
                     request_deserializer=v1_dot_exchange__pb2.CreateOrderRequest.FromString,
                     response_serializer=v1_dot_exchange__pb2.OrderResponse.SerializeToString,
             ),
+            'CreateStopOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateStopOrder,
+                    request_deserializer=v1_dot_exchange__pb2.CreateStopOrderRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OrderResponse.SerializeToString,
+            ),
             'CancelOrder': grpc.unary_unary_rpc_method_handler(
                     servicer.CancelOrder,
                     request_deserializer=v1_dot_exchange__pb2.CancelOrderRequest.FromString,
@@ -186,12 +203,12 @@ def add_ExchangeServiceServicer_to_server(servicer, server):
             ),
             'GetOpenOrders': grpc.unary_unary_rpc_method_handler(
                     servicer.GetOpenOrders,
-                    request_deserializer=v1_dot_exchange__pb2.GetOrdersRequest.FromString,
+                    request_deserializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.FromString,
                     response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
             ),
             'GetRecentTrades': grpc.unary_unary_rpc_method_handler(
                     servicer.GetRecentTrades,
-                    request_deserializer=v1_dot_exchange__pb2.GetOrdersRequest.FromString,
+                    request_deserializer=v1_dot_exchange__pb2.GetRecentTradesRequest.FromString,
                     response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
             ),
             'ResetState': grpc.unary_unary_rpc_method_handler(
@@ -320,6 +337,33 @@ class ExchangeService(object):
             _registered_method=True)
 
     @staticmethod
+    def CreateStopOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/CreateStopOrder',
+            v1_dot_exchange__pb2.CreateStopOrderRequest.SerializeToString,
+            v1_dot_exchange__pb2.OrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def CancelOrder(request,
             target,
             options=(),
@@ -388,7 +432,7 @@ class ExchangeService(object):
             request,
             target,
             '/v1.ExchangeService/GetOpenOrders',
-            v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+            v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
             v1_dot_exchange__pb2.OrdersResponse.FromString,
             options,
             channel_credentials,
@@ -415,7 +459,7 @@ class ExchangeService(object):
             request,
             target,
             '/v1.ExchangeService/GetRecentTrades',
-            v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+            v1_dot_exchange__pb2.GetRecentTradesRequest.SerializeToString,
             v1_dot_exchange__pb2.OrdersResponse.FromString,
             options,
             channel_credentials,

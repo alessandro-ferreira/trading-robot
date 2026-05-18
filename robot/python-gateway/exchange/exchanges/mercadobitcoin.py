@@ -6,7 +6,15 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from .base import Exchange, Ticker, ExchangeError, OrderType
+from .base import (
+    Exchange,
+    ExchangeError,
+    ExchangeNetworkError,
+    AuthenticationError,
+    BadRequestError,
+    Ticker,
+    OrderType,
+)
 
 
 class MercadoBitcoinExchange(Exchange):
@@ -27,8 +35,7 @@ class MercadoBitcoinExchange(Exchange):
     PATH_ORDERS_SYMBOL = "/accounts/{}/{}/orders"
     PATH_ORDERS_ALL = "/accounts/{}/orders"
 
-    # TODO: Consider making this configurable and implementing retry logic for timeouts in getter methods.
-    TIMEOUT = 10  # seconds
+    TIMEOUT_SECONDS = 10
 
     def __init__(self, cfg=None):
         super().__init__(cfg)
@@ -49,7 +56,7 @@ class MercadoBitcoinExchange(Exchange):
         payload = {"login": self._cfg.api_key, "password": self._cfg.secret}
 
         try:
-            response = requests.post(url, json=payload, timeout=self.TIMEOUT)
+            response = requests.post(url, json=payload, timeout=self.TIMEOUT_SECONDS)
 
             if response.status_code != http.client.OK:
                 raise ExchangeError(
@@ -76,26 +83,52 @@ class MercadoBitcoinExchange(Exchange):
         # Let requests handle JSON serialization by using the `json` parameter.
         headers = {"Authorization": f"Bearer {self._token}"}
 
-        try:
-            if method == "GET":
+        if method == "GET":
+            try:
                 response = requests.request(
-                    method, url, headers=headers, params=data, timeout=self.TIMEOUT
+                    method,
+                    url,
+                    headers=headers,
+                    params=data,
+                    timeout=self.TIMEOUT_SECONDS,
                 )
-            else:
+            except requests.exceptions.RequestException as e:
+                # GET requests are safe to retry
+                raise ExchangeNetworkError(f"Network error during GET: {e}")
+        else:
+            try:
                 response = requests.request(
-                    method, url, headers=headers, json=data, timeout=self.TIMEOUT
+                    method,
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=self.TIMEOUT_SECONDS,
                 )
+            except requests.exceptions.RequestException as e:
+                # Non-GET requests should NOT be automatically retried
+                raise ExchangeError(f"Request failed during {method}: {e}")
 
-            if response.status_code == http.client.NO_CONTENT:
-                return {}
-            elif response.status_code not in [http.client.OK, http.client.CREATED]:
-                raise ExchangeError(
-                    f"MercadoBitcoin API Error: {response.status_code} - {response.text}"
-                )
+        if response.status_code == http.client.NO_CONTENT:
+            return {}
 
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            raise ExchangeError(f"Request failed: {e}")
+        if response.status_code not in [http.client.OK, http.client.CREATED]:
+            self._handle_http_errors(response)
+
+        return response.json()
+
+    def _handle_http_errors(self, response: requests.Response):
+        """Maps HTTP status codes to specific ExchangeError subclasses."""
+        error_msg = (
+            f"MercadoBitcoin API Error: {response.status_code} - {response.text}"
+        )
+
+        if response.status_code in (http.client.UNAUTHORIZED, http.client.FORBIDDEN):
+            raise AuthenticationError(error_msg)
+
+        if response.status_code == http.client.BAD_REQUEST:
+            raise BadRequestError(error_msg)
+
+        raise ExchangeError(error_msg)
 
     def _get_account_id(self) -> str:
         """
@@ -108,10 +141,8 @@ class MercadoBitcoinExchange(Exchange):
                 data = self._request("GET", self.PATH_ACCOUNTS)
                 # EAFP: Try to access the first element and its 'id' key.
                 self._account_id = data[0]["id"]
-            except ExchangeError:
-                raise
             except Exception:
-                raise ExchangeError(f"Failed to parse account ID. Response: {data}")
+                raise ExchangeError("Failed to retrieve account ID from MercadoBitcoin")
         return self._account_id
 
     def _normalize_symbol(self, symbol: str) -> str:
@@ -126,6 +157,32 @@ class MercadoBitcoinExchange(Exchange):
             raise ExchangeError(f"Invalid symbol format for MercadoBitcoin: {symbol}")
         return f"{parts[0]}-{parts[1]}"
 
+    def _map_status(self, mb_status: Optional[str]) -> str:
+        """Maps Mercado Bitcoin status to standard CCXT terms."""
+        if not mb_status:
+            return ""
+        # MB v4 uses mixed casing (uppercase in POST, lowercase in GET).
+        s = mb_status.lower()
+        if s in ("created", "working"):
+            return "open"
+        if s == "filled":
+            return "closed"
+        if s == "cancelled":
+            return "canceled"
+        return s
+
+    def _map_type(self, mb_type: Optional[str]) -> str:
+        """Maps Mercado Bitcoin types to standard constants."""
+        if not mb_type:
+            return ""
+        t = mb_type.lower()
+        # Mercado Bitcoin uses 'stoplimit' for both stop-limit and simulated
+        # stop-market orders. We map it to 'stop_market' as requested to
+        # align with the bot's internal database constants.
+        if t == "stoplimit":
+            return OrderType.STOP_MARKET
+        return t
+
     def fetch_ticker(self, symbol: str) -> Ticker:
         """
         Fetches the ticker for a given symbol using the public API.
@@ -134,37 +191,18 @@ class MercadoBitcoinExchange(Exchange):
         :return: A Ticker object.
         """
         pair = self._normalize_symbol(symbol)
-        url = f"{self.BASE_URL}{self.PATH_TICKERS}?symbols={pair}"
+        data = self._request("GET", self.PATH_TICKERS, data={"symbols": pair})
 
-        data = None
-        try:
-            response = requests.get(url, timeout=self.TIMEOUT)
+        ticker_data = data[0]
 
-            if response.status_code != http.client.OK:
-                raise ExchangeError(
-                    f"MercadoBitcoin API Error: {response.status_code} - {response.text}"
-                )
-
-            data = response.json()
-            ticker_data = data[0]
-
-            return Ticker(
-                symbol=symbol,
-                last=float(ticker_data["last"]),
-                bid=float(ticker_data["buy"]) if ticker_data.get("buy") else None,
-                ask=float(ticker_data["sell"]) if ticker_data.get("sell") else None,
-                timestamp=int(int(ticker_data["date"]) / 1000000),  # Convert ns to ms
-                info=ticker_data,
-            )
-
-        except ExchangeError:
-            raise
-        except requests.exceptions.RequestException as e:
-            raise ExchangeError(f"Request failed: {e}")
-        except Exception:
-            raise ExchangeError(
-                f"Failed to parse ticker for {symbol}. Response: {data}"
-            )
+        return Ticker(
+            symbol=symbol,
+            last=float(ticker_data["last"]),
+            bid=float(ticker_data["buy"]) if ticker_data.get("buy") else None,
+            ask=float(ticker_data["sell"]) if ticker_data.get("sell") else None,
+            timestamp=int(int(ticker_data["date"]) / 1000000),  # Convert ns to ms
+            info=ticker_data,
+        )
 
     def fetch_balance(self) -> Dict[str, Dict[str, float]]:
         """
@@ -227,18 +265,87 @@ class MercadoBitcoinExchange(Exchange):
         if type == OrderType.LIMIT:
             payload["limitPrice"] = float(price)
 
-        logging.debug(f"Creating order with payload: {payload}")
+        logging.info(f"Creating order with payload: {payload}")
 
         response = self._request("POST", path, data=payload)
+        status = self._map_status(response.get("status"))
 
         return {
             "id": response.get("orderId"),
+            "clientOrderId": response.get("clientOrderId")
+            or response.get("externalId"),
             "symbol": symbol,
-            "type": type,
+            "type": self._map_type(type),
             "side": side,
             "amount": amount,
             "price": price,
-            "status": "open",
+            "filled": amount if status == "closed" else 0.0,
+            "remaining": 0.0 if status == "closed" else amount,
+            "status": status,
+            "info": response,
+        }
+
+    def create_stop_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        stop_price: float,
+        limit_price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Creates a new stop order on Mercado Bitcoin v4.
+        Note: MB v4 only supports 'stoplimit'. To simulate stop-market,
+        we use stopPrice as the trigger and ensure a limitPrice is provided.
+        """
+        account_id = self._get_account_id()
+        pair = self._normalize_symbol(symbol)
+        path = self.PATH_PLACE_ORDER.format(account_id, pair)
+
+        # MB V4 API literal is 'stoplimit'
+        mb_type = "stoplimit"
+        qty_str = "{:.8f}".format(amount).rstrip("0").rstrip(".")
+
+        # If the bot requested a Market Stop (limit_price=0/None), we must
+        # still provide a limitPrice for the 'stoplimit' type.
+        if limit_price and limit_price > 0:
+            effective_limit = float(limit_price)
+        else:
+            # To simulate a stop-market on an exchange that only supports stop-limit,
+            # we use a significant slippage margin (40%) to ensure execution.
+            slippage_percentage = 0.40
+            if side == "sell":
+                effective_limit = float(stop_price) * (1.0 - slippage_percentage)
+            else:
+                effective_limit = float(stop_price) * (1.0 + slippage_percentage)
+
+            # Rounding to the nearest integer to satisfy tick size requirements for BRL pairs.
+            effective_limit = round(effective_limit)
+
+        payload = {
+            "qty": qty_str,
+            "side": side,
+            "type": mb_type,
+            "stopPrice": float(stop_price),
+            "limitPrice": effective_limit,
+        }
+
+        logging.info(f"Creating stop order with payload: {payload}")
+
+        response = self._request("POST", path, data=payload)
+        status = self._map_status(response.get("status"))
+        return {
+            "id": response.get("orderId"),
+            "clientOrderId": response.get("clientOrderId")
+            or response.get("externalId"),
+            "symbol": symbol,
+            "type": self._map_type(mb_type),
+            "side": side,
+            "amount": amount,
+            "price": float(stop_price),
+            "filled": amount if status == "closed" else 0.0,
+            "remaining": 0.0 if status == "closed" else amount,
+            "status": status,
             "info": response,
         }
 
@@ -286,13 +393,7 @@ class MercadoBitcoinExchange(Exchange):
         response = self._request("GET", path)
 
         # Map status to standard ccxt terms
-        status_map = {
-            "created": "open",
-            "working": "open",
-            "filled": "closed",
-            "cancelled": "canceled",
-        }
-        status = status_map.get(response.get("status"), response.get("status"))
+        status = self._map_status(response.get("status"))
 
         timestamp = (
             int(response.get("created_at")) * 1000
@@ -307,24 +408,26 @@ class MercadoBitcoinExchange(Exchange):
 
         return {
             "id": response.get("id"),
-            "clientOrderId": response.get("externalId"),
+            "clientOrderId": response.get("clientOrderId")
+            or response.get("externalId"),
             "symbol": symbol,
-            "type": response.get("type"),
+            "type": self._map_type(response.get("type")),
             "side": response.get("side"),
-            "price": float(response.get("limitPrice"))
-            if response.get("limitPrice")
-            else None,
+            "price": float(
+                response.get("stopPrice") or response.get("limitPrice") or 0.0
+            ),
             "average": float(response.get("avgPrice"))
             if response.get("avgPrice")
             else None,
-            "amount": float(response.get("qty")) if response.get("qty") else 0.0,
-            "filled": float(response.get("filledQty"))
-            if response.get("filledQty")
-            else 0.0,
-            "remaining": (float(response.get("qty")) - float(response.get("filledQty")))
-            if response.get("qty") and response.get("filledQty")
-            else 0.0,
-            "cost": float(response.get("cost")) if response.get("cost") else None,
+            "amount": float(response.get("qty") or 0.0),
+            "filled": float(response.get("filledQty") or 0.0),
+            "remaining": (
+                float(response.get("qty") or 0.0)
+                - float(response.get("filledQty") or 0.0)
+            ),
+            "cost": float(response.get("cost"))
+            if response.get("cost") is not None
+            else None,
             "status": status,
             "timestamp": timestamp,
             "datetime": dt,
@@ -365,13 +468,7 @@ class MercadoBitcoinExchange(Exchange):
         result = []
         for order in orders_data:
             # Map status
-            status_map = {
-                "created": "open",
-                "working": "open",
-                "filled": "closed",
-                "cancelled": "canceled",
-            }
-            status = status_map.get(order.get("status"), order.get("status"))
+            status = self._map_status(order.get("status"))
 
             timestamp = (
                 int(order.get("created_at")) * 1000 if order.get("created_at") else None
@@ -384,7 +481,7 @@ class MercadoBitcoinExchange(Exchange):
 
             # Handle field discrepancies
             order_id = order.get("id")
-            client_order_id = order.get("externalId") or order.get("external_id")
+            client_order_id = order.get("clientOrderId") or order.get("externalId")
             # If symbol was not provided, it should be in the order object as 'instrument'
             order_symbol = (
                 symbol
@@ -396,19 +493,19 @@ class MercadoBitcoinExchange(Exchange):
                 )
             )
 
-            price = float(order.get("limitPrice")) if order.get("limitPrice") else None
+            price = float(order.get("stopPrice") or order.get("limitPrice") or 0.0)
             avg_price = float(order.get("avgPrice")) if order.get("avgPrice") else None
-            amount = float(order.get("qty")) if order.get("qty") else 0.0
-            filled = float(order.get("filledQty")) if order.get("filledQty") else 0.0
+            amount = float(order.get("qty") or 0.0)
+            filled = float(order.get("filledQty") or 0.0)
             remaining = amount - filled
-            cost = float(order.get("cost")) if order.get("cost") else None
+            cost = float(order.get("cost")) if order.get("cost") is not None else None
 
             result.append(
                 {
                     "id": order_id,
                     "clientOrderId": client_order_id,
                     "symbol": order_symbol,
-                    "type": order.get("type"),
+                    "type": self._map_type(order.get("type")),
                     "side": order.get("side"),
                     "price": price,
                     "average": avg_price,
@@ -486,6 +583,7 @@ class MercadoBitcoinExchange(Exchange):
                         "symbol": symbol
                         if symbol
                         else ex.get("instrument", "").replace("-", "/"),
+                        "type": self._map_type(order.get("type")),
                         "side": ex.get("side"),
                         "price": float(ex.get("price") or 0.0),
                         "amount": float(ex.get("qty") or 0.0),
@@ -495,6 +593,11 @@ class MercadoBitcoinExchange(Exchange):
                         "info": ex,
                     }
                 )
+
+        # CCXT-style local filtering by 'since' (millisecond timestamp)
+        # to ensure the filter is strictly applied regardless of API behavior.
+        if since:
+            result = [t for t in result if (t.get("timestamp") or 0) >= since]
 
         # Aggregated executions from different orders must be re-sorted by execution time (descending).
         result.sort(key=lambda x: x["timestamp"] or 0, reverse=True)

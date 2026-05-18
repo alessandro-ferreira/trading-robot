@@ -1,4 +1,5 @@
 import unittest
+from exchange.exchanges.base import OrderType
 from exchange.exchanges.dummy import DummyExchange
 
 
@@ -52,6 +53,23 @@ class TestDummyExchange(unittest.TestCase):
         self.assertEqual(order_market["status"], "closed")
         self.assertEqual(order_market["filled"], 0.01)
         self.assertIsNotNone(order_market["fee"])
+
+    def test_create_stop_order(self):
+        """Verify creation of stop_market and stop_limit orders."""
+        # Test Stop Market (Open)
+        order = self.exchange.create_stop_order("BTC/USDT", "sell", 0.1, 40000.0)
+        self.assertEqual(order["symbol"], "BTC/USDT")
+        self.assertEqual(order["side"], "sell")
+        self.assertEqual(order["type"], OrderType.STOP_MARKET)
+        self.assertEqual(order["price"], 40000.0)
+        self.assertEqual(order["status"], "open")
+
+        # Test Stop Limit (Open)
+        order_limit = self.exchange.create_stop_order(
+            "BTC/USDT", "sell", 0.1, 40000.0, 39500.0
+        )
+        self.assertEqual(order_limit["type"], OrderType.STOP_LIMIT)
+        self.assertEqual(order_limit["price"], 39500.0)
 
     def test_cancel_order(self):
         """Verify that an open order can be canceled."""
@@ -115,6 +133,17 @@ class TestDummyExchange(unittest.TestCase):
         self.assertEqual(len(limited_trades), 2)
         self.assertEqual(limited_trades[0]["amount"], 0.15)
         self.assertIn("order", limited_trades[0])  # Verify ID mapping
+
+    def test_reset(self):
+        """Verify that reset clears orders and restores initial state."""
+        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.1, 20000)
+        self.exchange.fetch_ticker("BTC/USDT")  # Triggers price drift
+
+        self.exchange.reset()
+
+        self.assertEqual(len(self.exchange.fetch_open_orders()), 0)
+        ticker = self.exchange.fetch_ticker("BTC/USDT")
+        self.assertEqual(ticker.last, 42500.50)  # Verify original price restored
 
 
 # To run this test directly, use:

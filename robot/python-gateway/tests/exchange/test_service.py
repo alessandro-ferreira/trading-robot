@@ -4,13 +4,18 @@ from unittest.mock import MagicMock
 import grpc
 import ccxt
 
-from exchange.service import (
-    ExchangeService,
+from exchange.service import ExchangeService
+from exchange.factory import (
     ExchangeNotConfigured,
     ExchangeConfigurationError,
 )
 from v1 import exchange_pb2
 from exchange.exchanges.base import Ticker
+from exchange.exchanges.base import (
+    ExchangeNetworkError,
+    InsufficientFundsError,
+    BadRequestError,
+)
 from core import config
 
 TEST_DATA_DIR = "tests/core/testdata"
@@ -154,6 +159,19 @@ class TestExchangeService(unittest.TestCase):
             grpc.StatusCode.UNAVAILABLE, "Exchange network error: Timeout"
         )
 
+    def test_get_ticker_exchange_network_error(self):
+        """Verify custom ExchangeNetworkError mapping to gRPC UNAVAILABLE status."""
+        self.mock_exchange.fetch_ticker.side_effect = ExchangeNetworkError(
+            "Connection refused"
+        )
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.GetTickerRequest(exchange="binance", symbol="BTC/USDT")
+        with self.assertRaises(Exception):
+            self.service.GetTicker(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.UNAVAILABLE, "Exchange network error: Connection refused"
+        )
+
     def test_get_balance_filter(self):
         """Verify filtering by specific currency."""
         request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
@@ -218,7 +236,7 @@ class TestExchangeService(unittest.TestCase):
             self.service.GetBalance(request, self.context)
         self.context.abort.assert_called_with(
             grpc.StatusCode.UNAUTHENTICATED,
-            "Exchange authentication failed: Invalid API Key",
+            "Auth failed: Invalid API Key",
         )
 
     def test_create_order(self):
@@ -290,7 +308,69 @@ class TestExchangeService(unittest.TestCase):
             self.service.CreateOrder(request, self.context)
         self.context.abort.assert_called_with(
             grpc.StatusCode.INVALID_ARGUMENT,
-            "Invalid order parameters: Order amount is too small",
+            "Invalid parameters: Order amount is too small",
+        )
+
+    def test_create_order_bad_request(self):
+        """Verify mapping of BadRequestError."""
+        self.mock_exchange.create_order.side_effect = BadRequestError("Invalid price")
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.CreateOrderRequest(
+            exchange="binance",
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            amount=1.0,
+            price=-1.0,
+        )
+        with self.assertRaises(Exception):
+            self.service.CreateOrder(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT, "Invalid parameters: Invalid price"
+        )
+
+    def test_create_stop_order(self):
+        """Verify successful stop order creation and mapping."""
+        self.mock_exchange.create_stop_order.return_value = {
+            "id": "stop-123",
+            "status": "open",
+            "filled": 0.0,
+        }
+        request = exchange_pb2.CreateStopOrderRequest(
+            exchange="binance",
+            symbol="BTC/USDT",
+            side="sell",
+            amount=0.1,
+            stop_price=40000.0,
+        )
+        response = self.service.CreateStopOrder(request, self.context)
+        self.assertEqual(response.id, "stop-123")
+        self.mock_exchange.create_stop_order.assert_called_with(
+            symbol="BTC/USDT",
+            side="sell",
+            amount=0.1,
+            stop_price=40000.0,
+            limit_price=None,
+        )
+
+    def test_create_stop_order_insufficient_funds(self):
+        """Verify mapping of InsufficientFundsError in CreateStopOrder."""
+        self.mock_exchange.create_stop_order.side_effect = InsufficientFundsError(
+            "Insufficient balance"
+        )
+        self.context.abort.side_effect = Exception("Aborted")
+        request = exchange_pb2.CreateStopOrderRequest(
+            exchange="binance",
+            symbol="BTC/USDT",
+            side="sell",
+            amount=1.0,
+            stop_price=50000.0,
+        )
+        with self.assertRaises(Exception):
+            self.service.CreateStopOrder(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.FAILED_PRECONDITION,
+            "Insufficient funds: Insufficient balance",
         )
 
     def test_cancel_order(self):
@@ -360,7 +440,7 @@ class TestExchangeService(unittest.TestCase):
                 "status": "open",
             },
         ]
-        request = exchange_pb2.GetOrdersRequest(
+        request = exchange_pb2.GetOpenOrdersRequest(
             exchange="binance", symbol="BTC/USDT", limit=2
         )
         response = self.service.GetOpenOrders(request, self.context)
@@ -370,7 +450,7 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT", limit=2)
 
         # Test that limit parameter is correctly applied
-        request = exchange_pb2.GetOrdersRequest(
+        request = exchange_pb2.GetOpenOrdersRequest(
             exchange="binance", symbol="BTC/USDT", limit=1
         )
         response = self.service.GetOpenOrders(request, self.context)
@@ -380,7 +460,9 @@ class TestExchangeService(unittest.TestCase):
 
     def test_get_open_orders_no_params(self):
         """Verify that empty parameters are correctly converted to None."""
-        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="", limit=0)
+        request = exchange_pb2.GetOpenOrdersRequest(
+            exchange="binance", symbol="", limit=0
+        )
         self.service.GetOpenOrders(request, self.context)
         self.mock_exchange.fetch_open_orders.assert_called_with(None, limit=None)
 
@@ -388,7 +470,9 @@ class TestExchangeService(unittest.TestCase):
         """Verify open orders error handling."""
         self.mock_exchange.fetch_open_orders.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
-        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="BTC/USDT")
+        request = exchange_pb2.GetOpenOrdersRequest(
+            exchange="binance", symbol="BTC/USDT"
+        )
         with self.assertRaises(Exception) as cm:
             self.service.GetOpenOrders(request, self.context)
         self.assertIn("Internal error", str(cm.exception))
@@ -399,11 +483,13 @@ class TestExchangeService(unittest.TestCase):
         """Verify internal exception mapping in GetRecentTrades."""
         self.mock_exchange.fetch_my_trades.side_effect = Exception("Database failure")
         self.context.abort.side_effect = Exception("Aborted")
-        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="BTC/USDT")
+        request = exchange_pb2.GetRecentTradesRequest(
+            exchange="binance", symbol="BTC/USDT"
+        )
         with self.assertRaises(Exception):
             self.service.GetRecentTrades(request, self.context)
         self.context.abort.assert_called_with(
-            grpc.StatusCode.INTERNAL, "Database failure"
+            grpc.StatusCode.INTERNAL, "Internal gateway error: Database failure"
         )
 
     def test_get_recent_trades(self):
@@ -428,7 +514,7 @@ class TestExchangeService(unittest.TestCase):
                 "timestamp": 1672531300000,
             },
         ]
-        request = exchange_pb2.GetOrdersRequest(
+        request = exchange_pb2.GetRecentTradesRequest(
             exchange="binance", symbol="BTC/USDT", since=1672531200000, limit=2
         )
         response = self.service.GetRecentTrades(request, self.context)
@@ -440,7 +526,7 @@ class TestExchangeService(unittest.TestCase):
         )
 
         # Test that limit parameter is correctly applied
-        request = exchange_pb2.GetOrdersRequest(
+        request = exchange_pb2.GetRecentTradesRequest(
             exchange="binance", symbol="BTC/USDT", since=1672531200000, limit=1
         )
         response = self.service.GetRecentTrades(request, self.context)
@@ -452,7 +538,7 @@ class TestExchangeService(unittest.TestCase):
 
     def test_get_recent_trades_no_params(self):
         """Verify that empty trade audit parameters are converted to None."""
-        request = exchange_pb2.GetOrdersRequest(
+        request = exchange_pb2.GetRecentTradesRequest(
             exchange="binance", symbol="", since=0, limit=0
         )
         self.service.GetRecentTrades(request, self.context)
