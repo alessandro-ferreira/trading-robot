@@ -115,7 +115,7 @@ func TestService_GetTicker(t *testing.T) {
 				require.NotNil(t, resp)
 				assert.Equal(t, tc.expectedPrice, resp.Price)
 			} else {
-				assert.Nil(t, resp)
+				assert.Equal(t, repository.MarketDataTick{}, resp)
 			}
 
 			mockRepo.AssertExpectations(t)
@@ -146,6 +146,7 @@ func TestService_GetBalance(t *testing.T) {
 		setupRepoMock       func(*MockBalancesRepo)
 		expectedErrContains string
 		expectedBalanceID   int64
+		expectedCount       int
 		assertLogs          func(*testing.T, *bytes.Buffer)
 	}{
 		{
@@ -161,6 +162,7 @@ func TestService_GetBalance(t *testing.T) {
 					return b.AssetSymbol == "BTC" && b.Free == 1.5 && b.Used == 0.5 && b.Total == 2.0
 				})).Return(int64(1), nil)
 			},
+			expectedCount: 1,
 		},
 		{
 			name:        "Gateway Error",
@@ -170,6 +172,7 @@ func TestService_GetBalance(t *testing.T) {
 			},
 			setupRepoMock:       func(mockRepo *MockBalancesRepo) {},
 			expectedErrContains: "gateway down",
+			expectedCount:       0,
 		},
 		{
 			name:        "DB Persistence Error",
@@ -183,6 +186,7 @@ func TestService_GetBalance(t *testing.T) {
 				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), errors.New("db error"))
 			},
 			// We don't error the whole call if one asset fails to persist, we log and continue
+			expectedCount:       0,
 			expectedErrContains: "",
 		},
 		{
@@ -198,6 +202,7 @@ func TestService_GetBalance(t *testing.T) {
 			},
 			// When assetSymbol is passed ("BTC"), persistence failure should return an error
 			expectedErrContains: "failed to persist balance",
+			expectedCount:       0,
 		},
 		{
 			name:        "Success with balance inconsistency warning",
@@ -210,6 +215,7 @@ func TestService_GetBalance(t *testing.T) {
 			setupRepoMock: func(mockRepo *MockBalancesRepo) {
 				mockRepo.On("UpsertBalance", mock.Anything, mock.Anything, mock.Anything).Return(int64(1), nil)
 			},
+			expectedCount: 1,
 			assertLogs: func(t *testing.T, logBuffer *bytes.Buffer) {
 				assert.Contains(t, logBuffer.String(), "Balance inconsistency detected")
 			},
@@ -240,11 +246,10 @@ func TestService_GetBalance(t *testing.T) {
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
-				assert.Nil(t, resp)
+				assert.Empty(t, resp)
 			} else {
 				require.NoError(t, err)
-				require.NotNil(t, resp)
-				assert.NotEmpty(t, resp.Balances)
+				assert.Len(t, resp, tc.expectedCount)
 			}
 
 			if tc.assertLogs != nil {
@@ -360,8 +365,109 @@ func TestService_CreateOrder(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			if resp != nil {
-				assert.Equal(t, tc.expectedOrderID, resp.Id)
+			if tc.expectedOrderID != "" {
+				assert.Equal(t, tc.expectedOrderID, resp.ExchangeOrderID)
+			}
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_CreateStopOrder(t *testing.T) {
+	testCases := []struct {
+		name                string
+		limitPrice          float64
+		setupGatewayMock    func(*mockExchangeServer)
+		setupRepoMock       func(*MockOrdersRepo)
+		expectedErrContains string
+		expectedOrderID     string
+	}{
+		{
+			name:       "Success Stop Market",
+			limitPrice: 0,
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.createStopOrderResponse = &pb.OrderResponse{
+					Id:     "stop-123",
+					Symbol: "BTC/USDT",
+					Status: repository.OrderStatusOpen,
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
+					return o.ExchangeOrderID == "stop-123" &&
+						o.OrderType == repository.OrderTypeStopMarket &&
+						o.Price.Float64 == 50000.0
+				})).Return(int64(1), nil)
+			},
+			expectedOrderID: "stop-123",
+		},
+		{
+			name:       "Success Stop Limit",
+			limitPrice: 49500.0,
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.createStopOrderResponse = &pb.OrderResponse{
+					Id:     "stop-limit-123",
+					Symbol: "BTC/USDT",
+					Status: repository.OrderStatusOpen,
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
+					return o.ExchangeOrderID == "stop-limit-123" &&
+						o.OrderType == repository.OrderTypeStopLimit &&
+						o.Price.Float64 == 50000.0
+				})).Return(int64(2), nil)
+			},
+			expectedOrderID: "stop-limit-123",
+		},
+		{
+			name: "Gateway Error",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.createStopOrderError = status.Error(codes.Unavailable, "gateway down")
+			},
+			setupRepoMock:       func(mockRepo *MockOrdersRepo) {},
+			expectedErrContains: "gateway down",
+		},
+		{
+			name: "DB Persistence Error",
+			setupGatewayMock: func(mockSrv *mockExchangeServer) {
+				mockSrv.createStopOrderResponse = &pb.OrderResponse{
+					Id:     "stop-123",
+					Symbol: "BTC/USDT",
+					Status: repository.OrderStatusOpen,
+				}
+			},
+			setupRepoMock: func(mockRepo *MockOrdersRepo) {
+				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.Anything).Return(int64(0), errors.New("db error"))
+			},
+			expectedErrContains: "stop order created but failed to persist",
+			expectedOrderID:     "stop-123",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			tc.setupGatewayMock(mockSrv)
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			mockRepo := new(MockOrdersRepo)
+			tc.setupRepoMock(mockRepo)
+
+			container := &repository.Container{Orders: mockRepo}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container)
+
+			resp, err := svc.CreateStopOrder(context.Background(), "binance", "BTC/USDT", repository.OrderSideSell, 0.1, 50000.0, tc.limitPrice)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedOrderID, resp.ExchangeOrderID)
 			}
 
 			mockRepo.AssertExpectations(t)
@@ -572,8 +678,7 @@ func TestService_GetOrder(t *testing.T) {
 			}
 
 			if tc.expectedOrderID != "" {
-				require.NotNil(t, resp)
-				assert.Equal(t, tc.expectedOrderID, resp.Id)
+				assert.Equal(t, tc.expectedOrderID, resp.ExchangeOrderID)
 			}
 
 			mockRepo.AssertExpectations(t)
@@ -665,7 +770,7 @@ func TestService_GetOpenOrders(t *testing.T) {
 					int64(0), errors.New("db generic error"),
 				)
 			},
-			expectedCount: 1,
+			expectedCount: 0,
 		},
 	}
 
@@ -690,7 +795,7 @@ func TestService_GetOpenOrders(t *testing.T) {
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
 			} else {
 				require.NoError(t, err)
-				assert.Len(t, resp.Orders, tc.expectedCount)
+				assert.Len(t, resp, tc.expectedCount)
 			}
 
 			mockRepo.AssertExpectations(t)
@@ -771,7 +876,7 @@ func TestService_GetRecentTrades(t *testing.T) {
 					int64(0), errors.New("db generic error"),
 				)
 			},
-			expectedCount: 1,
+			expectedCount: 0,
 		},
 	}
 
@@ -796,7 +901,7 @@ func TestService_GetRecentTrades(t *testing.T) {
 				assert.Contains(t, err.Error(), tc.expectedErrContains)
 			} else {
 				require.NoError(t, err)
-				assert.Len(t, resp.Orders, tc.expectedCount)
+				assert.Len(t, resp, tc.expectedCount)
 			}
 
 			mockRepo.AssertExpectations(t)

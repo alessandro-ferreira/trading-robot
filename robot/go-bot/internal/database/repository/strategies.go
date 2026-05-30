@@ -8,12 +8,14 @@ import (
 	"time"
 )
 
+// Strategy Type constants
 const (
 	StrategyDummy            = "dummy"
 	StrategyMomentumProfit   = "momentum_profit"
 	StrategyMomentumTrailing = "momentum_trailing"
 )
 
+// Strategy Status constants
 const (
 	StrategyEnabled         = "enabled"
 	StrategyPendingDisabled = "pending_disabled"
@@ -88,9 +90,9 @@ func (r *pgStrategiesRepo) GetStrategyPairs(
 			sp.strategy_type,
 			sp.status,
 			sm.window_seconds,
-			ARRAY(SELECT (m).lookback_seconds FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds) 
+			ARRAY(SELECT (m).lookback_seconds FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds)
 				AS lookbacks,
-			ARRAY(SELECT (m).threshold FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds) 
+			ARRAY(SELECT (m).threshold FROM unnest(sm.momentum_windows) AS m ORDER BY (m).lookback_seconds)
 				AS thresholds,
 			sm.require_all,
 			sm.stop_loss_pct,
@@ -218,7 +220,7 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(
 	disablePair := `
 		UPDATE trading.strategy_pairs
 		SET status = 'disabled', updated_at = NOW(), updated_by = $3
-		WHERE exchange_id = $1 AND instrument_id = $2 
+		WHERE exchange_id = $1 AND instrument_id = $2
 			AND status IN ('enabled', 'pending_disabled') AND active
 	`
 	if _, err = tx.Exec(ctx, disablePair, exchangeID, instrumentID, DefaultUser); err != nil {
@@ -244,7 +246,7 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(
 	if errors.Is(err, sql.ErrNoRows) {
 		// Insert the strategy pair if it does not exist.
 		insertPair := `
-			INSERT INTO trading.strategy_pairs 
+			INSERT INTO trading.strategy_pairs
 				(exchange_id, instrument_id, strategy_type, status, active, created_by)
 			VALUES ($1, $2, $3, 'enabled', TRUE, $4)
 			RETURNING id
@@ -296,7 +298,7 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(
 		SET
 			is_enabled = TRUE,
 			window_seconds = $4,
-			momentum_windows = 
+			momentum_windows =
 				ARRAY(SELECT ROW(l, t)::trading.momentum_window FROM unnest($5::int[], $6::numeric[]) AS x(l, t)),
 			require_all = $7,
 			stop_loss_pct = $8,
@@ -356,7 +358,7 @@ func (r *pgStrategiesRepo) UpsertEnabledStrategy(
 	return err
 }
 
-// RequestStrategyDisable sets status to 'pending_disable' scheduling a disable for a pair.
+// RequestStrategyDisable sets status to 'pending_disable', scheduling a disable for a pair.
 func (r *pgStrategiesRepo) RequestStrategyDisable(
 	ctx context.Context, db DBExecutor, exchangeName, symbol, strategyType string,
 ) error {
@@ -379,8 +381,8 @@ func (r *pgStrategiesRepo) RequestStrategyDisable(
 	updateQuery := `
 		UPDATE trading.strategy_pairs
 		SET status = 'pending_disabled', updated_at = NOW(), updated_by = $4
-		WHERE exchange_id = $1 AND instrument_id = $2 AND strategy_type = $3 
-			AND status = 'enabled' AND active 
+		WHERE exchange_id = $1 AND instrument_id = $2 AND strategy_type = $3
+			AND status = 'enabled' AND active
 	`
 	if _, err = db.Exec(
 		ctx, updateQuery, exchangeID, instrumentID, strategyType, DefaultUser,

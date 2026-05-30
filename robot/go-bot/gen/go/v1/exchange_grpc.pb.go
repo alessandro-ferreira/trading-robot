@@ -31,6 +31,8 @@ type ExchangeServiceClient interface {
 	GetBalance(ctx context.Context, in *GetBalanceRequest, opts ...grpc.CallOption) (*BalanceResponse, error)
 	// CreateOrder places a new order on the exchange.
 	CreateOrder(ctx context.Context, in *CreateOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error)
+	// CreateStopOrder places a stop-loss or stop-limit order on the exchange.
+	CreateStopOrder(ctx context.Context, in *CreateStopOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error)
 	// CancelOrder cancels an existing order.
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error)
 	// GetOrder fetches details of a specific order.
@@ -39,8 +41,6 @@ type ExchangeServiceClient interface {
 	GetOpenOrders(ctx context.Context, in *GetOpenOrdersRequest, opts ...grpc.CallOption) (*OrdersResponse, error)
 	// GetRecentTrades fetches recent execution history for a symbol.
 	GetRecentTrades(ctx context.Context, in *GetRecentTradesRequest, opts ...grpc.CallOption) (*OrdersResponse, error)
-	// CreateStopOrder places a stop-loss or stop-limit order on the exchange.
-	CreateStopOrder(ctx context.Context, in *CreateStopOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error)
 	// ResetState resets the state of the exchange.
 	// WARN: This method is intended for testing purposes only.
 	ResetState(ctx context.Context, in *ResetStateRequest, opts ...grpc.CallOption) (*ResetStateResponse, error)
@@ -90,6 +90,15 @@ func (c *exchangeServiceClient) CreateOrder(ctx context.Context, in *CreateOrder
 	return out, nil
 }
 
+func (c *exchangeServiceClient) CreateStopOrder(ctx context.Context, in *CreateStopOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error) {
+	out := new(OrderResponse)
+	err := c.cc.Invoke(ctx, "/v1.ExchangeService/CreateStopOrder", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *exchangeServiceClient) CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*CancelOrderResponse, error) {
 	out := new(CancelOrderResponse)
 	err := c.cc.Invoke(ctx, "/v1.ExchangeService/CancelOrder", in, out, opts...)
@@ -126,15 +135,6 @@ func (c *exchangeServiceClient) GetRecentTrades(ctx context.Context, in *GetRece
 	return out, nil
 }
 
-func (c *exchangeServiceClient) CreateStopOrder(ctx context.Context, in *CreateStopOrderRequest, opts ...grpc.CallOption) (*OrderResponse, error) {
-	out := new(OrderResponse)
-	err := c.cc.Invoke(ctx, "/v1.ExchangeService/CreateStopOrder", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *exchangeServiceClient) ResetState(ctx context.Context, in *ResetStateRequest, opts ...grpc.CallOption) (*ResetStateResponse, error) {
 	out := new(ResetStateResponse)
 	err := c.cc.Invoke(ctx, "/v1.ExchangeService/ResetState", in, out, opts...)
@@ -157,6 +157,8 @@ type ExchangeServiceServer interface {
 	GetBalance(context.Context, *GetBalanceRequest) (*BalanceResponse, error)
 	// CreateOrder places a new order on the exchange.
 	CreateOrder(context.Context, *CreateOrderRequest) (*OrderResponse, error)
+	// CreateStopOrder places a stop-loss or stop-limit order on the exchange.
+	CreateStopOrder(context.Context, *CreateStopOrderRequest) (*OrderResponse, error)
 	// CancelOrder cancels an existing order.
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error)
 	// GetOrder fetches details of a specific order.
@@ -165,8 +167,6 @@ type ExchangeServiceServer interface {
 	GetOpenOrders(context.Context, *GetOpenOrdersRequest) (*OrdersResponse, error)
 	// GetRecentTrades fetches recent execution history for a symbol.
 	GetRecentTrades(context.Context, *GetRecentTradesRequest) (*OrdersResponse, error)
-	// CreateStopOrder places a stop-loss or stop-limit order on the exchange.
-	CreateStopOrder(context.Context, *CreateStopOrderRequest) (*OrderResponse, error)
 	// ResetState resets the state of the exchange.
 	// WARN: This method is intended for testing purposes only.
 	ResetState(context.Context, *ResetStateRequest) (*ResetStateResponse, error)
@@ -189,6 +189,9 @@ func (UnimplementedExchangeServiceServer) GetBalance(context.Context, *GetBalanc
 func (UnimplementedExchangeServiceServer) CreateOrder(context.Context, *CreateOrderRequest) (*OrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateOrder not implemented")
 }
+func (UnimplementedExchangeServiceServer) CreateStopOrder(context.Context, *CreateStopOrderRequest) (*OrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateStopOrder not implemented")
+}
 func (UnimplementedExchangeServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
 }
@@ -200,9 +203,6 @@ func (UnimplementedExchangeServiceServer) GetOpenOrders(context.Context, *GetOpe
 }
 func (UnimplementedExchangeServiceServer) GetRecentTrades(context.Context, *GetRecentTradesRequest) (*OrdersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRecentTrades not implemented")
-}
-func (UnimplementedExchangeServiceServer) CreateStopOrder(context.Context, *CreateStopOrderRequest) (*OrderResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateStopOrder not implemented")
 }
 func (UnimplementedExchangeServiceServer) ResetState(context.Context, *ResetStateRequest) (*ResetStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResetState not implemented")
@@ -292,6 +292,24 @@ func _ExchangeService_CreateOrder_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ExchangeService_CreateStopOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateStopOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExchangeServiceServer).CreateStopOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/v1.ExchangeService/CreateStopOrder",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExchangeServiceServer).CreateStopOrder(ctx, req.(*CreateStopOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ExchangeService_CancelOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CancelOrderRequest)
 	if err := dec(in); err != nil {
@@ -364,24 +382,6 @@ func _ExchangeService_GetRecentTrades_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ExchangeService_CreateStopOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateStopOrderRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExchangeServiceServer).CreateStopOrder(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/v1.ExchangeService/CreateStopOrder",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExchangeServiceServer).CreateStopOrder(ctx, req.(*CreateStopOrderRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _ExchangeService_ResetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResetStateRequest)
 	if err := dec(in); err != nil {
@@ -424,6 +424,10 @@ var ExchangeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ExchangeService_CreateOrder_Handler,
 		},
 		{
+			MethodName: "CreateStopOrder",
+			Handler:    _ExchangeService_CreateStopOrder_Handler,
+		},
+		{
 			MethodName: "CancelOrder",
 			Handler:    _ExchangeService_CancelOrder_Handler,
 		},
@@ -438,10 +442,6 @@ var ExchangeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRecentTrades",
 			Handler:    _ExchangeService_GetRecentTrades_Handler,
-		},
-		{
-			MethodName: "CreateStopOrder",
-			Handler:    _ExchangeService_CreateStopOrder_Handler,
 		},
 		{
 			MethodName: "ResetState",

@@ -158,6 +158,8 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 			} else {
 				o.stopWorker(sig.Name())
 			}
+		} else if err != nil {
+			log.Error("Error checking position for pending disablement", "err", err)
 		}
 	}
 }
@@ -251,7 +253,7 @@ func (o *Orchestrator) signalBuy(
 	pos, err := o.portfolio.GetPosition(ctx, ex, sym)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		log.Error("failed to query position during buy signal", "err", err)
-		sig.RetrySignal(strategy.SignalBuy)
+		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	} else if err == nil {
 		// If we already have a position but from unknown origin, it should be fixed by the reconciler or manually.
@@ -270,7 +272,7 @@ func (o *Orchestrator) signalBuy(
 	eval := o.risk.EvaluateEntry(openCount, 0, price, sig.Risk())
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (pre-check)", "reason", eval.Reason)
-		sig.RetrySignal(strategy.SignalBuy)
+		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
 
@@ -278,7 +280,7 @@ func (o *Orchestrator) signalBuy(
 	openOrders, err := o.exec.GetOpenOrders(ctx, ex, sym, 10)
 	if err != nil {
 		log.Error("failed to verify open orders on exchange", "err", err)
-		sig.RetrySignal(strategy.SignalBuy)
+		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
 
@@ -299,7 +301,7 @@ func (o *Orchestrator) signalBuy(
 		} else {
 			log.Warn("Balance no found on exchange", "asset", asset)
 		}
-		sig.RetrySignal(strategy.SignalBuy)
+		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
 	balance := balances[0]
@@ -316,7 +318,7 @@ func (o *Orchestrator) signalBuy(
 	eval = o.risk.EvaluateEntry(openCount, 0, price, sig.Risk())
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (final-check)", "reason", eval.Reason)
-		sig.RetrySignal(strategy.SignalBuy)
+		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
 
@@ -505,6 +507,7 @@ func (o *Orchestrator) signalSell(
 			sig.SetInPosition(false, 0, 0)
 		} else {
 			log.Error("failed to query position during sell signal", "err", err)
+			_ = sig.RetrySignal(strategy.SignalSell)
 		}
 		return
 	}
@@ -512,6 +515,7 @@ func (o *Orchestrator) signalSell(
 	if pos.UnknownOrigin {
 		log.Warn("position unlinked during sell signal, resetting strategy state")
 		sig.SetInPosition(false, 0, 0)
+		return
 	}
 
 	// Request balance from exchange, if gone, delete position and set strategy to IDLE.
@@ -523,7 +527,7 @@ func (o *Orchestrator) signalSell(
 		} else {
 			log.Warn("Balance no found on exchange", "asset", asset)
 		}
-		sig.RetrySignal(strategy.SignalSell)
+		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
 	balance := balances[0]
@@ -539,7 +543,7 @@ func (o *Orchestrator) signalSell(
 	openOrders, err := o.exec.GetOpenOrders(ctx, ex, sym, 10)
 	if err != nil {
 		log.Error("failed to fetch open orders for sell check", "err", err)
-		sig.RetrySignal(strategy.SignalSell)
+		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
 
@@ -578,7 +582,7 @@ func (o *Orchestrator) signalSell(
 		)
 		if err := o.exec.CancelOrder(ctx, ex, sym, stopLossOrder.ExchangeOrderID); err != nil {
 			log.Error("failed to cancel stop loss order for profit take", "err", err)
-			sig.RetrySignal(strategy.SignalSell)
+			_ = sig.RetrySignal(strategy.SignalSell)
 			return
 		}
 	}
@@ -590,7 +594,7 @@ func (o *Orchestrator) signalSell(
 	)
 	if err != nil {
 		log.Error("market sell order failed", "err", err)
-		sig.RetrySignal(strategy.SignalSell) // If the order was created, we'll find it in the next cycle
+		_ = sig.RetrySignal(strategy.SignalSell) // If the order was created, we'll find it in the next cycle
 		return
 	}
 
@@ -662,7 +666,7 @@ func (o *Orchestrator) signalWaitingSellFill(
 	// If there is still balance but no sell orders, we force to place a new sell order.
 	if !sellOrderExists {
 		log.Warn("sell order not found on exchange, canceling signal to trigger recovery")
-		sig.RetrySignal(strategy.SignalSell)
+		_ = sig.RetrySignal(strategy.SignalSell)
 	} else {
 		log.Info("sell order still processing on exchange, waiting...")
 	}

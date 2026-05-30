@@ -15,8 +15,8 @@ import (
 )
 
 var positionColumns = []string{
-	"id", "exchange_name", "instrument_symbol", "side", "quantity",
-	"entry_price", "highest_price", "strategy_state", "active", "created_at", "updated_at",
+	"id", "exchange_name", "instrument_symbol", "order_id", "side", "quantity",
+	"entry_price", "highest_price", "stop_loss_block", "unknown_origin", "active", "created_at", "updated_at",
 }
 
 func getSamplePosition() PositionData {
@@ -26,11 +26,13 @@ func getSamplePosition() PositionData {
 		ID:               r.Int63n(1000) + 1,
 		ExchangeName:     "binance",
 		InstrumentSymbol: "BTC/USDT",
+		OrderID:          sql.NullInt64{Int64: r.Int63n(10000), Valid: true},
 		Side:             PositionSideLong,
 		Quantity:         r.Float64() * 2,
 		EntryPrice:       r.Float64() * 50000,
 		HighestPrice:     r.Float64() * 52000,
-		StrategyState:    "active",
+		StopLossBlock:    false,
+		UnknownOrigin:    false,
 		Active:           true,
 		CreatedAt:        now,
 		UpdatedAt:        sql.NullTime{Valid: false},
@@ -39,8 +41,8 @@ func getSamplePosition() PositionData {
 
 func toPositionRow(p PositionData) []any {
 	return []any{
-		p.ID, p.ExchangeName, p.InstrumentSymbol, p.Side, p.Quantity,
-		p.EntryPrice, p.HighestPrice, p.StrategyState, p.Active, p.CreatedAt, p.UpdatedAt,
+		p.ID, p.ExchangeName, p.InstrumentSymbol, p.OrderID, p.Side, p.Quantity,
+		p.EntryPrice, p.HighestPrice, p.StopLossBlock, p.UnknownOrigin, p.Active, p.CreatedAt, p.UpdatedAt,
 	}
 }
 
@@ -111,7 +113,7 @@ func TestPgPositionsRepo_GetPosition(t *testing.T) {
 	}
 }
 
-func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
+func TestPgPositionsRepo_GetActivePositions(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
 	columns := positionColumns
@@ -167,7 +169,7 @@ func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
 					WithArgs("", "").
 					WillReturnError(errors.New("db query error"))
 			},
-			expectedErrContains: "failed to get open positions",
+			expectedErrContains: "failed to get active positions",
 		},
 	}
 
@@ -179,7 +181,7 @@ func TestPgPositionsRepo_GetOpenPositions(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			result, err := repo.GetOpenPositions(context.Background(), mockDB, tc.exchangeFilter, tc.symbolFilter)
+			result, err := repo.GetActivePositions(context.Background(), mockDB, tc.exchangeFilter, tc.symbolFilter)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -202,14 +204,14 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 
 	toUpsertArgs := func(p PositionData) []any {
 		return []any{
-			exchangeID, instrumentID, p.Quantity, p.EntryPrice,
-			p.HighestPrice, p.StrategyState, DefaultUser,
+			exchangeID, instrumentID, p.OrderID, p.Quantity, p.EntryPrice,
+			p.HighestPrice, p.StopLossBlock, p.UnknownOrigin, DefaultUser,
 		}
 	}
 	toInsertArgs := func(p PositionData) []any {
 		return []any{
-			exchangeID, instrumentID, p.Side, p.Quantity, p.EntryPrice,
-			p.HighestPrice, p.StrategyState, DefaultUser,
+			exchangeID, instrumentID, p.OrderID, p.Side, p.Quantity, p.EntryPrice,
+			p.HighestPrice, p.StopLossBlock, p.UnknownOrigin, DefaultUser,
 		}
 	}
 

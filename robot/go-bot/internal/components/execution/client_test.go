@@ -22,22 +22,24 @@ import (
 // mockExchangeServer is a mock implementation of the ExchangeServiceServer.
 type mockExchangeServer struct {
 	pb.UnimplementedExchangeServiceServer
-	pingResponse          *pb.PingResponse
-	pingError             error
-	tickerResponse        *pb.TickerResponse
-	tickerError           error
-	balanceResponse       *pb.BalanceResponse
-	balanceError          error
-	createOrderResponse   *pb.OrderResponse
-	createOrderError      error
-	cancelOrderResponse   *pb.CancelOrderResponse
-	cancelOrderError      error
-	getOrderResponse      *pb.OrderResponse
-	getOrderError         error
-	getOpenOrdersResponse *pb.OrdersResponse
-	getOpenOrdersError    error
-	resetStateResponse    *pb.ResetStateResponse
-	resetStateError       error
+	pingResponse            *pb.PingResponse
+	pingError               error
+	tickerResponse          *pb.TickerResponse
+	tickerError             error
+	balanceResponse         *pb.BalanceResponse
+	balanceError            error
+	createOrderResponse     *pb.OrderResponse
+	createOrderError        error
+	createStopOrderResponse *pb.OrderResponse
+	createStopOrderError    error
+	cancelOrderResponse     *pb.CancelOrderResponse
+	cancelOrderError        error
+	getOrderResponse        *pb.OrderResponse
+	getOrderError           error
+	getOpenOrdersResponse   *pb.OrdersResponse
+	getOpenOrdersError      error
+	resetStateResponse      *pb.ResetStateResponse
+	resetStateError         error
 }
 
 func (s *mockExchangeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
@@ -68,6 +70,13 @@ func (s *mockExchangeServer) CreateOrder(ctx context.Context, req *pb.CreateOrde
 	return s.createOrderResponse, nil
 }
 
+func (s *mockExchangeServer) CreateStopOrder(ctx context.Context, req *pb.CreateStopOrderRequest) (*pb.OrderResponse, error) {
+	if s.createStopOrderError != nil {
+		return nil, s.createStopOrderError
+	}
+	return s.createStopOrderResponse, nil
+}
+
 func (s *mockExchangeServer) CancelOrder(ctx context.Context, req *pb.CancelOrderRequest) (*pb.CancelOrderResponse, error) {
 	if s.cancelOrderError != nil {
 		return nil, s.cancelOrderError
@@ -82,14 +91,14 @@ func (s *mockExchangeServer) GetOrder(ctx context.Context, req *pb.GetOrderReque
 	return s.getOrderResponse, nil
 }
 
-func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOrdersRequest) (*pb.OrdersResponse, error) {
+func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOpenOrdersRequest) (*pb.OrdersResponse, error) {
 	if s.getOpenOrdersError != nil {
 		return nil, s.getOpenOrdersError
 	}
 	return s.getOpenOrdersResponse, nil
 }
 
-func (s *mockExchangeServer) GetRecentTrades(ctx context.Context, req *pb.GetOrdersRequest) (*pb.OrdersResponse, error) {
+func (s *mockExchangeServer) GetRecentTrades(ctx context.Context, req *pb.GetRecentTradesRequest) (*pb.OrdersResponse, error) {
 	if s.getOpenOrdersError != nil {
 		return nil, s.getOpenOrdersError
 	}
@@ -340,7 +349,7 @@ func TestGatewayClient_CreateOrder(t *testing.T) {
 			setupMock: func(s *mockExchangeServer) {
 				s.createOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen}
 			},
-			req:            &pb.CreateOrderRequest{Symbol: "BTC/USDT", Side: repository.OrderSideBuy, Type: repository.OrderTypeLimit, Amount: 1.0, Price: 20000.0},
+			req:            &pb.CreateOrderRequest{Symbol: "BTC/USDT", Side: repository.OrderSideBuy, Type: repository.OrderTypeLimit, Amount: 1.0},
 			expectedID:     "123",
 			expectedStatus: repository.OrderStatusOpen,
 		},
@@ -371,6 +380,58 @@ func TestGatewayClient_CreateOrder(t *testing.T) {
 				st, ok := status.FromError(err)
 				require.True(t, ok)
 				assert.Equal(t, tc.errorCode, st.Code())
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedID, resp.Id)
+				assert.Equal(t, tc.expectedStatus, resp.Status)
+			}
+		})
+	}
+}
+
+func TestGatewayClient_CreateStopOrder(t *testing.T) {
+	testCases := []struct {
+		name           string
+		setupMock      func(*mockExchangeServer)
+		req            *pb.CreateStopOrderRequest
+		expectedID     string
+		expectedStatus string
+		expectError    bool
+		errorCode      codes.Code
+	}{
+		{
+			name: "Success",
+			setupMock: func(s *mockExchangeServer) {
+				s.createStopOrderResponse = &pb.OrderResponse{Id: "stop-123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen}
+			},
+			req:            &pb.CreateStopOrderRequest{Symbol: "BTC/USDT", Side: repository.OrderSideBuy, Amount: 1.0, StopPrice: 50000.0},
+			expectedID:     "stop-123",
+			expectedStatus: repository.OrderStatusOpen,
+		},
+		{
+			name: "Server Error",
+			setupMock: func(s *mockExchangeServer) {
+				s.createStopOrderError = status.Error(codes.Internal, "internal server error")
+			},
+			req:         &pb.CreateStopOrderRequest{Symbol: "BTC/USDT"},
+			expectError: true,
+			errorCode:   codes.Internal,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			if tc.setupMock != nil {
+				tc.setupMock(mockSrv)
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			resp, err := client.CreateStopOrder(context.Background(), tc.req)
+
+			if tc.expectError {
+				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedID, resp.Id)

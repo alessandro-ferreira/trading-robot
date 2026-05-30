@@ -173,10 +173,10 @@ func (s *SignalGenerator) GetSignal(price float64, timestamp int64) (strategy.St
 }
 
 // RetrySignal should be used in case of error when placing an order.
-func (s *SignalGenerator) RetrySignal(signal strategy.StrategySignal) {
+func (s *SignalGenerator) RetrySignal(signal strategy.StrategySignal) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.strategy.RetrySignal(signal)
+	return s.strategy.RetrySignal(signal)
 }
 
 // Close releases resources held by the strategy.
@@ -227,8 +227,7 @@ func mapConfig(
 		windowDump := make([]string, len(stratCfg.MomentumWindows))
 		for i, w := range stratCfg.MomentumWindows {
 			windowDump[i] = fmt.Sprintf(
-				"{lookback: %ds, threshold: %.2f%%}",
-				w.LookbackSeconds, w.Threshold*100,
+				"{lookback: %ds, threshold: %.2f%%}", w.LookbackSeconds, w.Threshold*100,
 			)
 		}
 

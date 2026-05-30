@@ -14,7 +14,7 @@ import (
 )
 
 var strategyPairColumns = []string{
-	"exchange_name", "instrument_symbol", "strategy_type", "window_seconds",
+	"exchange_name", "instrument_symbol", "strategy_type", "status", "window_seconds",
 	"lookbacks", "thresholds", "require_all", "stop_loss_pct", "profit_target_pct",
 	"activation_pct", "trailing_stop_pct", "created_at", "updated_at",
 }
@@ -41,6 +41,7 @@ func getSampleStrategyPair() StrategyPair {
 	return StrategyPair{
 		ExchangeName:     "binance",
 		InstrumentSymbol: "BTC/USDT",
+		Status:           StrategyEnabled,
 		Type:             StrategyMomentumTrailing,
 		WarmupWindow:     300,
 		Momentum:         getSampleMomentum(),
@@ -63,7 +64,7 @@ func toStrategyPairRow(p StrategyPair) []any {
 	}
 
 	return []any{
-		p.ExchangeName, p.InstrumentSymbol, p.Type, windowSec, lookbacks, thresholds,
+		p.ExchangeName, p.InstrumentSymbol, p.Type, p.Status, windowSec, lookbacks, thresholds,
 		p.Momentum.RequireAll, p.Momentum.StopLossPct, p.Momentum.ProfitTargetPct,
 		p.Momentum.ActivationPct, p.Momentum.TrailingStopPct, p.CreatedAt, p.UpdatedAt,
 	}
@@ -83,7 +84,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 		{
 			name: "0 active pairs",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
-				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(pgxmock.NewRows(columns))
+				mock.ExpectQuery("SELECT").WithArgs([]string{}).WillReturnRows(pgxmock.NewRows(columns))
 			},
 			expectedCount: 0,
 		},
@@ -94,7 +95,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 				d.Type = StrategyDummy
 				d.Momentum = StrategyMomentum{}
 				rows := pgxmock.NewRows(columns).AddRow(toStrategyPairRow(d)...)
-				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
+				mock.ExpectQuery("SELECT").WithArgs([]string{}).WillReturnRows(rows)
 			},
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
@@ -109,7 +110,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 				m := p1
 				m.Momentum.Windows = m.Momentum.Windows[:1]
 				rows := pgxmock.NewRows(columns).AddRow(toStrategyPairRow(m)...)
-				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
+				mock.ExpectQuery("SELECT").WithArgs([]string{}).WillReturnRows(rows)
 			},
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
@@ -121,7 +122,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 			name: "1 momentum pair (n > 1 windows)",
 			setupMock: func(mock pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows(columns).AddRow(toStrategyPairRow(p1)...)
-				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
+				mock.ExpectQuery("SELECT").WithArgs([]string{}).WillReturnRows(rows)
 			},
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
@@ -137,7 +138,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 
 				rows := pgxmock.NewRows(columns).
 					AddRows(toStrategyPairRow(p1), toStrategyPairRow(p2))
-				mock.ExpectQuery("SELECT").WithArgs(true).WillReturnRows(rows)
+				mock.ExpectQuery("SELECT").WithArgs([]string{}).WillReturnRows(rows)
 			},
 			expectedCount: 2,
 		},
@@ -152,7 +153,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 			tt.setupMock(mockDB)
 
 			// Testing with onlyEnabled=true to match typical usage
-			results, err := repo.GetStrategyPairs(context.Background(), mockDB, true)
+			results, err := repo.GetStrategyPairs(context.Background(), mockDB, []string{})
 			require.NoError(t, err)
 			assert.Len(t, results, tt.expectedCount)
 
@@ -168,8 +169,8 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 		require.NoError(t, err)
 		defer mockDB.Close()
 
-		mockDB.ExpectQuery("SELECT").WithArgs(true).WillReturnError(fmt.Errorf("db error"))
-		_, err = repo.GetStrategyPairs(context.Background(), mockDB, true)
+		mockDB.ExpectQuery("SELECT").WithArgs([]string{}).WillReturnError(fmt.Errorf("db error"))
+		_, err = repo.GetStrategyPairs(context.Background(), mockDB, []string{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to query strategy pairs")
 	})
@@ -398,7 +399,7 @@ func TestPgStrategiesRepo_UpsertEnabledStrategy(t *testing.T) {
 	}
 }
 
-func TestPgStrategiesRepo_DisableStrategy(t *testing.T) {
+func TestPgStrategiesRepo_RequestStrategyDisable(t *testing.T) {
 	repo := NewStrategiesRepo()
 	exchange := "binance"
 	symbol := "BTC/USDT"
@@ -446,7 +447,67 @@ func TestPgStrategiesRepo_DisableStrategy(t *testing.T) {
 			defer mock.Close()
 
 			tc.setupMock(mock)
-			err = repo.DisableStrategy(context.Background(), mock, exchange, symbol, strategyType)
+			err = repo.RequestStrategyDisable(context.Background(), mock, exchange, symbol, strategyType)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPgStrategiesRepo_ApplyStrategyDisable(t *testing.T) {
+	repo := NewStrategiesRepo()
+	exchange := "binance"
+	symbol := "BTC/USDT"
+
+	exchangeID := int64(1)
+	instrumentID := int64(10)
+
+	testCases := []struct {
+		name                string
+		setupMock           func(mock pgxmock.PgxPoolIface)
+		expectedErrContains string
+	}{
+		{
+			name: "Success",
+			setupMock: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(exchange, symbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
+
+				mock.ExpectExec("UPDATE trading.strategy_pairs").
+					WithArgs(exchangeID, instrumentID, DefaultUser).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+			},
+		},
+		{
+			name: "Fail - Execution",
+			setupMock: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectQuery("SELECT i.exchange_id, i.id").
+					WithArgs(exchange, symbol).
+					WillReturnRows(pgxmock.NewRows([]string{"exchange_id", "id"}).AddRow(exchangeID, instrumentID))
+
+				mock.ExpectExec("UPDATE trading.strategy_pairs").
+					WithArgs(exchangeID, instrumentID, DefaultUser).
+					WillReturnError(fmt.Errorf("db error"))
+			},
+			expectedErrContains: "failed to finalize strategy disablement",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mock.Close()
+
+			tc.setupMock(mock)
+			err = repo.ApplyStrategyDisable(context.Background(), mock, exchange, symbol)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)

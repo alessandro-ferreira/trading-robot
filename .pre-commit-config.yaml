@@ -54,7 +54,7 @@ repos:
         language: system
         types: [go]
         files: ^robot/go-bot/
-        exclude: ^robot/go-bot/gen/
+        exclude: ^robot/go-bot/gen/|.*_test\.go$
         args: [ --max-len=110, -w, --reformat-tags ]
 
   - repo: https://github.com/golangci/golangci-lint

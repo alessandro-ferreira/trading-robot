@@ -142,8 +142,8 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 	t.Log("Listing open orders (expecting empty)")
 	openOrders, err := svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
 	require.NoError(t, err)
-	assert.Empty(t, openOrders.Orders, "Initially, there should be no open orders")
-	t.Logf("Initial open orders response: %s", openOrders.String())
+	assert.Empty(t, openOrders, "Initially, there should be no open orders")
+	t.Logf("Initial open orders response: %+v", openOrders)
 
 	// Create the first order
 	t.Log("Creating first order")
@@ -153,22 +153,22 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, order1)
 	assert.Equal(t, repository.OrderStatusOpen, order1.Status)
-	assert.Equal(t, symbol, order1.Symbol)
-	t.Logf("Created order 1 response: %s", order1.String())
+	assert.Equal(t, symbol, order1.InstrumentSymbol)
+	t.Logf("Created order 1 response: %+v", order1)
 
 	// Get the order from the service
 	t.Log("Getting the first order from the service")
-	fetchedOrder1, err := svc.GetOrder(ctx, exchangeName, symbol, order1.Id)
+	fetchedOrder1, err := svc.GetOrder(ctx, exchangeName, symbol, order1.ExchangeOrderID)
 	require.NoError(t, err)
-	assert.Equal(t, order1.Id, fetchedOrder1.Id)
+	assert.Equal(t, order1.ExchangeOrderID, fetchedOrder1.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusOpen, fetchedOrder1.Status)
-	t.Logf("Fetched order 1 response: %s", fetchedOrder1.String())
+	t.Logf("Fetched order 1 response: %+v", fetchedOrder1)
 
 	// Get the order directly from the database
 	t.Log("Getting the first order from the database")
-	dbOrder1, err := repo.Orders.GetOrder(ctx, db, exchangeName, order1.Id)
+	dbOrder1, err := repo.Orders.GetOrder(ctx, db, exchangeName, order1.ExchangeOrderID)
 	require.NoError(t, err)
-	assert.Equal(t, order1.Id, dbOrder1.ExchangeOrderID)
+	assert.Equal(t, order1.ExchangeOrderID, dbOrder1.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusOpen, dbOrder1.Status)
 	assert.Equal(t, amount1, dbOrder1.Amount)
 	assert.Equal(t, price1, dbOrder1.Price.Float64)
@@ -182,25 +182,25 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, order2)
 	assert.Equal(t, repository.OrderStatusOpen, order2.Status)
-	t.Logf("Created order 2 response: %s", order2.String())
+	t.Logf("Created order 2 response: %+v", order2)
 
 	// List open orders (should have two)
 	t.Log("Listing open orders (expecting two)")
 	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
 	require.NoError(t, err)
-	assert.Len(t, openOrders.Orders, 2, "Should be two open orders")
-	t.Logf("Open orders response (with 2 orders): %s", openOrders.String())
+	assert.Len(t, openOrders, 2, "Should be two open orders")
+	t.Logf("Open orders response (with 2 orders): %+v", openOrders)
 
 	// Cancel the second order
 	t.Log("Canceling the second order")
-	err = svc.CancelOrder(ctx, exchangeName, symbol, order2.Id)
+	err = svc.CancelOrder(ctx, exchangeName, symbol, order2.ExchangeOrderID)
 	require.NoError(t, err)
 
 	// Get the second order from the database to check status
 	t.Log("Getting the second order from the database (expecting canceled)")
-	dbOrder2, err := repo.Orders.GetOrder(ctx, db, exchangeName, order2.Id)
+	dbOrder2, err := repo.Orders.GetOrder(ctx, db, exchangeName, order2.ExchangeOrderID)
 	require.NoError(t, err)
-	assert.Equal(t, order2.Id, dbOrder2.ExchangeOrderID)
+	assert.Equal(t, order2.ExchangeOrderID, dbOrder2.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusCanceled, dbOrder2.Status, "Order status in DB should be canceled")
 	t.Logf("DB order 2 after cancel: %+v", dbOrder2)
 
@@ -208,7 +208,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 	t.Log("Listing open orders again (expecting one)")
 	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
 	require.NoError(t, err)
-	require.Len(t, openOrders.Orders, 1, "Should be one open order left")
-	assert.Equal(t, order1.Id, openOrders.Orders[0].Id, "The remaining open order should be the first one")
-	t.Logf("Final open orders response (with 1 order): %s", openOrders.String())
+	require.Len(t, openOrders, 1, "Should be one open order left")
+	assert.Equal(t, order1.ExchangeOrderID, openOrders[0].ExchangeOrderID, "The remaining open order should be the first one")
+	t.Logf("Final open orders response (with 1 order): %+v", openOrders)
 }

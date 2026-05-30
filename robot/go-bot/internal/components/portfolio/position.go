@@ -34,10 +34,8 @@ func (p *portfolio) CreatePosition(
 		if existing.UnknownOrigin {
 			if orderID <= 0 || price <= 0 || quantity <= 0 {
 				return fmt.Errorf(
-					"failed to update existing position: orderId, price or quantity invalid",
-					"quantity", quantity,
-					"orderID", orderID,
-					"price", price,
+					"failed to update existing position, parameter invalid: quantity=%v orderID=%v price=%v",
+					quantity, orderID, price,
 				)
 			}
 			existing.OrderID = sql.NullInt64{Int64: orderID, Valid: true}

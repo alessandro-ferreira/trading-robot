@@ -75,7 +75,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	var wg sync.WaitGroup
 	// The strategy reloader runs on a deterministic interval (e.g., 5 minutes)
 	// to pick up new pairs enabled via the Management API/ML Engine.
-	refreshTicker := time.NewTicker(5 * time.Minute)
+	refreshTicker := time.NewTicker(30 * time.Second)
 	defer refreshTicker.Stop()
 
 	// Perform initial load of strategies
@@ -178,9 +178,7 @@ func (o *Orchestrator) startWorker(
 		if err != nil {
 			o.logger.Error(
 				"Lifecycle: failed to initialize signal handler",
-				"ex", p.ExchangeName,
-				"sym", p.InstrumentSymbol,
-				"error", err,
+				"ex", p.ExchangeName, "sym", p.InstrumentSymbol, "error", err,
 			)
 			return
 		}

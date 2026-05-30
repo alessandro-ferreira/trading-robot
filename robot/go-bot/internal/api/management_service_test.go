@@ -19,8 +19,8 @@ type MockStrategiesRepo struct {
 	mock.Mock
 }
 
-func (m *MockStrategiesRepo) GetStrategyPairs(ctx context.Context, db repository.DBExecutor, onlyEnabled bool) ([]repository.StrategyPair, error) {
-	args := m.Called(ctx, db, onlyEnabled)
+func (m *MockStrategiesRepo) GetStrategyPairs(ctx context.Context, db repository.DBExecutor, statuses []string) ([]repository.StrategyPair, error) {
+	args := m.Called(ctx, db, statuses)
 	return args.Get(0).([]repository.StrategyPair), args.Error(1)
 }
 
@@ -29,8 +29,13 @@ func (m *MockStrategiesRepo) UpsertEnabledStrategy(ctx context.Context, exec rep
 	return args.Error(0)
 }
 
-func (m *MockStrategiesRepo) DisableStrategy(ctx context.Context, db repository.DBExecutor, exchange, symbol, strategyType string) error {
+func (m *MockStrategiesRepo) RequestStrategyDisable(ctx context.Context, db repository.DBExecutor, exchange, symbol, strategyType string) error {
 	args := m.Called(ctx, db, exchange, symbol, strategyType)
+	return args.Error(0)
+}
+
+func (m *MockStrategiesRepo) ApplyStrategyDisable(ctx context.Context, db repository.DBExecutor, exchange, symbol string) error {
+	args := m.Called(ctx, db, exchange, symbol)
 	return args.Error(0)
 }
 
@@ -113,7 +118,7 @@ func TestManagementServer_UpdateStrategy(t *testing.T) {
 				Enabled:      false,
 			},
 			setup: func(m *MockStrategiesRepo) {
-				m.On("DisableStrategy", ctx, nil, "binance", "BTC/USDT", "momentum_trailing").Return(nil).Once()
+				m.On("RequestStrategyDisable", ctx, nil, "binance", "BTC/USDT", "momentum_trailing").Return(nil).Once()
 			},
 			expectedMsg: "strategy momentum_trailing disabled for BTC/USDT",
 		},
@@ -146,7 +151,7 @@ func TestManagementServer_UpdateStrategy(t *testing.T) {
 				Enabled:      false,
 			},
 			setup: func(m *MockStrategiesRepo) {
-				m.On("DisableStrategy", ctx, nil, "binance", "BTC/USDT", "momentum_trailing").Return(errors.New("db error")).Once()
+				m.On("RequestStrategyDisable", ctx, nil, "binance", "BTC/USDT", "momentum_trailing").Return(errors.New("db error")).Once()
 			},
 			wantErr:     true,
 			errContains: "database update failed",

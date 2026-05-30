@@ -14,7 +14,7 @@ import (
 
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/portfolio"
-	"trading/robot/go-bot/internal/components/reconciliation"
+	reconcil "trading/robot/go-bot/internal/components/reconciliation"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
@@ -62,7 +62,7 @@ func setupOrchestratorIntegrationTest(t *testing.T, maxOpenPositions int) (*Orch
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer)
 	execSvc := execution.NewService(slog.Default(), db, client, repoContainer)
-	reconciler := reconciliation.NewReconciler(slog.Default(), db, repoContainer, execSvc)
+	reconciler := reconcil.NewReconciler(slog.Default(), db, repoContainer, execSvc, pf)
 
 	// Define a test-specific configuration
 	cfg := &config.Config{

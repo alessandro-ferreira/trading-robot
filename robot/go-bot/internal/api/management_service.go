@@ -95,16 +95,13 @@ func (s *ManagementServer) UpdateStrategy(
 			RequireAll:    params.GetRequireAll(),
 			StopLossPct:   params.GetStopLossPct(),
 			ProfitTargetPct: sql.NullFloat64{
-				Float64: params.GetProfitTargetPct(),
-				Valid:   params.ProfitTargetPct != nil,
+				Float64: params.GetProfitTargetPct(), Valid: params.ProfitTargetPct != nil,
 			},
 			ActivationPct: sql.NullFloat64{
-				Float64: params.GetActivationPct(),
-				Valid:   params.ActivationPct != nil,
+				Float64: params.GetActivationPct(), Valid: params.ActivationPct != nil,
 			},
 			TrailingStopPct: sql.NullFloat64{
-				Float64: params.GetTrailingStopPct(),
-				Valid:   params.TrailingStopPct != nil,
+				Float64: params.GetTrailingStopPct(), Valid: params.TrailingStopPct != nil,
 			},
 		}
 

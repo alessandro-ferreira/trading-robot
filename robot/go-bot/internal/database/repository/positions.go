@@ -13,7 +13,7 @@ import (
 // Position Side constants
 const (
 	PositionSideLong = "long"
-	// Go-robot does not support short operations currently
+	// Go-robot does not support 'short' operations currently
 	// PositionSideShort = "short"
 )
 
@@ -130,7 +130,7 @@ func (r *pgPositionsRepo) GetActivePositions(
 
 	rows, err := db.Query(ctx, query, exchangeName, instrumentSymbol)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get open positions: %w", err)
+		return nil, fmt.Errorf("failed to get active positions: %w", err)
 	}
 	defer rows.Close()
 

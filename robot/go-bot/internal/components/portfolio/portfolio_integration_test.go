@@ -15,11 +15,10 @@ import (
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
-	"trading/robot/go-bot/internal/strategy"
 )
 
 // setupIntegrationTest initializes dependencies for the portfolio integration test.
-func setupIntegrationTest(t *testing.T) (*Portfolio, *repository.Container, *database.DB, func()) {
+func setupIntegrationTest(t *testing.T) (Portfolio, *repository.Container, *database.DB, func()) {
 	t.Helper()
 
 	getEnv := func(key, defaultValue string) string {
@@ -50,10 +49,6 @@ func setupIntegrationTest(t *testing.T) (*Portfolio, *repository.Container, *dat
 	repoContainer := repository.New()
 	p := NewPortfolio(slog.Default(), db, repoContainer)
 
-	p.mu.Lock()
-	p.cashBalances["dummy|USDT"] = &CashBalance{Exchange: "dummy", Asset: "USDT", Free: 100000.0}
-	p.mu.Unlock()
-
 	cleanup := func() {
 		cancel()
 		db.Close()
@@ -72,13 +67,13 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	// Initial State: Verify no open positions
 	t.Log("Checking initial state (expecting empty)")
-	openPositions, err := repo.Positions.GetOpenPositions(ctx, db, "", "")
+	openPositions, err := repo.Positions.GetActivePositions(ctx, db, "", "")
 	require.NoError(t, err)
 	assert.Empty(t, openPositions, "Should have no open positions initially")
 
 	// Open a new position (Buy 1 BTC @ 20000)
 	t.Log("Inserting/Buying new position (1 BTC @ 20000)")
-	err = p.UpdatePosition(ctx, exchange, symbol, 1.0, 20000.0)
+	err = p.CreatePosition(ctx, exchange, symbol, 1.0, 20000.0, 0)
 	require.NoError(t, err)
 
 	// Verify persistence via GetPosition
@@ -95,7 +90,12 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 	// Increase position (Buy 1 BTC @ 22000)
 	// New Avg Price = (1*20000 + 1*22000) / 2 = 21000
 	t.Log("Updating position (Buy 1 more BTC @ 22000)")
-	err = p.UpdatePosition(ctx, exchange, symbol, 1.0, 22000.0)
+	err = p.UpdatePosition(ctx, exchange, symbol, repository.PositionData{
+		Quantity:      2.0,
+		EntryPrice:    21000.0,
+		HighestPrice:  22000.0,
+		UnknownOrigin: true,
+	})
 	require.NoError(t, err)
 
 	// Verify persistence via GetPosition
@@ -106,16 +106,9 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 	assert.InDelta(t, 21000.0, posData.EntryPrice, 0.000001)
 	assert.Equal(t, 22000.0, posData.HighestPrice)
 
-	// Metadata Sync: Change state manually and verify persistence
-	p.SyncMetadata(ctx, exchange, symbol, strategy.StatePendingSell)
-	// Note: Portfolio.SyncMetadata only updates memory. It is persisted on the next UpdatePosition call.
-	// In a real scenario, this metadata is synced to DB during the next Fill or via a dedicated persistence task.
-	pos, _ := p.GetPosition(exchange, symbol)
-	assert.Equal(t, strategy.StatePendingSell, pos.StrategyState)
-
 	// Get Open Positions: Should return the single aggregated position
 	t.Log("Verifying GetOpenPositions")
-	openPositions, err = repo.Positions.GetOpenPositions(ctx, db, "", "")
+	openPositions, err = repo.Positions.GetActivePositions(ctx, db, "", "")
 	require.NoError(t, err)
 	require.Len(t, openPositions, 1)
 	assert.Equal(t, symbol, openPositions[0].InstrumentSymbol)
@@ -123,12 +116,12 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	// Delete: Close position (Sell 2 BTC)
 	t.Log("Deleting position (Selling all)")
-	err = p.UpdatePosition(ctx, exchange, symbol, -2.0, 23000.0)
+	err = p.DeletePosition(ctx, exchange, symbol)
 	require.NoError(t, err)
 
 	// Verify deletion via GetOpenPositions (should be empty)
 	t.Log("Verifying deletion via GetOpenPositions")
-	openPositions, err = repo.Positions.GetOpenPositions(ctx, db, "", "")
+	openPositions, err = repo.Positions.GetActivePositions(ctx, db, "", "")
 	require.NoError(t, err)
 	assert.Empty(t, openPositions, "Should have no open positions after selling all")
 

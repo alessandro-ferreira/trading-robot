@@ -55,13 +55,14 @@ func TestGatewayClient_Integration(t *testing.T) {
 	t.Logf("Balance: %s", balanceResp.String())
 
 	// Test CreateOrder
+	price := 20000.0
 	createOrderReq := &pb.CreateOrderRequest{
 		Exchange: "dummy",
 		Symbol:   "BTC/USDT",
 		Side:     repository.OrderSideBuy,
 		Type:     repository.OrderTypeLimit,
 		Amount:   0.01,
-		Price:    20000.0,
+		Price:    &price,
 	}
 	orderResp, err := client.CreateOrder(ctx, createOrderReq)
 	require.NoError(t, err, "CreateOrder should not error")
