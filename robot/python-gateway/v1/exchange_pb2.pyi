@@ -91,7 +91,7 @@ class CreateStopOrderRequest(_message.Message):
     def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., amount: _Optional[float] = ..., stop_price: _Optional[float] = ..., limit_price: _Optional[float] = ...) -> None: ...
 
 class OrderResponse(_message.Message):
-    __slots__ = ("id", "symbol", "side", "type", "amount", "price", "status", "filled", "remaining", "cost", "average", "client_order_id", "timestamp")
+    __slots__ = ("id", "symbol", "side", "type", "amount", "price", "status", "filled", "remaining", "cost", "average", "client_order_id", "timestamp", "fee", "fee_currency")
     ID_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     SIDE_FIELD_NUMBER: _ClassVar[int]
@@ -105,6 +105,8 @@ class OrderResponse(_message.Message):
     AVERAGE_FIELD_NUMBER: _ClassVar[int]
     CLIENT_ORDER_ID_FIELD_NUMBER: _ClassVar[int]
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
+    FEE_FIELD_NUMBER: _ClassVar[int]
+    FEE_CURRENCY_FIELD_NUMBER: _ClassVar[int]
     id: str
     symbol: str
     side: str
@@ -118,7 +120,9 @@ class OrderResponse(_message.Message):
     average: float
     client_order_id: str
     timestamp: int
-    def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., status: _Optional[str] = ..., filled: _Optional[float] = ..., remaining: _Optional[float] = ..., cost: _Optional[float] = ..., average: _Optional[float] = ..., client_order_id: _Optional[str] = ..., timestamp: _Optional[int] = ...) -> None: ...
+    fee: float
+    fee_currency: str
+    def __init__(self, id: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., status: _Optional[str] = ..., filled: _Optional[float] = ..., remaining: _Optional[float] = ..., cost: _Optional[float] = ..., average: _Optional[float] = ..., client_order_id: _Optional[str] = ..., timestamp: _Optional[int] = ..., fee: _Optional[float] = ..., fee_currency: _Optional[str] = ...) -> None: ...
 
 class CancelOrderRequest(_message.Message):
     __slots__ = ("exchange", "id", "symbol")

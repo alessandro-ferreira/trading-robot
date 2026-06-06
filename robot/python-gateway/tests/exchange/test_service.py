@@ -47,6 +47,8 @@ class TestExchangeService(unittest.TestCase):
             "remaining": 1.0,
             "cost": 0.0,
             "average": 0.0,
+            "fee": 0.01,
+            "fee_currency": "USDT",
         }
         self.mock_exchange.cancel_order.return_value = {
             "id": "12345",
@@ -62,6 +64,8 @@ class TestExchangeService(unittest.TestCase):
             "amount": 1.0,
             "cost": 50000.0,
             "average": 50000.0,
+            "fee": 0.05,
+            "fee_currency": "BRL",
         }
         self.mock_exchange.fetch_open_orders.return_value = [
             {
@@ -253,6 +257,8 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(response.id, "12345")
         self.assertEqual(response.symbol, "BTC/USDT")
         self.assertEqual(response.status, "open")
+        self.assertEqual(response.fee, 0.01)
+        self.assertEqual(response.fee_currency, "USDT")
 
     def test_create_order_internal_error(self):
         """Verify create order internal error handling."""
@@ -404,6 +410,8 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(response.id, "12345")
         self.assertEqual(response.symbol, "BTC/USDT")
         self.assertEqual(response.status, "closed")
+        self.assertEqual(response.fee, 0.05)
+        self.assertEqual(response.fee_currency, "BRL")
 
     def test_get_order_internal_error(self):
         """Verify get order internal error handling."""

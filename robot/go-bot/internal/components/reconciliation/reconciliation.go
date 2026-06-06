@@ -227,7 +227,7 @@ func (r *reconciler) SyncPositions(
 	for _, iSymbol := range instruments {
 		// If there are open orders in DB, no need to adopt, the position will be created when the order is filled.
 		statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
-		openOrders, err := r.repo.Orders.GetOrders(ctx, r.db, exchange, instrumentSymbol, statuses, 1)
+		openOrders, err := r.repo.Orders.GetOrders(ctx, r.db, exchange, iSymbol, statuses, 1)
 		if err != nil {
 			log.Error("Failed querying open orders", "symbol", iSymbol, "error", err)
 			continue
@@ -348,7 +348,7 @@ func (r *reconciler) SyncTradeHistory(
 				)
 
 				// Try to find the local order ID for a high-fidelity link
-				dbOrder, err := r.repo.Orders.GetOrder(ctx, r.db, o.ExchangeOrderID, exchange)
+				dbOrder, err := r.repo.Orders.GetOrder(ctx, r.db, exchange, o.ExchangeOrderID)
 				if err == nil {
 					err = r.pf.UpdatePosition(
 						ctx,

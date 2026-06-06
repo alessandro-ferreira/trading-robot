@@ -165,6 +165,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
             "side": "buy",
             "type": "limit",
             "status": "created",
+            "executions": [{"fee": "0.001"}],
         }
         mock_request.return_value = mock_response
 
@@ -175,6 +176,8 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(order["id"], "ord_123")
         self.assertEqual(order["symbol"], "BTC/BRL")
         self.assertEqual(order["status"], "open")
+        self.assertEqual(order["fee"], 0.001)
+        self.assertEqual(order["fee_currency"], "BTC")
 
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "POST")

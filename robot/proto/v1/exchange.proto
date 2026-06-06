@@ -118,6 +118,8 @@ message OrderResponse {
   double average = 11;
   string client_order_id = 12;
   int64 timestamp = 13;
+  double fee = 14;
+  string fee_currency = 15;
 }
 
 // CancelOrderRequest is the message sent to the CancelOrder RPC.

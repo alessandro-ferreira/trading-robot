@@ -53,8 +53,8 @@ func (m *MockExecutionService) GetRecentTrades(ctx context.Context, ex, sym stri
 
 type MockOrdersRepo struct{ mock.Mock }
 
-func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor, id, ex string) (repository.OrderData, error) {
-	args := m.Called(ctx, db, id, ex)
+func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor, ex, id string) (repository.OrderData, error) {
+	args := m.Called(ctx, db, ex, id)
 	return args.Get(0).(repository.OrderData), args.Error(1)
 }
 func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, ex, sym string, st []string, lim int) ([]repository.OrderData, error) {
@@ -307,7 +307,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 					{ExchangeName: "binance", InstrumentSymbol: "ETH/USDT"},
 				}, nil)
 				mPf.On("CreatePosition", mock.Anything, "binance", "ETH/USDT", 2.0, 0.0, int64(0)).Return(nil)
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "", mock.Anything, 1).Return([]repository.OrderData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "ETH/USDT", mock.Anything, 1).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
@@ -372,7 +372,7 @@ func TestReconciler_SyncTradeHistory(t *testing.T) {
 				mExec.On("GetRecentTrades", mock.Anything, "binance", "BTC/USDT", mock.Anything, 100).Return([]repository.OrderData{
 					{ExchangeOrderID: "trade-1", InstrumentSymbol: "BTC/USDT", Filled: 1.0, AveragePrice: toNullFloat64(50000), ExchangeTimestamp: toNullTime(now)},
 				}, nil)
-				mOrders.On("GetOrder", mock.Anything, mock.Anything, "trade-1", "binance").Return(repository.OrderData{ID: 100}, nil)
+				mOrders.On("GetOrder", mock.Anything, mock.Anything, "binance", "trade-1").Return(repository.OrderData{ID: 100}, nil)
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{
 					InstrumentSymbol: "BTC/USDT", Quantity: 1.0, UnknownOrigin: true,
 				}, nil)
@@ -391,7 +391,7 @@ func TestReconciler_SyncTradeHistory(t *testing.T) {
 					{ExchangeOrderID: "manual-1", InstrumentSymbol: "BTC/USDT", Filled: 1.0, AveragePrice: toNullFloat64(50000), ExchangeTimestamp: toNullTime(now)},
 				}, nil)
 				// Simulate order not found in our DB
-				mOrders.On("GetOrder", mock.Anything, mock.Anything, "manual-1", "binance").Return(repository.OrderData{}, errors.New("not found"))
+				mOrders.On("GetOrder", mock.Anything, mock.Anything, "binance", "manual-1").Return(repository.OrderData{}, errors.New("not found"))
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{
 					InstrumentSymbol: "BTC/USDT", Quantity: 1.0, UnknownOrigin: true,
 				}, nil)

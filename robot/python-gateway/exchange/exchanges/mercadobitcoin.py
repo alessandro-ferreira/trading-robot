@@ -183,6 +183,23 @@ class MercadoBitcoinExchange(Exchange):
             return OrderType.STOP_MARKET
         return t
 
+    def _calculate_fees(self, response: Dict[str, Any], symbol: str) -> Dict[str, Any]:
+        """Aggregates fees from executions and determines currency for Mercado Bitcoin."""
+        executions = response.get("executions", [])
+        total_fee = sum(float(e.get("fee") or 0.0) for e in executions)
+
+        # Determine currency based on side.
+        # MB v4 typically: Buy fees in base asset, Sell fees in quote asset (BRL).
+        side = response.get("side")
+        fee_currency = ""
+        if symbol and "/" in symbol:
+            base, quote = symbol.split("/")
+            fee_currency = base if side == "buy" else quote
+        elif not symbol and response.get("instrument"):
+            fee_currency = response.get("instrument").split("-")[1]
+
+        return {"fee": total_fee, "fee_currency": fee_currency}
+
     def fetch_ticker(self, symbol: str) -> Ticker:
         """
         Fetches the ticker for a given symbol using the public API.
@@ -269,6 +286,7 @@ class MercadoBitcoinExchange(Exchange):
 
         response = self._request("POST", path, data=payload)
         status = self._map_status(response.get("status"))
+        fees = self._calculate_fees(response, symbol)
 
         return {
             "id": response.get("orderId"),
@@ -282,6 +300,8 @@ class MercadoBitcoinExchange(Exchange):
             "filled": amount if status == "closed" else 0.0,
             "remaining": 0.0 if status == "closed" else amount,
             "status": status,
+            "fee": fees["fee"],
+            "fee_currency": fees["fee_currency"],
             "info": response,
         }
 
@@ -334,6 +354,8 @@ class MercadoBitcoinExchange(Exchange):
 
         response = self._request("POST", path, data=payload)
         status = self._map_status(response.get("status"))
+        fees = self._calculate_fees(response, symbol)
+
         return {
             "id": response.get("orderId"),
             "clientOrderId": response.get("clientOrderId")
@@ -346,6 +368,8 @@ class MercadoBitcoinExchange(Exchange):
             "filled": amount if status == "closed" else 0.0,
             "remaining": 0.0 if status == "closed" else amount,
             "status": status,
+            "fee": fees["fee"],
+            "fee_currency": fees["fee_currency"],
             "info": response,
         }
 
@@ -394,6 +418,7 @@ class MercadoBitcoinExchange(Exchange):
 
         # Map status to standard ccxt terms
         status = self._map_status(response.get("status"))
+        fees = self._calculate_fees(response, symbol)
 
         timestamp = (
             int(response.get("created_at")) * 1000
@@ -428,6 +453,8 @@ class MercadoBitcoinExchange(Exchange):
             "cost": float(response.get("cost"))
             if response.get("cost") is not None
             else None,
+            "fee": fees["fee"],
+            "fee_currency": fees["fee_currency"],
             "status": status,
             "timestamp": timestamp,
             "datetime": dt,
@@ -499,6 +526,7 @@ class MercadoBitcoinExchange(Exchange):
             filled = float(order.get("filledQty") or 0.0)
             remaining = amount - filled
             cost = float(order.get("cost")) if order.get("cost") is not None else None
+            fees = self._calculate_fees(order, order_symbol or "")
 
             result.append(
                 {
@@ -513,6 +541,8 @@ class MercadoBitcoinExchange(Exchange):
                     "filled": filled,
                     "remaining": remaining,
                     "cost": cost,
+                    "fee": fees["fee"],
+                    "fee_currency": fees["fee_currency"],
                     "status": status,
                     "timestamp": timestamp,
                     "datetime": dt,
@@ -576,18 +606,28 @@ class MercadoBitcoinExchange(Exchange):
                     else None
                 )
 
+                trade_symbol = (
+                    symbol if symbol else ex.get("instrument", "").replace("-", "/")
+                )
+                # For individual executions, MB provides the fee directly.
+                fee_val = float(ex.get("fee") or 0.0)
+                base, quote = (
+                    trade_symbol.split("/") if "/" in trade_symbol else ("", "BRL")
+                )
+                fee_curr = base if ex.get("side") == "buy" else quote
+
                 result.append(
                     {
                         "id": str(ex.get("id")),
                         "order": str(order.get("id")),  # Link back to parent order
-                        "symbol": symbol
-                        if symbol
-                        else ex.get("instrument", "").replace("-", "/"),
+                        "symbol": trade_symbol,
                         "type": self._map_type(order.get("type")),
                         "side": ex.get("side"),
                         "price": float(ex.get("price") or 0.0),
                         "amount": float(ex.get("qty") or 0.0),
                         "cost": float(ex.get("cost") or 0.0),
+                        "fee": fee_val,
+                        "fee_currency": fee_curr,
                         "timestamp": timestamp,
                         "datetime": dt,
                         "info": ex,

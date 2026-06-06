@@ -184,18 +184,23 @@ func (s *service) CreateOrder(
 
 	// Persist to Database
 	orderData := repository.OrderData{
-		ExchangeName:      exchange,
-		InstrumentSymbol:  instrumentSymbol,
-		ExchangeOrderID:   resp.Id,
-		Side:              side,
-		OrderType:         orderType,
-		Amount:            amount,
-		Filled:            resp.Filled,
-		Remaining:         resp.Remaining,
-		Cost:              resp.Cost,
-		Status:            resp.Status,
-		Price:             sql.NullFloat64{Float64: price, Valid: price > 0},
-		AveragePrice:      sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
+		ExchangeName:     exchange,
+		InstrumentSymbol: instrumentSymbol,
+		ExchangeOrderID:  resp.Id,
+		Side:             side,
+		OrderType:        orderType,
+		Amount:           amount,
+		Filled:           resp.Filled,
+		Remaining:        resp.Remaining,
+		Cost:             resp.Cost,
+		Status:           resp.Status,
+		Price:            sql.NullFloat64{Float64: price, Valid: price > 0},
+		AveragePrice:     sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
+		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.Fee > 0},
+		FeeAssetSymbol: sql.NullString{
+			String: resp.FeeCurrency,
+			Valid:  resp.FeeCurrency != "",
+		},
 		ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(resp.Timestamp), Valid: resp.Timestamp > 0},
 	}
 
@@ -221,7 +226,9 @@ func (s *service) CreateStopOrder(
 		orderType = repository.OrderTypeStopLimit
 	}
 
-	log.Info("Creating stop order", "side", side, "type", orderType, "amount", amount, "stop_price", stopPrice)
+	log.Info(
+		"Creating stop order", "side", side, "type", orderType, "amount", amount, "stop_price", stopPrice,
+	)
 
 	req := &pb.CreateStopOrderRequest{
 		Exchange:  exchange,
@@ -243,18 +250,23 @@ func (s *service) CreateStopOrder(
 
 	// Persist to Database
 	orderData := repository.OrderData{
-		ExchangeName:      exchange,
-		InstrumentSymbol:  instrumentSymbol,
-		ExchangeOrderID:   resp.Id,
-		Side:              side,
-		OrderType:         orderType,
-		Amount:            amount,
-		Filled:            resp.Filled,
-		Remaining:         resp.Remaining,
-		Cost:              resp.Cost,
-		Status:            resp.Status,
-		Price:             sql.NullFloat64{Float64: stopPrice, Valid: stopPrice > 0},
-		AveragePrice:      sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
+		ExchangeName:     exchange,
+		InstrumentSymbol: instrumentSymbol,
+		ExchangeOrderID:  resp.Id,
+		Side:             side,
+		OrderType:        orderType,
+		Amount:           amount,
+		Filled:           resp.Filled,
+		Remaining:        resp.Remaining,
+		Cost:             resp.Cost,
+		Status:           resp.Status,
+		Price:            sql.NullFloat64{Float64: stopPrice, Valid: stopPrice > 0},
+		AveragePrice:     sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
+		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.Fee > 0},
+		FeeAssetSymbol: sql.NullString{
+			String: resp.FeeCurrency,
+			Valid:  resp.FeeCurrency != "",
+		},
 		ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(resp.Timestamp), Valid: resp.Timestamp > 0},
 	}
 
@@ -313,6 +325,11 @@ func (s *service) CancelOrder(
 		AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
 		Cost:         orderResp.Cost,
 		Status:       orderResp.Status,
+		Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.Fee > 0},
+		FeeAssetSymbol: sql.NullString{
+			String: orderResp.FeeCurrency,
+			Valid:  orderResp.FeeCurrency != "",
+		},
 		ExchangeTimestamp: sql.NullTime{
 			Time:  time.UnixMilli(orderResp.Timestamp),
 			Valid: orderResp.Timestamp > 0,
@@ -382,6 +399,11 @@ func (s *service) GetOrder(
 			Time:  time.UnixMilli(orderResp.Timestamp),
 			Valid: orderResp.Timestamp > 0,
 		},
+		Fee: sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.Fee > 0},
+		FeeAssetSymbol: sql.NullString{
+			String: orderResp.FeeCurrency,
+			Valid:  orderResp.FeeCurrency != "",
+		},
 	}
 
 	id, err := s.repo.Orders.UpdateOrder(ctx, s.db, orderData)
@@ -441,6 +463,11 @@ func (s *service) GetOpenOrders(
 			AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
 			Cost:         orderResp.Cost,
 			Status:       orderResp.Status,
+			Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.Fee > 0},
+			FeeAssetSymbol: sql.NullString{
+				String: orderResp.FeeCurrency,
+				Valid:  orderResp.FeeCurrency != "",
+			},
 			ExchangeTimestamp: sql.NullTime{
 				Time:  time.UnixMilli(orderResp.Timestamp),
 				Valid: orderResp.Timestamp > 0,
@@ -491,19 +518,24 @@ func (s *service) GetRecentTrades(
 	collected := make([]repository.OrderData, 0, len(resp.Orders))
 	for _, o := range resp.Orders {
 		trade := repository.OrderData{
-			ExchangeName:      exchange,
-			InstrumentSymbol:  o.Symbol,
-			ExchangeOrderID:   o.Id,
-			ClientOrderID:     sql.NullString{String: o.ClientOrderId, Valid: o.ClientOrderId != ""},
-			Side:              o.Side,
-			OrderType:         o.Type,
-			Price:             sql.NullFloat64{Float64: o.Price, Valid: o.Price > 0},
-			Amount:            o.Amount,
-			Filled:            o.Filled,
-			Remaining:         o.Remaining,
-			AveragePrice:      sql.NullFloat64{Float64: o.Average, Valid: o.Average > 0},
-			Cost:              o.Cost,
-			Status:            o.Status,
+			ExchangeName:     exchange,
+			InstrumentSymbol: o.Symbol,
+			ExchangeOrderID:  o.Id,
+			ClientOrderID:    sql.NullString{String: o.ClientOrderId, Valid: o.ClientOrderId != ""},
+			Side:             o.Side,
+			OrderType:        o.Type,
+			Price:            sql.NullFloat64{Float64: o.Price, Valid: o.Price > 0},
+			Amount:           o.Amount,
+			Filled:           o.Filled,
+			Remaining:        o.Remaining,
+			AveragePrice:     sql.NullFloat64{Float64: o.Average, Valid: o.Average > 0},
+			Cost:             o.Cost,
+			Status:           o.Status,
+			Fee:              sql.NullFloat64{Float64: o.Fee, Valid: o.Fee > 0},
+			FeeAssetSymbol: sql.NullString{
+				String: o.FeeCurrency,
+				Valid:  o.FeeCurrency != "",
+			},
 			ExchangeTimestamp: sql.NullTime{Time: time.UnixMilli(o.Timestamp), Valid: o.Timestamp > 0},
 		}
 

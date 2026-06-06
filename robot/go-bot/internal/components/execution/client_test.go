@@ -341,17 +341,24 @@ func TestGatewayClient_CreateOrder(t *testing.T) {
 		req            *pb.CreateOrderRequest
 		expectedID     string
 		expectedStatus string
+		expectedFee    float64
+		expectedCurr   string
 		expectError    bool
 		errorCode      codes.Code
 	}{
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.createOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen}
+				s.createOrderResponse = &pb.OrderResponse{
+					Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen,
+					Fee: 0.01, FeeCurrency: "USDT",
+				}
 			},
 			req:            &pb.CreateOrderRequest{Symbol: "BTC/USDT", Side: repository.OrderSideBuy, Type: repository.OrderTypeLimit, Amount: 1.0},
 			expectedID:     "123",
 			expectedStatus: repository.OrderStatusOpen,
+			expectedFee:    0.01,
+			expectedCurr:   "USDT",
 		},
 		{
 			name: "Server Error",
@@ -384,6 +391,8 @@ func TestGatewayClient_CreateOrder(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedID, resp.Id)
 				assert.Equal(t, tc.expectedStatus, resp.Status)
+				assert.Equal(t, tc.expectedFee, resp.Fee)
+				assert.Equal(t, tc.expectedCurr, resp.FeeCurrency)
 			}
 		})
 	}
@@ -396,17 +405,24 @@ func TestGatewayClient_CreateStopOrder(t *testing.T) {
 		req            *pb.CreateStopOrderRequest
 		expectedID     string
 		expectedStatus string
+		expectedFee    float64
+		expectedCurr   string
 		expectError    bool
 		errorCode      codes.Code
 	}{
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.createStopOrderResponse = &pb.OrderResponse{Id: "stop-123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen}
+				s.createStopOrderResponse = &pb.OrderResponse{
+					Id: "stop-123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen,
+					Fee: 0.005, FeeCurrency: "BTC",
+				}
 			},
 			req:            &pb.CreateStopOrderRequest{Symbol: "BTC/USDT", Side: repository.OrderSideBuy, Amount: 1.0, StopPrice: 50000.0},
 			expectedID:     "stop-123",
 			expectedStatus: repository.OrderStatusOpen,
+			expectedFee:    0.005,
+			expectedCurr:   "BTC",
 		},
 		{
 			name: "Server Error",
@@ -436,6 +452,8 @@ func TestGatewayClient_CreateStopOrder(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedID, resp.Id)
 				assert.Equal(t, tc.expectedStatus, resp.Status)
+				assert.Equal(t, tc.expectedFee, resp.Fee)
+				assert.Equal(t, tc.expectedCurr, resp.FeeCurrency)
 			}
 		})
 	}
@@ -494,15 +512,22 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 		setupMock      func(*mockExchangeServer)
 		expectedID     string
 		expectedStatus string
+		expectedFee    float64
+		expectedCurr   string
 		expectError    bool
 	}{
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.getOrderResponse = &pb.OrderResponse{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed}
+				s.getOrderResponse = &pb.OrderResponse{
+					Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed,
+					Fee: 0.2, FeeCurrency: "USDT",
+				}
 			},
 			expectedID:     "123",
 			expectedStatus: repository.OrderStatusClosed,
+			expectedFee:    0.2,
+			expectedCurr:   "USDT",
 		},
 		{
 			name: "Server Error",
@@ -530,6 +555,8 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tc.expectedID, resp.Id)
 				assert.Equal(t, tc.expectedStatus, resp.Status)
+				assert.Equal(t, tc.expectedFee, resp.Fee)
+				assert.Equal(t, tc.expectedCurr, resp.FeeCurrency)
 			}
 		})
 	}
@@ -547,8 +574,8 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 			setupMock: func(s *mockExchangeServer) {
 				s.getOpenOrdersResponse = &pb.OrdersResponse{
 					Orders: []*pb.OrderResponse{
-						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
-						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen},
+						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen, Fee: 0, FeeCurrency: "USDT"},
+						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen, Fee: 0, FeeCurrency: "USDT"},
 					},
 				}
 			},
@@ -596,8 +623,8 @@ func TestGatewayClient_GetRecentTrades(t *testing.T) {
 			setupMock: func(s *mockExchangeServer) {
 				s.getOpenOrdersResponse = &pb.OrdersResponse{
 					Orders: []*pb.OrderResponse{
-						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed},
-						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed},
+						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed, Fee: 0.1, FeeCurrency: "USDT"},
+						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed, Fee: 0.1, FeeCurrency: "USDT"},
 					},
 				}
 			},

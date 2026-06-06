@@ -19,8 +19,8 @@ const (
 
 // Order Type constants
 const (
-	OrderTypeLimit  = "limit"
-	OrderTypeMarket = "market"
+	OrderTypeLimit      = "limit"
+	OrderTypeMarket     = "market"
 	OrderTypeStopLimit  = "stop_limit"
 	OrderTypeStopMarket = "stop_market"
 )
@@ -45,6 +45,8 @@ type OrderData struct {
 	Filled            float64
 	Remaining         float64
 	AveragePrice      sql.NullFloat64
+	Fee               sql.NullFloat64
+	FeeAssetSymbol    sql.NullString
 	Cost              float64
 	Status            string
 	ErrorMessage      sql.NullString
@@ -56,7 +58,10 @@ type OrderData struct {
 // OrdersRepo defines the interface for interacting with orders.
 type OrdersRepo interface {
 	GetOrder(ctx context.Context, db DBExecutor, exchangeName, exchangeOrderID string) (OrderData, error)
-	GetOrders(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string, statuses []string, limit int) ([]OrderData, error)
+	GetOrders(
+		ctx context.Context, db DBExecutor,
+		exchangeName, instrumentSymbol string, statuses []string, limit int,
+	) ([]OrderData, error)
 	CreateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error)
 	UpdateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error)
 }
@@ -70,7 +75,11 @@ func NewOrdersRepo() OrdersRepo {
 }
 
 // GetOrder retrieves a specific order by its exchange order ID.
-func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeName, exchangeOrderID string) (OrderData, error) {
+func (r *pgOrdersRepo) GetOrder(
+	ctx context.Context,
+	db DBExecutor,
+	exchangeName, exchangeOrderID string,
+) (OrderData, error) {
 	query := `
 		SELECT
 			o.id,
@@ -85,6 +94,8 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeName
 			o.filled,
 			o.remaining,
 			o.average_price,
+			o.fee,
+			fa.symbol AS fee_asset_symbol,
 			o.cost,
 			o.order_status,
 			o.error_message,
@@ -94,6 +105,7 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeName
 		FROM trading.orders o
 		INNER JOIN trading.exchanges e ON e.id = o.exchange_id AND e.name = $1 AND e.active
 		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id AND i.active
+		LEFT JOIN trading.assets fa ON fa.id = o.fee_asset_id AND fa.active
 		WHERE o.exchange_order_id = $2 AND o.active
 	`
 
@@ -111,6 +123,8 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeName
 		&order.Filled,
 		&order.Remaining,
 		&order.AveragePrice,
+		&order.Fee,
+		&order.FeeAssetSymbol,
 		&order.Cost,
 		&order.Status,
 		&order.ErrorMessage,
@@ -126,7 +140,13 @@ func (r *pgOrdersRepo) GetOrder(ctx context.Context, db DBExecutor, exchangeName
 }
 
 // GetOrders retrieves a list of orders, optionally filtered by instrument symbol and status.
-func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string, statuses []string, limit int) ([]OrderData, error) {
+func (r *pgOrdersRepo) GetOrders(
+	ctx context.Context,
+	db DBExecutor,
+	exchangeName, instrumentSymbol string,
+	statuses []string,
+	limit int,
+) ([]OrderData, error) {
 	query := `
 		SELECT
 			o.id,
@@ -141,6 +161,8 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 			o.filled,
 			o.remaining,
 			o.average_price,
+			o.fee,
+			fa.symbol AS fee_asset_symbol,
 			o.cost,
 			o.order_status,
 			o.error_message,
@@ -149,8 +171,9 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 			o.updated_at
 		FROM trading.orders o
 		INNER JOIN trading.exchanges e ON o.exchange_id = e.id AND e.name = $1 AND e.active
-		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id 
+		INNER JOIN trading.instruments i ON i.id = o.instrument_id AND i.exchange_id = o.exchange_id
 			AND ($2 = '' OR i.name = $2) AND i.active
+		LEFT JOIN trading.assets fa ON fa.id = o.fee_asset_id AND fa.active
 		WHERE o.active
 			AND (array_length($3::trading.order_status[], 1) IS NULL OR o.order_status = ANY($3::trading.order_status[]))
 		ORDER BY o.created_at DESC
@@ -179,6 +202,8 @@ func (r *pgOrdersRepo) GetOrders(ctx context.Context, db DBExecutor, exchangeNam
 			&o.Filled,
 			&o.Remaining,
 			&o.AveragePrice,
+			&o.Fee,
+			&o.FeeAssetSymbol,
 			&o.Cost,
 			&o.Status,
 			&o.ErrorMessage,
@@ -226,6 +251,8 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 			filled,
 			remaining,
 			average_price,
+			fee,
+			fee_asset_id,
 			cost,
 			order_status,
 			error_message,
@@ -233,8 +260,9 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 			created_at,
 			created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6::trading.order_type, $7, $8, $9, $10, 
-			$11, $12, $13::trading.order_status, $14, $15, NOW(), $16
+			$1, $2, $3, $4, $5, $6::trading.order_type, $7, $8, $9, $10,
+			$11, $12, (SELECT id FROM trading.assets WHERE symbol = $13 AND active),
+			$14, $15::trading.order_status, $16, $17, NOW(), $18
 		)
 		RETURNING id
 	`
@@ -252,6 +280,8 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 		order.Filled,
 		order.Remaining,
 		order.AveragePrice,
+		order.Fee,
+		order.FeeAssetSymbol,
 		order.Cost,
 		order.Status,
 		order.ErrorMessage,
@@ -274,15 +304,17 @@ func (r *pgOrdersRepo) UpdateOrder(ctx context.Context, db DBExecutor, order Ord
 			filled = $1,
 			remaining = $2,
 			average_price = $3,
-			cost = $4,
-			order_status = $5::trading.order_status,
-			error_message = $6,
-			exchange_timestamp = $7,
+			fee = $4,
+			fee_asset_id = (SELECT id FROM trading.assets WHERE symbol = $5 AND active),
+			cost = $6,
+			order_status = $7::trading.order_status,
+			error_message = $8,
+			exchange_timestamp = $9,
 			updated_at = NOW(),
-			updated_by = $8
+			updated_by = $10
 		WHERE
-			exchange_order_id = $9
-			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $10 AND active)
+			exchange_order_id = $11
+			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $12 AND active)
 		RETURNING id
 	`
 
@@ -291,6 +323,8 @@ func (r *pgOrdersRepo) UpdateOrder(ctx context.Context, db DBExecutor, order Ord
 		order.Filled,
 		order.Remaining,
 		order.AveragePrice,
+		order.Fee,
+		order.FeeAssetSymbol,
 		order.Cost,
 		order.Status,
 		order.ErrorMessage,

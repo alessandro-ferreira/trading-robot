@@ -17,7 +17,7 @@ import (
 
 var orderColumns = []string{
 	"id", "exchange_name", "instrument_symbol", "exchange_order_id", "client_order_id",
-	"side", "order_type", "price", "amount", "filled", "remaining", "average_price",
+	"side", "order_type", "price", "amount", "filled", "remaining", "average_price", "fee", "fee_asset_symbol",
 	"cost", "order_status", "error_message", "exchange_timestamp", "created_at", "updated_at",
 }
 
@@ -38,6 +38,8 @@ func getSampleOrder() OrderData {
 		Filled:            0.0,
 		Remaining:         r.Float64() * 2,
 		AveragePrice:      sql.NullFloat64{Valid: false},
+		Fee:               sql.NullFloat64{Float64: r.Float64() * 5, Valid: true},
+		FeeAssetSymbol:    sql.NullString{String: "USDT", Valid: true},
 		Cost:              0.0,
 		Status:            OrderStatusOpen,
 		ErrorMessage:      sql.NullString{Valid: false},
@@ -48,7 +50,9 @@ func getSampleOrder() OrderData {
 }
 
 func toOrderRow(o OrderData) []any {
-	return []any{o.ID, o.ExchangeName, o.InstrumentSymbol, o.ExchangeOrderID, o.ClientOrderID, o.Side, o.OrderType, o.Price, o.Amount, o.Filled, o.Remaining, o.AveragePrice, o.Cost, o.Status, o.ErrorMessage, o.ExchangeTimestamp, o.CreatedAt, o.UpdatedAt}
+	return []any{o.ID, o.ExchangeName, o.InstrumentSymbol, o.ExchangeOrderID, o.ClientOrderID, o.Side,
+		o.OrderType, o.Price, o.Amount, o.Filled, o.Remaining, o.AveragePrice, o.Fee, o.FeeAssetSymbol,
+		o.Cost, o.Status, o.ErrorMessage, o.ExchangeTimestamp, o.CreatedAt, o.UpdatedAt}
 }
 
 func TestPgOrdersRepo_GetOrder(t *testing.T) {
@@ -66,7 +70,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows(orderColumns).AddRow(toOrderRow(order)...)
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, result OrderData, err error) {
@@ -87,7 +91,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 
 				rows := pgxmock.NewRows(orderColumns).AddRow(toOrderRow(oNull)...)
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, result OrderData, err error) {
@@ -101,7 +105,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			name: "Not Found",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID).
 					WillReturnError(pgx.ErrNoRows)
 			},
 			expectedErrContains: "failed to get order",
@@ -110,7 +114,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			name: "DB Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeOrderID, order.ExchangeName).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID).
 					WillReturnError(errors.New("db query error"))
 			},
 			expectedErrContains: "db query error",
@@ -125,7 +129,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeOrderID, order.ExchangeName)
+			result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeName, order.ExchangeOrderID)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -252,8 +256,8 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 		return []any{
 			o.ExchangeOrderID, o.ClientOrderID, exchangeID, instrumentID,
 			o.Side, o.OrderType, o.Price, o.Amount, o.Filled, o.Remaining,
-			o.AveragePrice, o.Cost, o.Status, o.ErrorMessage, o.ExchangeTimestamp,
-			DefaultUser,
+			o.AveragePrice, o.Fee, o.FeeAssetSymbol, o.Cost, o.Status,
+			o.ErrorMessage, o.ExchangeTimestamp, DefaultUser,
 		}
 	}
 
@@ -372,7 +376,7 @@ func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 
 	b := getSampleOrder()
 	updateArgs := []any{
-		b.Filled, b.Remaining, b.AveragePrice, b.Cost, b.Status,
+		b.Filled, b.Remaining, b.AveragePrice, b.Fee, b.FeeAssetSymbol, b.Cost, b.Status,
 		b.ErrorMessage, b.ExchangeTimestamp, DefaultUser, b.ExchangeOrderID, b.ExchangeName,
 	}
 

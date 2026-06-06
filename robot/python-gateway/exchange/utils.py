@@ -126,4 +126,6 @@ def map_order(
         average=float(order.get("average") or 0.0),
         client_order_id=str(order.get("clientOrderId") or ""),
         timestamp=int(order.get("timestamp") or 0),
+        fee=float(order.get("fee") or 0.0),
+        fee_currency=str(order.get("fee_currency") or ""),
     )
