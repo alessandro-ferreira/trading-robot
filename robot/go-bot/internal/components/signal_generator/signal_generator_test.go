@@ -82,7 +82,7 @@ func TestNewSignalGenerator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sg, err := NewSignalGenerator(logger, testRisk, tt.strategyCfg)
+			sg, err := NewSignalGenerator(logger, testRisk, tt.strategyCfg, "test")
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, sg)
@@ -106,13 +106,14 @@ func TestSignalGenerator_Metadata(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
+	name := "SignalGenerator-binance-BTC/USD"
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg, name)
 	require.NoError(t, err)
 	defer sg.Close()
 
 	assert.Equal(t, testSymbol, sg.InstrumentSymbol())
 	assert.Equal(t, testExchange, sg.Exchange())
-	assert.Contains(t, sg.Name(), testExchange)
+	assert.Equal(t, name, sg.Name())
 	assert.Equal(t, testRisk.RiskPerTrade, sg.Risk().RiskPerTrade)
 	assert.Equal(t, testRisk.MaxPositionSize.Float64, sg.Risk().MaxPositionSize)
 	assert.Equal(t, strategy.StrategyDummy, sg.StrategyConfig().Type)
@@ -127,7 +128,7 @@ func TestSignalGenerator_UpdateConfigFromPair(t *testing.T) {
 		Status:           repository.StrategyEnabled,
 	}
 
-	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg, "test")
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -167,7 +168,7 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 				TrailingStopPct: sql.NullFloat64{Float64: 0.01, Valid: true},
 			},
 		}
-		sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
+		sg, err := NewSignalGenerator(logger, testRisk, stratCfg, "test")
 		require.NoError(t, err)
 		defer sg.Close()
 
@@ -194,7 +195,7 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 				ProfitTargetPct: sql.NullFloat64{Float64: 0.05, Valid: true},
 			},
 		}
-		sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
+		sg, err := NewSignalGenerator(logger, testRisk, stratCfg, "test")
 		require.NoError(t, err)
 		defer sg.Close()
 
@@ -207,7 +208,7 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 
 	t.Run("skip warmup for dummy strategy", func(t *testing.T) {
 		stratCfg := repository.StrategyPair{Type: repository.StrategyDummy}
-		sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
+		sg, err := NewSignalGenerator(logger, testRisk, stratCfg, "test")
 		require.NoError(t, err)
 		defer sg.Close()
 
@@ -217,7 +218,7 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 
 	t.Run("empty history", func(t *testing.T) {
 		stratCfg := repository.StrategyPair{Type: repository.StrategyDummy}
-		sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
+		sg, err := NewSignalGenerator(logger, testRisk, stratCfg, "test")
 		require.NoError(t, err)
 		defer sg.Close()
 
@@ -234,7 +235,7 @@ func TestSignalGenerator_Warmup(t *testing.T) {
 				ProfitTargetPct: sql.NullFloat64{Float64: 0.05, Valid: true},
 			},
 		}
-		sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
+		sg, err := NewSignalGenerator(logger, testRisk, stratCfg, "test")
 		require.NoError(t, err)
 		defer sg.Close()
 
@@ -260,7 +261,7 @@ func TestSignalGenerator_SetInPosition(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sg, err := NewSignalGenerator(logger, testRisk, stratCfg)
+	sg, err := NewSignalGenerator(logger, testRisk, stratCfg, "test")
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -287,7 +288,7 @@ func TestSignalGenerator_GetSignal(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg, "test")
 	require.NoError(t, err)
 	defer sg.Close()
 
@@ -319,7 +320,7 @@ func TestSignalGenerator_Lifecycle(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg)
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg, "test")
 	require.NoError(t, err)
 	defer sg.Close()
 

@@ -204,7 +204,9 @@ func TestOrchestrator_Start(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	mPf.On("LoadState", mock.Anything).Return(nil).Once()
-	mStrats.On("GetStrategyPairs", mock.Anything, mock.Anything, mock.Anything).Return([]repository.StrategyPair{{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT"}}, nil)
+	mStrats.On("GetStrategyPairs", mock.Anything, mock.Anything, mock.Anything).Return(
+		[]repository.StrategyPair{{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT"}}, nil,
+	)
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -220,7 +222,9 @@ func TestOrchestrator_Start(t *testing.T) {
 
 func TestOrchestrator_Close(t *testing.T) {
 	orch, _, _, _, _ := setupOrchestratorTest(t)
-	sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, repository.StrategyPair{Type: "dummy"})
+	sig, _ := signal_generator.NewSignalGenerator(
+		orch.logger, repository.RiskPair{}, repository.StrategyPair{Type: "dummy"}, "test",
+	)
 	orch.signals["test"] = sig
 
 	err := orch.Close()
@@ -310,7 +314,7 @@ func TestOrchestrator_StartWorker(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	wg := &sync.WaitGroup{}
-	orch.startWorker(ctx, pair, wg)
+	orch.startWorker(ctx, pair, "SignalGenerator-binance-ETH/USDT", wg)
 
 	assert.Eventually(t, func() bool {
 		orch.mu.Lock()
@@ -326,7 +330,7 @@ func TestOrchestrator_StartWorker(t *testing.T) {
 func TestOrchestrator_UpdateWorker(t *testing.T) {
 	orch, _, _, _, _ := setupOrchestratorTest(t)
 	pair := repository.StrategyPair{Type: "dummy"}
-	sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, pair)
+	sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, pair, "test")
 
 	orch.updateWorker(pair, sig, "test")
 }
@@ -334,7 +338,7 @@ func TestOrchestrator_UpdateWorker(t *testing.T) {
 func TestOrchestrator_RunWorker(t *testing.T) {
 	orch, repo, mPf, _, mExec := setupOrchestratorTest(t)
 	pair := repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy"}
-	sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, pair)
+	sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, pair, "test")
 
 	mockWorkerInit(repo, mPf, mExec, pair.ExchangeName, pair.InstrumentSymbol)
 
@@ -353,7 +357,9 @@ func TestOrchestrator_StopWorker(t *testing.T) {
 	orch, _, _, _, _ := setupOrchestratorTest(t)
 	name := "test-worker"
 
-	sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, repository.StrategyPair{Type: "dummy"})
+	sig, _ := signal_generator.NewSignalGenerator(
+		orch.logger, repository.RiskPair{}, repository.StrategyPair{Type: "dummy"}, name,
+	)
 	orch.signals[name] = sig
 
 	orch.stopWorker(name)

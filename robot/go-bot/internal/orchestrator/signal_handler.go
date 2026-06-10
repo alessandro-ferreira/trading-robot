@@ -36,6 +36,7 @@ func isEqualEps(a, b float64) bool {
 func (o *Orchestrator) initSignalHandler(
 	ctx context.Context,
 	p repository.StrategyPair,
+	name string,
 ) (*signal_generator.SignalGenerator, error) {
 	log := o.logger.With("exchange", p.ExchangeName, "symbol", p.InstrumentSymbol)
 	log.Info("Init signal generator")
@@ -54,7 +55,7 @@ func (o *Orchestrator) initSignalHandler(
 	}
 
 	// Create signal generator instance with warmup data
-	sigGen, err := signal_generator.NewSignalGenerator(o.logger, riskData, p)
+	sigGen, err := signal_generator.NewSignalGenerator(o.logger, riskData, p, name)
 	if err != nil {
 		return nil, fmt.Errorf("create signal generator failed %w", err)
 	}
@@ -83,7 +84,6 @@ func (o *Orchestrator) initSignalHandler(
 	}
 
 	o.mu.Lock()
-	name := sigGen.Name()
 	if _, exists := o.signals[name]; exists {
 		o.mu.Unlock()
 		return nil, fmt.Errorf("signal handler for %s already exists", name)

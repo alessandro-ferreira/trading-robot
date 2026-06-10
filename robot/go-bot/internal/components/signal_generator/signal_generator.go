@@ -24,7 +24,7 @@ type SignalGenerator struct {
 
 // NewSignalGenerator creates a new SignalGenerator instance.
 func NewSignalGenerator(
-	logger *slog.Logger, riskData repository.RiskPair, strategyData repository.StrategyPair,
+	logger *slog.Logger, riskData repository.RiskPair, strategyData repository.StrategyPair, name string,
 ) (*SignalGenerator, error) {
 	stratCfg, err := mapConfig(logger, strategyData)
 	if err != nil {
@@ -47,9 +47,7 @@ func NewSignalGenerator(
 			"component", "signal_generator",
 			"exchange", strategyData.ExchangeName, "symbol", strategyData.InstrumentSymbol,
 		),
-		name: fmt.Sprintf(
-			"SignalGenerator-%s-%s", strategyData.ExchangeName, strategyData.InstrumentSymbol,
-		),
+		name:             name,
 		exchange:         strategyData.ExchangeName,
 		instrumentSymbol: strategyData.InstrumentSymbol,
 		risk:             pairRisk,

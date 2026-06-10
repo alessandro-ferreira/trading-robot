@@ -75,7 +75,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	var wg sync.WaitGroup
 	// The strategy reloader runs on a deterministic interval (e.g., 5 minutes)
 	// to pick up new pairs enabled via the Management API/ML Engine.
-	refreshTicker := time.NewTicker(30 * time.Second)
+	refreshTicker := time.NewTicker(1 * time.Minute)
 	defer refreshTicker.Stop()
 
 	// Perform initial load of strategies
@@ -144,7 +144,6 @@ func (o *Orchestrator) orchestrateStrategies(
 	o.logger.Info("Orchestrator starting strategies", "active_pairs", len(strategies))
 
 	for _, pair := range strategies {
-		// Construct the internal name to check if the worker is already running.
 		name := fmt.Sprintf("SignalGenerator-%s-%s", pair.ExchangeName, pair.InstrumentSymbol)
 
 		o.mu.Lock()
@@ -152,7 +151,7 @@ func (o *Orchestrator) orchestrateStrategies(
 		o.mu.Unlock()
 
 		if !exists {
-			o.startWorker(ctx, pair, wg)
+			o.startWorker(ctx, pair, name, wg)
 		} else {
 			o.updateWorker(pair, sig, name)
 		}
@@ -167,14 +166,26 @@ func (o *Orchestrator) orchestrateStrategies(
 func (o *Orchestrator) startWorker(
 	ctx context.Context,
 	pair repository.StrategyPair,
+	name string,
 	wg *sync.WaitGroup,
 ) {
 	wg.Add(1)
-	go func(p repository.StrategyPair) {
+	go func(p repository.StrategyPair, n string) {
 		defer wg.Done()
 
+		// Ensure a panic in this specific pair's worker does not crash the entire orchestrator.
+		defer func() {
+			if r := recover(); r != nil {
+				o.logger.Error("Worker panic recovered",
+					"exchange", p.ExchangeName, "symbol", p.InstrumentSymbol, "error", r)
+
+				// Remove from active map and release resources (C++ engine) so the reloader can restart it.
+				o.stopWorker(n)
+			}
+		}()
+
 		// Initialize the handler (warmup history, sync position metadata, add to signals map)
-		sig, err := o.initSignalHandler(ctx, p)
+		sig, err := o.initSignalHandler(ctx, p, n)
 		if err != nil {
 			o.logger.Error(
 				"Lifecycle: failed to initialize signal handler",
@@ -184,7 +195,7 @@ func (o *Orchestrator) startWorker(
 		}
 
 		o.runWorker(ctx, sig)
-	}(pair)
+	}(pair, name)
 }
 
 // updateWorker pushes configuration changes to an already running signal generator.

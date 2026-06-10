@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func initTestSignalGenerator(t *testing.T, o *Orchestrator, target strategy.Stra
 		Type:             repository.StrategyMomentumProfit,
 		Momentum:         momentum,
 	}
-	sig, err := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{RiskPerTrade: 100}, pair)
+	sig, err := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{RiskPerTrade: 100}, pair, "test")
 	require.NoError(t, err)
 
 	now := time.Now().Unix()
@@ -161,7 +162,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 					Return(repository.RiskPair{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 
-				sig, _ := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{}, repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy"})
+				sig, _ := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{}, repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy"}, "SignalGenerator-binance-BTC/USDT")
 				o.mu.Lock()
 				o.signals[sig.Name()] = sig
 				o.mu.Unlock()
@@ -198,7 +199,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			orch, repo, mPf, _, mExec := setupOrchestratorTest(t)
 			tt.setup(orch, repo, mPf, mExec)
-			sig, err := orch.initSignalHandler(context.Background(), tt.pair)
+			sig, err := orch.initSignalHandler(context.Background(), tt.pair, fmt.Sprintf("SignalGenerator-%s-%s", tt.pair.ExchangeName, tt.pair.InstrumentSymbol))
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errSubstr)
@@ -261,7 +262,7 @@ func TestOrchestrator_ProcessSignal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			orch, repo, mPf, _, mExec := setupOrchestratorTest(t)
 			mStrats := repo.Strategies.(*MockStrategiesRepo)
-			sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy"})
+			sig, _ := signal_generator.NewSignalGenerator(orch.logger, repository.RiskPair{}, repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy"}, "test")
 			tt.setup(mExec, sig, mPf, mStrats)
 			orch.mu.Lock()
 			orch.signals[sig.Name()] = sig
