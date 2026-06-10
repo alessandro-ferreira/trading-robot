@@ -1,5 +1,7 @@
 [server]
 orchestrator_interval = "10s"
+refresh_strat_interval = "1m"
+default_exchange_timeout = "10s"
 shutdown_timeout = "30s"
 
 [log]
@@ -16,7 +18,10 @@ dbname = "testdb"
 sslmode = "disable"
 
 [grpc]
+go_bot_address = "localhost:50050"
 python_gateway_address = "localhost:50051"
+management_address = "0.0.0.0:50052"
+connection_timeout = "5s"
 
 [health_check]
 asset = "BTC"

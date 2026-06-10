@@ -39,7 +39,7 @@ func main() {
 
 	// Check if the config file was provided.
 	if configPath == nil || *configPath == "" {
-		log.Fatal("❌ Configuration file path must be provided using the -config flag, e.g., -config=config.toml")
+		log.Fatal("❌ Configuration file path must be provided using the -config flag")
 	}
 
 	cfg, err := config.Load(*configPath)
@@ -114,9 +114,7 @@ func main() {
 	bgManager.Start(ctx)
 
 	// --- Orchestration ---
-	orch, err := orchestrator.New(
-		slog.Default(), db, repoContainer, cfg, pf, recon, execService, cfg.Server.OrchestratorInterval,
-	)
+	orch, err := orchestrator.New(slog.Default(), db, repoContainer, cfg, pf, recon, execService)
 	if err != nil {
 		slog.Error("Failed to initialize Orchestrator", "error", err)
 		os.Exit(1)

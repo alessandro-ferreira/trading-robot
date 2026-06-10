@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -23,7 +22,9 @@ type GatewayClient interface {
 	CancelOrder(ctx context.Context, exchange, symbol, id string) (*pb.CancelOrderResponse, error)
 	GetOrder(ctx context.Context, exchange, symbol, id string) (*pb.OrderResponse, error)
 	GetOpenOrders(ctx context.Context, exchange, symbol string, limit int) (*pb.OrdersResponse, error)
-	GetRecentTrades(ctx context.Context, exchange, symbol string, since int64, limit int) (*pb.OrdersResponse, error)
+	GetRecentTrades(
+		ctx context.Context, exchange, symbol string, since int64, limit int,
+	) (*pb.OrdersResponse, error)
 	ResetState(ctx context.Context) (*pb.ResetStateResponse, error)
 	Close() error
 }
@@ -52,7 +53,7 @@ func NewGatewayClient(cfg *config.GRPCConfig) (GatewayClient, error) {
 
 	// Perform an initial Ping to ensure the gateway is responsive on startup.
 	// This makes the application fail fast if the connection cannot be established.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectionTimeout)
 	defer cancel()
 
 	resp, err := gwClient.Ping(ctx)

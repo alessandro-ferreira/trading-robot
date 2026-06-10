@@ -54,9 +54,14 @@ class MercadoBitcoinExchange(Exchange):
 
         url = f"{self.BASE_URL}{self.PATH_OAUTH_TOKEN}"
         payload = {"login": self._cfg.api_key, "password": self._cfg.secret}
+        timeout = (
+            self._cfg.timeout
+            if self._cfg and self._cfg.timeout
+            else self.TIMEOUT_SECONDS
+        )
 
         try:
-            response = requests.post(url, json=payload, timeout=self.TIMEOUT_SECONDS)
+            response = requests.post(url, json=payload, timeout=timeout)
 
             if response.status_code != http.client.OK:
                 raise ExchangeError(
@@ -81,6 +86,11 @@ class MercadoBitcoinExchange(Exchange):
 
         url = f"{self.BASE_URL}{path}"
         # Let requests handle JSON serialization by using the `json` parameter.
+        timeout = (
+            self._cfg.timeout
+            if self._cfg and self._cfg.timeout
+            else self.TIMEOUT_SECONDS
+        )
         headers = {"Authorization": f"Bearer {self._token}"}
 
         if method == "GET":
@@ -90,7 +100,7 @@ class MercadoBitcoinExchange(Exchange):
                     url,
                     headers=headers,
                     params=data,
-                    timeout=self.TIMEOUT_SECONDS,
+                    timeout=timeout,
                 )
             except requests.exceptions.RequestException as e:
                 # GET requests are safe to retry
@@ -102,7 +112,7 @@ class MercadoBitcoinExchange(Exchange):
                     url,
                     headers=headers,
                     json=data,
-                    timeout=self.TIMEOUT_SECONDS,
+                    timeout=timeout,
                 )
             except requests.exceptions.RequestException as e:
                 # Non-GET requests should NOT be automatically retried

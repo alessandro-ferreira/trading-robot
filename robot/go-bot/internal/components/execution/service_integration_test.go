@@ -44,6 +44,7 @@ func setupIntegrationTest(t *testing.T) (Service, GatewayClient, *database.DB, *
 	// gRPC Config - matches docker-compose.yml python-gateway
 	grpcConfig := config.GRPCConfig{
 		PythonGatewayAddress: getEnv("PYTHON_GATEWAY_ADDR", "localhost:15051"),
+		ConnectionTimeout:    time.Second,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

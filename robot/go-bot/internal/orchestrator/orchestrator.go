@@ -27,7 +27,6 @@ type Orchestrator struct {
 	portfolio portfolio.Portfolio
 	recon     reconcil.Reconciler
 	exec      execution.Service
-	interval  time.Duration
 	mu        sync.Mutex
 	signals   map[string]*signal_generator.SignalGenerator
 }
@@ -41,18 +40,22 @@ func New(
 	pf portfolio.Portfolio,
 	recon reconcil.Reconciler,
 	exec execution.Service,
-	interval time.Duration,
 ) (*Orchestrator, error) {
 	// Initialize internal logic components
 	riskMgr := risk.NewManager(logger, cfg.Risk)
 	signals := make(map[string]*signal_generator.SignalGenerator)
+
+	if cfg.Server.OrchestratorInterval <= 0 || cfg.Server.RefreshStratInterval <= 0 {
+		return nil, fmt.Errorf(
+			"invalid configuration: orchestrator_interval and refresh_strat_interval must be greater than 0",
+		)
+	}
 
 	return &Orchestrator{
 		logger:    logger,
 		db:        db,
 		repo:      repo,
 		cfg:       cfg,
-		interval:  interval,
 		portfolio: pf,
 		risk:      riskMgr,
 		recon:     recon,
@@ -73,15 +76,15 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	// The strategy reloader runs on a deterministic interval (e.g., 5 minutes)
+	// The strategy reloader runs on a deterministic interval (e.g., 1 minute)
 	// to pick up new pairs enabled via the Management API/ML Engine.
-	refreshTicker := time.NewTicker(1 * time.Minute)
+	refreshTicker := time.NewTicker(o.cfg.Server.RefreshStratInterval)
 	defer refreshTicker.Stop()
 
 	// Perform initial load of strategies
 	o.refreshStrategies(ctx, &wg)
 
-	o.logger.Info("Orchestrator active", "loop_interval", o.interval)
+	o.logger.Info("Orchestrator active", "loop_interval", o.cfg.Server.OrchestratorInterval)
 
 	for {
 		select {
@@ -214,9 +217,9 @@ func (o *Orchestrator) updateWorker(
 
 // runWorker manages the infinite trading loop for a single signal generator.
 func (o *Orchestrator) runWorker(ctx context.Context, sig *signal_generator.SignalGenerator) {
-	o.logger.Info("Starting worker loop", "pair", sig.Name(), "interval", o.interval)
+	o.logger.Info("Starting worker loop", "pair", sig.Name(), "interval", o.cfg.Server.OrchestratorInterval)
 
-	ticker := time.NewTicker(o.interval)
+	ticker := time.NewTicker(o.cfg.Server.OrchestratorInterval)
 	defer ticker.Stop()
 
 	for {

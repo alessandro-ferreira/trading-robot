@@ -2,8 +2,10 @@
 
 # Server settings
 [server]
-orchestrator_interval = "10s" # Time interval for processing the signal of each pair.
-shutdown_timeout = "10s" # Time to wait for graceful shutdown before force-quitting.
+orchestrator_interval = "5s"        # Time interval for processing the signal of each pair.
+refresh_strat_interval = "1m"       # Time interval for refreshing valid strategies and recover from panic.
+default_exchange_timeout = "10s"    # Default timeout for exchange operations.
+shutdown_timeout = "10s"            # Time to wait for graceful shutdown before force-quitting.
 
 # Logging configuration
 [log]
@@ -16,6 +18,7 @@ source = true     # Enable source file and line number in logs
 go_bot_address = "localhost:50050"          # Not used by go-bot, but for other potential clients
 python_gateway_address = "0.0.0.0:50051"    # Address for the go-bot to connect to (listen on all interfaces)
 management_address = "0.0.0.0:50052"        # Address for the ML Engine to connect to (listen on all interfaces)
+connection_timeout = "5s"                   # Timeout for initial connection and pings.
 
 # Database configuration for the Go bot (using TimescaleDB/PostgreSQL)
 [database]
@@ -47,6 +50,8 @@ ccxt = false
 
 [[exchange]]
 name = "binance"
+
+# timeout = "15s"               # Optional per-exchange timeout override.
 
 # It's highly recommended to use environment variables for API keys in production
 # For local development, you can place them here.

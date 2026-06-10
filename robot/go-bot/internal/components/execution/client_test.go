@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -162,7 +163,10 @@ func TestNewGatewayClient_Success(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	cfg := &config.GRPCConfig{PythonGatewayAddress: addr}
+	cfg := &config.GRPCConfig{
+		PythonGatewayAddress: addr,
+		ConnectionTimeout:    time.Second,
+	}
 	client, err := NewGatewayClient(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -175,7 +179,10 @@ func TestNewGatewayClient_Success(t *testing.T) {
 func TestNewGatewayClient_ConnectionFailure(t *testing.T) {
 	// This is a small integration test to ensure NewGatewayClient fails fast.
 	// It attempts to connect to a port that is presumed to be closed.
-	cfg := &config.GRPCConfig{PythonGatewayAddress: "localhost:9999"} // Invalid port
+	cfg := &config.GRPCConfig{
+		PythonGatewayAddress: "localhost:9999",
+		ConnectionTimeout:    10 * time.Millisecond,
+	} // Invalid port
 	_, err := NewGatewayClient(cfg)
 	require.Error(t, err, "NewGatewayClient should fail when the gateway is unreachable")
 	assert.Contains(t, err.Error(), "initial health check to python-gateway failed")

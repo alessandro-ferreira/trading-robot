@@ -12,11 +12,13 @@ import (
 func TestNewWithDefaults(t *testing.T) {
 	cfg := newWithDefaults()
 	assert.Equal(t, 10*time.Second, cfg.Server.OrchestratorInterval)
+	assert.Equal(t, 10*time.Second, cfg.Server.DefaultExchangeTimeout)
 	assert.Equal(t, 10*time.Second, cfg.Server.ShutdownTimeout)
 	assert.Equal(t, "info", cfg.Log.Level)
 	assert.Equal(t, "text", cfg.Log.Format)
 	assert.False(t, cfg.Log.Source)
 	assert.Equal(t, "disable", cfg.Database.SSLMode)
+	assert.Equal(t, 5*time.Second, cfg.GRPC.ConnectionTimeout)
 }
 
 func TestLoad(t *testing.T) {
@@ -32,6 +34,8 @@ func TestLoad(t *testing.T) {
 		require.NotNil(t, cfg, "Config struct should not be nil")
 
 		assert.Equal(t, 10*time.Second, cfg.Server.OrchestratorInterval)
+		assert.Equal(t, 1*time.Minute, cfg.Server.RefreshStratInterval)
+		assert.Equal(t, 10*time.Second, cfg.Server.DefaultExchangeTimeout)
 		assert.Equal(t, 30*time.Second, cfg.Server.ShutdownTimeout)
 		assert.Equal(t, "info", cfg.Log.Level)
 		assert.Equal(t, "json", cfg.Log.Format)
@@ -42,7 +46,10 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "testpassword", cfg.Database.Password)
 		assert.Equal(t, "testdb", cfg.Database.DBName)
 		assert.Equal(t, "disable", cfg.Database.SSLMode)
+		assert.Equal(t, "localhost:50050", cfg.GRPC.GoBotAddress)
 		assert.Equal(t, "localhost:50051", cfg.GRPC.PythonGatewayAddress)
+		assert.Equal(t, "0.0.0.0:50052", cfg.GRPC.ManagementAddress)
+		assert.Equal(t, 5*time.Second, cfg.GRPC.ConnectionTimeout)
 
 		// Verify Health Check Config
 		assert.Equal(t, "BTC", cfg.Health.Asset)

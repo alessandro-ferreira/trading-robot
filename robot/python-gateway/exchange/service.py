@@ -50,7 +50,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         except Exception as e:
             utils.handle_exchange_error(context, e, "fetching ticker")
 
-        logging.info(f"GetTicker Success: symbol={request.symbol} price={price}")
+        logging.info(
+            f"GetTicker Success: {request.exchange} symbol={request.symbol} price={price}"
+        )
         logging.info(f"raw_ticker: {ticker}")
         return exchange_pb2.TickerResponse(symbol=ticker.symbol, price=price)
 
@@ -91,7 +93,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         except Exception as e:
             utils.handle_exchange_error(context, e, "fetching balance")
 
-        logging.info(f"GetBalance Success: assets_count={len(balances)}")
+        logging.info(
+            f"GetBalance Success: {request.exchange} assets_count={len(balances)}"
+        )
 
         # Filter raw balance for logging to include only supported assets.
         pruned = {
@@ -126,7 +130,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             utils.handle_exchange_error(context, e, "creating order")
 
         logging.info(
-            f"CreateOrder Success: id={order.get('id')} "
+            f"CreateOrder Success: {request.exchange} id={order.get('id')} "
             f"status={order.get('status')} fill={order.get('filled', 0.0)}"
         )
         logging.info(f"raw_order: {order}")
@@ -160,7 +164,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             utils.handle_exchange_error(context, e, "creating stop order")
 
         logging.info(
-            f"CreateStopOrder Success: id={order.get('id')} "
+            f"CreateStopOrder Success: {request.exchange} id={order.get('id')} "
             f"status={order.get('status')} fill={order.get('filled', 0.0)}"
         )
         logging.info(f"raw_stop_order: {order}")
@@ -181,7 +185,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             utils.handle_exchange_error(context, e, "canceling order")
 
         logging.info(
-            f"CancelOrder Success: id={request.id} status={result.get('status')}"
+            f"CancelOrder Success: {request.exchange} id={request.id} status={result.get('status')}"
         )
         logging.info(f"raw_response: {result}")
         return exchange_pb2.CancelOrderResponse(
@@ -203,7 +207,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             utils.handle_exchange_error(context, e, "fetching order")
 
         logging.info(
-            f"GetOrder Success: id={order.get('id')} "
+            f"GetOrder Success: {request.exchange} id={order.get('id')} "
             f"status={order.get('status')} fill={order.get('filled', 0.0)}"
         )
         logging.info(f"raw_order: {order}")
@@ -225,7 +229,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         except Exception as e:
             utils.handle_exchange_error(context, e, "fetching open orders")
 
-        logging.info(f"GetOpenOrders Success: count={len(orders)}")
+        logging.info(f"GetOpenOrders Success: {request.exchange} count={len(orders)}")
         return exchange_pb2.OrdersResponse(
             orders=[utils.map_order(o, request) for o in orders[:limit]]
         )
@@ -250,7 +254,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         except Exception as e:
             utils.handle_exchange_error(context, e, "fetching recent trades")
 
-        logging.info(f"GetRecentTrades Success: count={len(trades)}")
+        logging.info(f"GetRecentTrades Success: {request.exchange} count={len(trades)}")
         return exchange_pb2.OrdersResponse(
             orders=[utils.map_order(t, request, True) for t in trades[:limit]]
         )

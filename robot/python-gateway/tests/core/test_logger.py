@@ -24,6 +24,7 @@ class LoggerTest(unittest.TestCase):
 
         self.assertEqual(log_data["level"], "INFO")
         self.assertEqual(log_data["msg"], "test message")
+        self.assertIn("id", log_data)
         self.assertIn("source", log_data)
         self.assertIn("test_logger.py", log_data["source"])
 
@@ -38,6 +39,7 @@ class LoggerTest(unittest.TestCase):
 
         self.assertIn("DEBUG", output)
         self.assertIn("debug message", output)
+        self.assertIn("(", output)  # For request ID
         self.assertIn("[", output)  # For source
         self.assertIn("test_logger.py", output)
 
@@ -51,6 +53,7 @@ class LoggerTest(unittest.TestCase):
 
         self.assertIn("INFO", output)
         self.assertIn("no source message", output)
+        self.assertIn("(", output)  # ID is still present
         self.assertNotIn("[", output)  # Source info is omitted
 
     @patch("sys.stdout", new_callable=io.StringIO)

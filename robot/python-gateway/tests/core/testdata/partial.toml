@@ -1,2 +1,2 @@
-[log]
-level = "warn"
+[[exchange]]
+name = "mercadobitcoin"

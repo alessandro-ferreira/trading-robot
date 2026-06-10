@@ -25,7 +25,6 @@ class CCXTExchange(Exchange):
         except Exception as e:
             raise ExchangeError(str(e))
 
-    # TODO: Consider adding retry logic for transient errors in getter methods.
     def fetch_ticker(self, symbol: str) -> Ticker:
         """Fetches market data for a symbol via CCXT."""
         if not self._ccxt:

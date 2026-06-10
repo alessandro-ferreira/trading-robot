@@ -1,5 +1,6 @@
 [server]
-shutdown_timeout = "5s"
+default_exchange_timeout = "5s"
+shutdown_timeout = "2s"
 
 [grpc]
 python_gateway_address = "localhost:9999"

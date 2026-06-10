@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -159,13 +160,17 @@ func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, 
 	}
 
 	cfg := &config.Config{
+		Server: config.ServerConfig{
+			OrchestratorInterval: 100 * time.Millisecond,
+			RefreshStratInterval: 1 * time.Minute,
+		},
 		Risk: config.RiskConfig{
 			MaxOpenPositions: 3,
 			MaxDailyLoss:     100.0,
 		},
 	}
 
-	orch, err := New(logger, nil, repo, cfg, mPf, mRecon, mExec, 100*time.Millisecond)
+	orch, err := New(logger, nil, repo, cfg, mPf, mRecon, mExec)
 	require.NoError(t, err)
 
 	return orch, repo, mPf, mRecon, mExec
@@ -197,6 +202,35 @@ func TestNewOrchestrator(t *testing.T) {
 	assert.NotNil(t, orch.signals)
 }
 
+func TestNewOrchestrator_InvalidConfig(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	repo := &repository.Container{}
+
+	t.Run("zero OrchestratorInterval", func(t *testing.T) {
+		cfg := &config.Config{
+			Server: config.ServerConfig{
+				OrchestratorInterval: 0,
+				RefreshStratInterval: 1 * time.Minute,
+			},
+		}
+		orch, err := New(logger, nil, repo, cfg, nil, nil, nil)
+		assert.Error(t, err)
+		assert.Nil(t, orch)
+	})
+
+	t.Run("zero RefreshStratInterval", func(t *testing.T) {
+		cfg := &config.Config{
+			Server: config.ServerConfig{
+				OrchestratorInterval: 1 * time.Second,
+				RefreshStratInterval: 0,
+			},
+		}
+		orch, err := New(logger, nil, repo, cfg, nil, nil, nil)
+		assert.Error(t, err)
+		assert.Nil(t, orch)
+	})
+}
+
 func TestOrchestrator_Start(t *testing.T) {
 	orch, repo, mPf, _, mExec := setupOrchestratorTest(t)
 	mStrats := repo.Strategies.(*MockStrategiesRepo)
@@ -218,6 +252,15 @@ func TestOrchestrator_Start(t *testing.T) {
 	err := orch.Start(ctx)
 	assert.NoError(t, err)
 	mPf.AssertExpectations(t)
+}
+
+func TestOrchestrator_Start_PortfolioFailure(t *testing.T) {
+	orch, _, mPf, _, _ := setupOrchestratorTest(t)
+	mPf.On("LoadState", mock.Anything).Return(errors.New("db error")).Once()
+
+	err := orch.Start(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "load portfolio state failed")
 }
 
 func TestOrchestrator_Close(t *testing.T) {
@@ -251,6 +294,20 @@ func TestOrchestrator_RefreshStrategies(t *testing.T) {
 	wg.Wait()
 
 	mStrats.AssertExpectations(t)
+}
+
+func TestOrchestrator_RefreshStrategies_Error(t *testing.T) {
+	orch, repo, _, _, _ := setupOrchestratorTest(t)
+	mStrats := repo.Strategies.(*MockStrategiesRepo)
+
+	mStrats.On("GetStrategyPairs", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("db error")).Once()
+
+	// refreshStrategies doesn't return an error, but logs it.
+	// We check it handles the error gracefully.
+	assert.NotPanics(t, func() {
+		orch.refreshStrategies(context.Background(), &sync.WaitGroup{})
+	})
 }
 
 func TestOrchestrator_LoadValidStrategies(t *testing.T) {
@@ -325,6 +382,33 @@ func TestOrchestrator_StartWorker(t *testing.T) {
 
 	cancel()
 	wg.Wait()
+}
+
+func TestOrchestrator_WorkerPanicRecovery(t *testing.T) {
+	orch, repo, _, _, _ := setupOrchestratorTest(t)
+	mMD := repo.MarketData.(*MockMarketDataRepo)
+
+	pair := repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "PANIC/USDT"}
+	name := "SignalGenerator-binance-PANIC/USDT"
+
+	// Force initSignalHandler to panic by making a dependency panic
+	mMD.On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "PANIC/USDT", mock.Anything).
+		Panic("intentional panic").Once()
+
+	wg := &sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	orch.startWorker(ctx, pair, name, wg)
+
+	// Wait for the goroutine to finish (via recovery)
+	wg.Wait()
+
+	// Verify that the worker is NOT in the signals map (stopWorker was called or never added)
+	orch.mu.Lock()
+	defer orch.mu.Unlock()
+	_, exists := orch.signals[name]
+	assert.False(t, exists)
 }
 
 func TestOrchestrator_UpdateWorker(t *testing.T) {

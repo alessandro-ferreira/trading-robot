@@ -1,13 +1,14 @@
 import logging
 import tomllib
 from dataclasses import dataclass, field
-from typing import List, Union
+from typing import List, Union, Optional
 
 
 @dataclass
 class ServerConfig:
     """Server configuration."""
 
+    default_exchange_timeout: int = 10  # seconds
     shutdown_timeout: int = 10  # seconds
 
 
@@ -22,7 +23,7 @@ class GRPCConfig:
 class LogConfig:
     """Logging configuration."""
 
-    level: str = "INFO"
+    level: str = "info"
     format: str = "text"
     source: bool = False
 
@@ -36,6 +37,7 @@ class ExchangeConfig:
     secret: str = ""
     sandbox_mode: bool = False
     ccxt: bool = True  # Indicates if this exchange should be handled by ccxt
+    timeout: Optional[int] = None
 
 
 @dataclass
@@ -66,9 +68,12 @@ def load_from_dict(data: dict) -> Config:
 
     # Server/GRPC/Log loading
     if server_data := data.get("server"):
-        timeout_val = server_data.get("shutdown_timeout", cfg.server.shutdown_timeout)
+        cfg.server.default_exchange_timeout = _parse_duration_to_seconds(
+            server_data.get("default_exchange_timeout"),
+            cfg.server.default_exchange_timeout,
+        )
         cfg.server.shutdown_timeout = _parse_duration_to_seconds(
-            timeout_val, cfg.server.shutdown_timeout
+            server_data.get("shutdown_timeout"), cfg.server.shutdown_timeout
         )
 
     if grpc_data := data.get("grpc"):
@@ -81,13 +86,18 @@ def load_from_dict(data: dict) -> Config:
         cfg.log.format = log_data.get("format", cfg.log.format)
         cfg.log.source = log_data.get("source", cfg.log.source)
 
+    global_default = cfg.server.default_exchange_timeout
+
     for entry in data.get("exchange", []):
+        ex_timeout = _parse_duration_to_seconds(entry.get("timeout"), global_default)
+
         ex_cfg = ExchangeConfig(
             name=entry.get("name", None),
             api_key=entry.get("api_key", None),
             secret=entry.get("api_secret", None),
             sandbox_mode=entry.get("sandbox_mode", False),
             ccxt=entry.get("ccxt", False),
+            timeout=ex_timeout,
         )
         cfg.exchanges.append(ex_cfg)
 

@@ -81,6 +81,11 @@ class Exchange(ABC):
                     if cfg.secret is not None:
                         params["secret"] = cfg.secret
                         logging.debug(f"Secret provided for {cfg.name}")
+
+                    if cfg and cfg.timeout is not None:
+                        # CCXT timeout is defined in milliseconds
+                        params["timeout"] = int(cfg.timeout * 1000)
+
                     # Add any other config fields as needed
                     self._ccxt = ccxt_cls(params)
                     logging.debug(

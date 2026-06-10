@@ -29,6 +29,7 @@ func TestGatewayClient_Integration(t *testing.T) {
 
 	cfg := config.GRPCConfig{
 		PythonGatewayAddress: addr,
+		ConnectionTimeout:    time.Second,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

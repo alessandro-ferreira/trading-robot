@@ -21,8 +21,10 @@ type Config struct {
 
 // ServerConfig holds server-related settings.
 type ServerConfig struct {
-	OrchestratorInterval time.Duration `toml:"orchestrator_interval"`
-	ShutdownTimeout      time.Duration `toml:"shutdown_timeout"`
+	OrchestratorInterval   time.Duration `toml:"orchestrator_interval"`
+	RefreshStratInterval   time.Duration `toml:"refresh_strat_interval"`
+	DefaultExchangeTimeout time.Duration `toml:"default_exchange_timeout"`
+	ShutdownTimeout        time.Duration `toml:"shutdown_timeout"`
 }
 
 // LogConfig holds the logging configuration.
@@ -44,9 +46,10 @@ type DatabaseConfig struct {
 
 // GRPCConfig holds the gRPC connection parameters.
 type GRPCConfig struct {
-	GoBotAddress         string `toml:"go_bot_address"`
-	PythonGatewayAddress string `toml:"python_gateway_address"`
-	ManagementAddress    string `toml:"management_address"`
+	GoBotAddress         string        `toml:"go_bot_address"`
+	PythonGatewayAddress string        `toml:"python_gateway_address"`
+	ManagementAddress    string        `toml:"management_address"`
+	ConnectionTimeout    time.Duration `toml:"connection_timeout"`
 }
 
 // HealthCheckConfig holds settings for the background health monitor.
@@ -59,11 +62,12 @@ type HealthCheckConfig struct {
 
 // ExchangeConfig holds the exchange connection parameters.
 type ExchangeConfig struct {
-	Name        string `toml:"name"`
-	APIKey      string `toml:"api_key"`
-	Secret      string `toml:"secret"`
-	SandboxMode bool   `toml:"sandbox_mode"`
-	HealthCheck bool   `toml:"health_check"`
+	Name        string        `toml:"name"`
+	APIKey      string        `toml:"api_key"`
+	Secret      string        `toml:"secret"`
+	SandboxMode bool          `toml:"sandbox_mode"`
+	HealthCheck bool          `toml:"health_check"`
+	Timeout     time.Duration `toml:"timeout"`
 }
 
 // RiskConfig holds the risk management parameters.
@@ -78,8 +82,9 @@ type RiskConfig struct {
 func newWithDefaults() *Config {
 	return &Config{
 		Server: ServerConfig{
-			OrchestratorInterval: 10 * time.Second,
-			ShutdownTimeout:      10 * time.Second,
+			OrchestratorInterval:   10 * time.Second,
+			DefaultExchangeTimeout: 10 * time.Second,
+			ShutdownTimeout:        10 * time.Second,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -88,6 +93,9 @@ func newWithDefaults() *Config {
 		},
 		Database: DatabaseConfig{
 			SSLMode: "disable",
+		},
+		GRPC: GRPCConfig{
+			ConnectionTimeout: 5 * time.Second,
 		},
 	}
 }

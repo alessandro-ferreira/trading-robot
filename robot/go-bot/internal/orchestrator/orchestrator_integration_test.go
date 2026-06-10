@@ -66,13 +66,17 @@ func setupOrchestratorIntegrationTest(t *testing.T, maxOpenPositions int) (*Orch
 
 	// Define a test-specific configuration
 	cfg := &config.Config{
+		Server: config.ServerConfig{
+			OrchestratorInterval: 100 * time.Millisecond,
+			RefreshStratInterval: 1 * time.Minute,
+		},
 		Risk: config.RiskConfig{
 			MaxOpenPositions: maxOpenPositions,
 			MaxDailyLoss:     1000.0,
 		},
 	}
 
-	orch, err := New(slog.Default(), db, repoContainer, cfg, pf, reconciler, execSvc, 500*time.Millisecond)
+	orch, err := New(slog.Default(), db, repoContainer, cfg, pf, reconciler, execSvc)
 	require.NoError(t, err, "Failed to create Orchestrator")
 
 	cleanup := func() {

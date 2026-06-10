@@ -9,6 +9,16 @@ from core.config import LogConfig
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
+class RequestIDFilter(logging.Filter):
+    """
+    Filters log records to inject a 6-digit request ID derived from the thread identity.
+    """
+
+    def filter(self, record):
+        record.request_id = record.thread % 1000000
+        return True
+
+
 class JSONFormatter(logging.Formatter):
     """
     A custom formatter to output logs in JSON format.
@@ -20,6 +30,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record):
         log_record = {
+            "id": getattr(record, "request_id", 0),
             "time": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "msg": record.getMessage(),
@@ -61,16 +72,15 @@ def setup(cfg: LogConfig, stream=None):
         stream = sys.stdout
 
     handler = logging.StreamHandler(stream)
+    handler.addFilter(RequestIDFilter())
 
     formatter: logging.Formatter
     if cfg.format.lower() == "json":
         formatter = JSONFormatter(source=cfg.source)
     else:  # Default to text
-        log_format = "%(asctime)s - %(levelname)s - %(message)s"
+        log_format = "(%(request_id)06d) %(asctime)s - %(levelname)s - %(message)s"
         if cfg.source:
-            log_format = (
-                "%(asctime)s - %(levelname)s - [%(relpath)s:%(lineno)d] - %(message)s"
-            )
+            log_format = "(%(request_id)06d) %(asctime)s - %(levelname)s - [%(relpath)s:%(lineno)d] - %(message)s"
             formatter = TextFormatter(log_format)
         else:
             formatter = logging.Formatter(log_format)
