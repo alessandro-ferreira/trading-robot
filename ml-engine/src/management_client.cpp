@@ -56,8 +56,8 @@ class ManagementClient::Impl {
         UpdateRiskRequest request;
         request.set_exchange(update.exchange);
         request.set_symbol(update.symbol);
-        request.set_risk_per_trade(update.risk_per_trade);
-        request.set_max_position_size(update.max_position_size);
+        request.set_allocated_budget(update.allocated_budget);
+        request.set_max_asset_units(update.max_asset_units);
 
         UpdateRiskResponse response;
         grpc::ClientContext context;

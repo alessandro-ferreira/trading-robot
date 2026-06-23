@@ -30,8 +30,8 @@ TEST_F(TemplateEngineTest, BTCConfigurationMatchesMigration) {
     EXPECT_DOUBLE_EQ(*update.momentum_params.trailing_stop_pct, 0.02);
 
     auto risk = engine_.GenerateRiskUpdate(exchange_, "BTC/USDT");
-    EXPECT_DOUBLE_EQ(risk.risk_per_trade, 100.0);
-    EXPECT_DOUBLE_EQ(risk.max_position_size, 1.0);
+    EXPECT_DOUBLE_EQ(risk.allocated_budget, 500.0);
+    EXPECT_DOUBLE_EQ(risk.max_asset_units, 0.01);
 }
 
 TEST_F(TemplateEngineTest, ETHConfigurationMatchesMigration) {
@@ -45,8 +45,8 @@ TEST_F(TemplateEngineTest, ETHConfigurationMatchesMigration) {
     EXPECT_EQ(update.momentum_params.windows.size(), 3);
 
     auto risk = engine_.GenerateRiskUpdate(exchange_, "ETH/USDT");
-    EXPECT_DOUBLE_EQ(risk.risk_per_trade, 50.0);
-    EXPECT_DOUBLE_EQ(risk.max_position_size, 10.0);
+    EXPECT_DOUBLE_EQ(risk.allocated_budget, 300.0);
+    EXPECT_DOUBLE_EQ(risk.max_asset_units, 1.0);
 }
 
 TEST_F(TemplateEngineTest, LTCConfigurationMatchesMigration) {
@@ -55,8 +55,8 @@ TEST_F(TemplateEngineTest, LTCConfigurationMatchesMigration) {
     EXPECT_TRUE(update.enabled);
 
     auto risk = engine_.GenerateRiskUpdate(exchange_, "LTC/USDT");
-    EXPECT_DOUBLE_EQ(risk.risk_per_trade, 25.0);
-    EXPECT_DOUBLE_EQ(risk.max_position_size, 5.0);
+    EXPECT_DOUBLE_EQ(risk.allocated_budget, 200.0);
+    EXPECT_DOUBLE_EQ(risk.max_asset_units, 25.0);
 }
 
 TEST_F(TemplateEngineTest, UnknownSymbolFallback) {
@@ -65,8 +65,8 @@ TEST_F(TemplateEngineTest, UnknownSymbolFallback) {
     EXPECT_EQ(update.strategy_type, "dummy");
 
     auto risk = engine_.GenerateRiskUpdate(exchange_, "UNKNOWN/USDT");
-    EXPECT_DOUBLE_EQ(risk.risk_per_trade, 0.0);
-    EXPECT_DOUBLE_EQ(risk.max_position_size, 0.0);
+    EXPECT_DOUBLE_EQ(risk.allocated_budget, 0.0);
+    EXPECT_DOUBLE_EQ(risk.max_asset_units, 0.0);
 }
 
 }  // namespace trading::ml

@@ -90,8 +90,8 @@ TEST_F(ManagementClientTest, UpdateRiskSuccess) {
     RiskUpdate update;
     update.exchange = "binance";
     update.symbol = "BTC/USDT";
-    update.risk_per_trade = 100.0;
-    update.max_position_size = 1.0;
+    update.allocated_budget = 100.0;
+    update.max_asset_units = 1.0;
 
     EXPECT_TRUE(client_->UpdateRisk(update));
 }

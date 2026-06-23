@@ -41,8 +41,8 @@ struct StrategyUpdate {
 struct RiskUpdate {
     string exchange;
     string symbol;
-    double risk_per_trade;
-    double max_position_size;
+    double allocated_budget;
+    double max_asset_units;
 };
 
 // IEngine is the abstract interface for intelligence providers.

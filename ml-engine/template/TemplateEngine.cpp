@@ -60,18 +60,18 @@ RiskUpdate TemplateEngine::GenerateRiskUpdate(const string& exchange, const stri
 
     // Mirroring values from migration 000016_insert_risks.up.sql
     if (symbol == "BTC/USDT") {
-        update.risk_per_trade = 100.0;
-        update.max_position_size = 1.0;
+        update.allocated_budget = 500.0;
+        update.max_asset_units = 0.01;
     } else if (symbol == "ETH/USDT") {
-        update.risk_per_trade = 50.0;
-        update.max_position_size = 10.0;
+        update.allocated_budget = 300.0;
+        update.max_asset_units = 1.0;
     } else if (symbol == "LTC/USDT") {
-        update.risk_per_trade = 25.0;
-        update.max_position_size = 5.0;
+        update.allocated_budget = 200.0;
+        update.max_asset_units = 25.0;
     } else {
         // Safe defaults for unknown pairs
-        update.risk_per_trade = 0.0;
-        update.max_position_size = 0.0;
+        update.allocated_budget = 0.0;
+        update.max_asset_units = 0.0;
     }
 
     return update;
