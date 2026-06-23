@@ -149,7 +149,11 @@ func (s *service) GetBalance(
 			continue
 		}
 		balance.ID = id
-		collected = append(collected, balance)
+
+		// Ensure we only return the specific asset requested to the caller.
+		if assetSymbol == "" || symbol == assetSymbol {
+			collected = append(collected, balance)
+		}
 	}
 
 	return collected, nil

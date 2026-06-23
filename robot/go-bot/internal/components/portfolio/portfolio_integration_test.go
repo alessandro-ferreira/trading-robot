@@ -4,6 +4,7 @@ package portfolio
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -46,8 +47,9 @@ func setupIntegrationTest(t *testing.T) (Portfolio, *repository.Container, *data
 	err = db.Ping(ctx)
 	require.NoError(t, err, "Failed to ping database")
 
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	repoContainer := repository.New()
-	p := NewPortfolio(slog.Default(), db, repoContainer)
+	p := NewPortfolio(logger, db, repoContainer)
 
 	cleanup := func() {
 		cancel()
@@ -65,68 +67,152 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 	exchange := "dummy"
 	symbol := "BTC/USDT"
 
-	// Initial State: Verify no open positions
-	t.Log("Checking initial state (expecting empty)")
-	openPositions, err := repo.Positions.GetActivePositions(ctx, db, "", "")
-	require.NoError(t, err)
-	assert.Empty(t, openPositions, "Should have no open positions initially")
-
-	// Open a new position (Buy 1 BTC @ 20000)
-	t.Log("Inserting/Buying new position (1 BTC @ 20000)")
-	err = p.CreatePosition(ctx, exchange, symbol, 1.0, 20000.0, 0)
-	require.NoError(t, err)
-
-	// Verify persistence via GetPosition
-	t.Log("Verifying persistence via GetPosition")
-	posData, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-	require.NoError(t, err)
-	assert.Equal(t, exchange, posData.ExchangeName)
-	assert.Equal(t, symbol, posData.InstrumentSymbol)
-	assert.InDelta(t, 1.0, posData.Quantity, 0.000001)
-	assert.InDelta(t, 20000.0, posData.EntryPrice, 0.000001)
-	assert.Equal(t, 20000.0, posData.HighestPrice)
-	assert.True(t, posData.Active)
-
-	// Increase position (Buy 1 BTC @ 22000)
-	// New Avg Price = (1*20000 + 1*22000) / 2 = 21000
-	t.Log("Updating position (Buy 1 more BTC @ 22000)")
-	err = p.UpdatePosition(ctx, exchange, symbol, repository.PositionData{
-		Quantity:      2.0,
-		EntryPrice:    21000.0,
-		HighestPrice:  22000.0,
-		UnknownOrigin: true,
+	// Initial State
+	t.Run("InitialState", func(t *testing.T) {
+		openPositions, err := repo.Positions.GetActivePositions(ctx, db, "", "")
+		require.NoError(t, err)
+		assert.Empty(t, openPositions)
+		assert.Equal(t, 0, p.GetActivePositionsCount())
 	})
+
+	// Create Position (Unknown Origin - Adopting a ghost balance)
+	t.Run("CreateUnknownOrigin", func(t *testing.T) {
+		// No price, no orderID -> results in UnknownOrigin = true
+		err := p.CreatePosition(ctx, exchange, symbol, 0.5, 0, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 1, p.GetActivePositionsCount())
+
+		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+		require.NoError(t, err)
+		assert.True(t, pos.UnknownOrigin)
+		assert.Equal(t, 0.5, pos.Quantity)
+		assert.Equal(t, 0.0, pos.EntryPrice)
+	})
+
+	// Promote Position (Providing OrderID and Price from trade history)
+	t.Run("PromotePosition", func(t *testing.T) {
+		// Create a dummy order first to satisfy the foreign key constraint fk_positions_order
+		orderID, err := repo.Orders.CreateOrder(ctx, db, repository.OrderData{
+			ExchangeName:     exchange,
+			InstrumentSymbol: symbol,
+			ExchangeOrderID:  "dummy-order-link-1001",
+			Side:             repository.OrderSideBuy,
+			OrderType:        repository.OrderTypeLimit,
+			Status:           repository.OrderStatusClosed,
+		})
+		require.NoError(t, err)
+
+		err = p.CreatePosition(ctx, exchange, symbol, 0.5, 42000.0, orderID)
+		require.NoError(t, err)
+
+		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+		require.NoError(t, err)
+		assert.False(t, pos.UnknownOrigin, "Position should be promoted to known origin")
+		assert.Equal(t, 42000.0, pos.EntryPrice)
+		assert.Equal(t, orderID, pos.OrderID.Int64)
+	})
+
+	// Update Position (Standard update loop)
+	t.Run("UpdatePosition", func(t *testing.T) {
+		updates := repository.PositionData{
+			Quantity:     0.6,
+			HighestPrice: 45000.0,
+		}
+		err := p.UpdatePosition(ctx, exchange, symbol, updates)
+		require.NoError(t, err)
+
+		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+		require.NoError(t, err)
+		assert.Equal(t, 0.6, pos.Quantity)
+		assert.Equal(t, 45000.0, pos.HighestPrice)
+		assert.True(t, pos.OrderID.Valid)
+	})
+
+	// Delete Position (Closing trade)
+	t.Run("DeletePosition", func(t *testing.T) {
+		err := p.DeletePosition(ctx, exchange, symbol)
+		require.NoError(t, err)
+		assert.Equal(t, 0, p.GetActivePositionsCount())
+
+		// Verify soft delete
+		openPositions, _ := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
+		assert.Empty(t, openPositions)
+
+		_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
+		require.Error(t, err, "GetPosition should fail for inactive rows")
+	})
+}
+
+func TestPortfolio_Integration_TotalValue(t *testing.T) {
+	p, repo, db, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Seed multiple balances across exchanges
+	balances := []repository.BalanceData{
+		{ExchangeName: "dummy", AssetSymbol: "BTC", Total: 1.5, Free: 1.0, Used: 0.5},
+		{ExchangeName: "dummy", AssetSymbol: "USDT", Total: 5000.0, Free: 5000.0},
+		{ExchangeName: "binance", AssetSymbol: "BTC", Total: 0.5, Free: 0.5},
+	}
+
+	for _, b := range balances {
+		_, err := repo.Balances.UpsertBalance(ctx, db, b)
+		require.NoError(t, err)
+	}
+
+	totals, err := p.GetTotalValue(ctx)
 	require.NoError(t, err)
 
-	// Verify persistence via GetPosition
-	t.Log("Verifying update persistence")
-	posData, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
-	require.NoError(t, err)
-	assert.InDelta(t, 2.0, posData.Quantity, 0.000001)
-	assert.InDelta(t, 21000.0, posData.EntryPrice, 0.000001)
-	assert.Equal(t, 22000.0, posData.HighestPrice)
+	// BTC should be 1.5 + 0.5 = 2.0
+	assert.Equal(t, 2.0, totals["BTC"])
+	assert.Equal(t, 5000.0, totals["USDT"])
+}
 
-	// Get Open Positions: Should return the single aggregated position
-	t.Log("Verifying GetOpenPositions")
-	openPositions, err = repo.Positions.GetActivePositions(ctx, db, "", "")
-	require.NoError(t, err)
-	require.Len(t, openPositions, 1)
-	assert.Equal(t, symbol, openPositions[0].InstrumentSymbol)
-	assert.InDelta(t, 2.0, openPositions[0].Quantity, 0.000001)
+func TestPortfolio_Integration_StateManagement(t *testing.T) {
+	p, repo, db, cleanup := setupIntegrationTest(t)
+	defer cleanup()
 
-	// Delete: Close position (Sell 2 BTC)
-	t.Log("Deleting position (Selling all)")
-	err = p.DeletePosition(ctx, exchange, symbol)
-	require.NoError(t, err)
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol1 := "BTC/USDT"
+	symbol2 := "ETH/USDT"
 
-	// Verify deletion via GetOpenPositions (should be empty)
-	t.Log("Verifying deletion via GetOpenPositions")
-	openPositions, err = repo.Positions.GetActivePositions(ctx, db, "", "")
-	require.NoError(t, err)
-	assert.Empty(t, openPositions, "Should have no open positions after selling all")
+	// Manually insert positions into database to simulate existing state.
+	pos1 := repository.PositionData{
+		ExchangeName: exchange, InstrumentSymbol: symbol1,
+		Side: repository.PositionSideLong, Quantity: 1.0, EntryPrice: 30000, Active: true, UnknownOrigin: true,
+	}
+	pos2 := repository.PositionData{
+		ExchangeName: exchange, InstrumentSymbol: symbol2,
+		Side: repository.PositionSideLong, Quantity: 10.0, EntryPrice: 2000, Active: true, UnknownOrigin: true,
+	}
 
-	// Verify GetPosition returns error or empty for inactive
-	// The default implementation filters by active=TRUE, so it should fail to find it.
-	_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
-	require.Error(t, err, "GetPosition should fail for closed/inactive position")
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos1))
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos2))
+
+	// In-memory count is currently 0
+	assert.Equal(t, 0, p.GetActivePositionsCount())
+
+	// LoadState - Hydrate the in-memory map from DB
+	t.Log("Loading state from DB")
+	err := p.LoadState(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, p.GetActivePositionsCount())
+
+	// RefreshState (Simulate an external change: position closed in DB)
+	t.Log("Refreshing state for closed position")
+	require.NoError(t, repo.Positions.DeletePosition(ctx, db, exchange, symbol1))
+
+	err = p.RefreshState(ctx, exchange, symbol1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.GetActivePositionsCount(), "Map should have updated after refresh")
+
+	// RefreshState (Simulate an external change: new position created in DB)
+	t.Log("Refreshing state for new position")
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos1))
+
+	err = p.RefreshState(ctx, exchange, symbol1)
+	require.NoError(t, err)
+	assert.Equal(t, 2, p.GetActivePositionsCount())
 }

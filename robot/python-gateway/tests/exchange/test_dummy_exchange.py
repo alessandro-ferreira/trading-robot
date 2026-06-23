@@ -1,11 +1,13 @@
 import unittest
-from exchange.exchanges.base import OrderType
+from core.config import ExchangeConfig
+from exchange.exchanges.base import OrderType, ExchangeError
 from exchange.exchanges.dummy import DummyExchange
 
 
 class TestDummyExchange(unittest.TestCase):
     def setUp(self):
-        self.exchange = DummyExchange()
+        cfg = ExchangeConfig(name="dummy", ccxt=False)
+        self.exchange = DummyExchange(cfg)
 
     def test_set_sandbox_mode(self):
         """Verify that set_sandbox_mode is accepted (no-op)."""
@@ -16,7 +18,8 @@ class TestDummyExchange(unittest.TestCase):
         """Verify ticker fetching and simulated price drift."""
         ticker = self.exchange.fetch_ticker("BTC/USDT")
         self.assertEqual(ticker.symbol, "BTC/USDT")
-        self.assertEqual(ticker.last, 42500.50)
+        # dummy.py now applies 0.1% drift BEFORE returning the price
+        self.assertEqual(ticker.last, 42500.50 * 1.001)
 
         # Test drift on subsequent call
         ticker2 = self.exchange.fetch_ticker("BTC/USDT")
@@ -27,32 +30,52 @@ class TestDummyExchange(unittest.TestCase):
         self.assertEqual(ticker.info["exchange"], "dummy")
 
     def test_fetch_balance(self):
-        """Verify default starting balances."""
+        """Verify default starting balances (zeroed base assets)."""
         balance = self.exchange.fetch_balance()
         self.assertIn("free", balance)
         self.assertIn("BTC", balance["free"])
-        self.assertEqual(balance["free"]["BTC"], 0.5)
+        self.assertEqual(balance["free"]["BTC"], 0.0)
         self.assertIn("USDT", balance["free"])
         self.assertEqual(balance["free"]["USDT"], 10000.0)
 
     def test_create_order(self):
-        """Verify creation of limit (open) and market (closed) orders."""
-        # Test Limit Order (Open)
-        order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
+        """Verify creation of limit (open) with balance locking and market (closed) with settlement."""
+        # Test Limit Order (Buy BTC with USDT)
+        amount = 0.01
+        price = 40000
+        cost = amount * price
+
+        order = self.exchange.create_order("BTC/USDT", "limit", "buy", amount, price)
         self.assertEqual(order["symbol"], "BTC/USDT")
         self.assertEqual(order["side"], "buy")
         self.assertEqual(order["type"], "limit")
-        self.assertEqual(order["amount"], 0.01)
-        self.assertEqual(order["price"], 20000)
+        self.assertEqual(order["amount"], amount)
+        self.assertEqual(order["price"], price)
         self.assertEqual(order["status"], "open")
 
-        # Test Market Order (Closed)
+        # Verify balance locking
+        balance = self.exchange.fetch_balance()
+        self.assertEqual(balance["free"]["USDT"], 10000.0 - cost)
+        self.assertEqual(balance["used"]["USDT"], cost)
+
+        # Test Market Order (Buy BTC - Immediate settlement)
+        market_amount = 0.02
+
         order_market = self.exchange.create_order(
-            "BTC/USDT", "market", "buy", 0.01, 20000
+            "BTC/USDT", "market", "buy", market_amount
         )
         self.assertEqual(order_market["status"], "closed")
-        self.assertEqual(order_market["filled"], 0.01)
-        self.assertIsNotNone(order_market["fee"])
+        self.assertEqual(order_market["filled"], market_amount)
+
+        # Verify balance swap
+        final_balance = self.exchange.fetch_balance()
+        self.assertEqual(final_balance["free"]["BTC"], market_amount)
+        self.assertEqual(final_balance["total"]["BTC"], market_amount)
+
+    def test_create_order_insufficient_funds(self):
+        """Verify that creating an order with insufficient funds raises an exception."""
+        with self.assertRaisesRegex(Exception, "Insufficient funds"):
+            self.exchange.create_order("BTC/USDT", "limit", "buy", 1000.0, 42000)
 
     def test_create_stop_order(self):
         """Verify creation of stop_market and stop_limit orders."""
@@ -72,17 +95,27 @@ class TestDummyExchange(unittest.TestCase):
         self.assertEqual(order_limit["price"], 39500.0)
 
     def test_cancel_order(self):
-        """Verify that an open order can be canceled."""
-        # Create an order first
+        """Verify that canceling an open order releases locked funds."""
         order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
+
+        # Verify funds are locked before cancellation
+        balance_before = self.exchange.fetch_balance()
+        self.assertEqual(balance_before["used"]["USDT"], order["cost"])
+        self.assertEqual(balance_before["free"]["USDT"], 10000.0 - order["cost"])
+
         result = self.exchange.cancel_order(order["id"], "BTC/USDT")
         self.assertEqual(result["id"], order["id"])
         self.assertEqual(result["status"], "canceled")
 
+        # Verify balance unlocked
+        balance = self.exchange.fetch_balance()
+        self.assertEqual(balance["free"]["USDT"], 10000.0)
+        self.assertEqual(balance["used"]["USDT"], 0.0)
+
     def test_cancel_order_not_found(self):
-        """Verify that canceling a non-existent order returns a canceled state via fetch_order."""
-        result = self.exchange.cancel_order("non-existent", "BTC/USDT")
-        self.assertEqual(result["status"], "canceled")
+        """Verify that canceling a non-existent order raises an error."""
+        with self.assertRaises(ExchangeError):
+            self.exchange.cancel_order("non-existent", "BTC/USDT")
 
     def test_fetch_order(self):
         """Verify that an existing order can be fetched by ID."""
@@ -92,12 +125,42 @@ class TestDummyExchange(unittest.TestCase):
         self.assertEqual(fetched["symbol"], "BTC/USDT")
         self.assertEqual(fetched["status"], "open")
 
+    def test_order_aging(self):
+        """Verify that limit orders are automatically filled after several fetch attempts."""
+        order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.1, 40000)
+
+        # Fetch until one before aging limit: still open
+        self.exchange.fetch_order(order["id"], "BTC/USDT")
+        for i in range(2, self.exchange.AGING_LIMIT):
+            self.assertEqual(
+                self.exchange.fetch_order(order["id"], "BTC/USDT")["status"], "open"
+            )
+
+        # Reaching AGING_LIMIT: should fill
+        fetched = self.exchange.fetch_order(order["id"], "BTC/USDT")
+        self.assertEqual(fetched["status"], "closed")
+        self.assertEqual(fetched["filled"], 0.1)
+
+        # Verify balance settled
+        balance = self.exchange.fetch_balance()
+        self.assertEqual(balance["free"]["BTC"], 0.1)
+
+    def test_open_orders_aging(self):
+        """Verify that fetch_open_orders also triggers order aging."""
+        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.1, 40000)
+
+        # Fetch until one before aging limit
+        for i in range(1, self.exchange.AGING_LIMIT):
+            self.exchange.fetch_open_orders("BTC/USDT")
+        open_orders = self.exchange.fetch_open_orders("BTC/USDT")
+
+        # Should be empty as the order filled
+        self.assertEqual(len(open_orders), 0)
+
     def test_fetch_order_not_found(self):
-        """Verify non-existent order returns a simulated canceled state."""
-        fetched = self.exchange.fetch_order("non-existent-id", "ETH/USDT")
-        self.assertEqual(fetched["id"], "non-existent-id")
-        self.assertEqual(fetched["status"], "canceled")
-        self.assertEqual(fetched["filled"], 0.0)
+        """Verify non-existent order raises an error."""
+        with self.assertRaises(ExchangeError):
+            self.exchange.fetch_order("non-existent-id", "ETH/USDT")
 
     def test_fetch_open_orders(self):
         """Verify open orders listing and limit filtering."""
@@ -121,9 +184,9 @@ class TestDummyExchange(unittest.TestCase):
     def test_fetch_my_trades(self):
         """Verify trade history listing and descending sort order."""
         # Market orders in dummy exchange create trades immediately
-        self.exchange.create_order("BTC/USDT", "market", "buy", 0.05, 40000)
-        self.exchange.create_order("BTC/USDT", "market", "buy", 0.10, 41000)
-        self.exchange.create_order("BTC/USDT", "market", "buy", 0.15, 42000)
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.01, 40000)
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.02, 41000)
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.03, 42000)
 
         all_trades = self.exchange.fetch_my_trades("BTC/USDT")
         self.assertGreaterEqual(len(all_trades), 3)
@@ -131,7 +194,7 @@ class TestDummyExchange(unittest.TestCase):
         # Verify strict limit and descending sort (newest first)
         limited_trades = self.exchange.fetch_my_trades("BTC/USDT", limit=2)
         self.assertEqual(len(limited_trades), 2)
-        self.assertEqual(limited_trades[0]["amount"], 0.15)
+        self.assertEqual(limited_trades[0]["amount"], 0.03)
         self.assertIn("order", limited_trades[0])  # Verify ID mapping
 
     def test_reset(self):
@@ -143,7 +206,10 @@ class TestDummyExchange(unittest.TestCase):
 
         self.assertEqual(len(self.exchange.fetch_open_orders()), 0)
         ticker = self.exchange.fetch_ticker("BTC/USDT")
-        self.assertEqual(ticker.last, 42500.50)  # Verify original price restored
+        # dummy.py now applies 0.1% drift BEFORE returning the price
+        self.assertEqual(
+            ticker.last, 42500.50 * 1.001
+        )  # Verify original price restored
 
 
 # To run this test directly, use:

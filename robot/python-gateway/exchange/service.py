@@ -77,19 +77,13 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 if asset not in SUPPORTED_ASSETS:
                     continue
 
-                # Filter by currency if a specific one was requested
-                if request.currency and asset != request.currency.upper():
-                    continue
-
                 f = float(free_map.get(asset, 0.0))
                 u = float(used_map.get(asset, 0.0))
                 t = float(total_val)
 
-                # Only return assets with a non-zero balance to keep the payload lean
-                if t > 0 or f > 0 or u > 0:
-                    balances.append(
-                        exchange_pb2.BalanceObject(asset=asset, free=f, used=u, total=t)
-                    )
+                balances.append(
+                    exchange_pb2.BalanceObject(asset=asset, free=f, used=u, total=t)
+                )
         except Exception as e:
             utils.handle_exchange_error(context, e, "fetching balance")
 

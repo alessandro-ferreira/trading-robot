@@ -1,3 +1,5 @@
+//go:build unit
+
 package api
 
 import (
@@ -254,34 +256,34 @@ func TestManagementServer_UpdateRisk(t *testing.T) {
 			req: &pb.UpdateRiskRequest{
 				Exchange:        "binance",
 				Symbol:          "BTC/USDT",
-				RiskPerTrade:    100.0,
-				MaxPositionSize: 1.0,
+				AllocatedBudget: 100.0,
+				MaxAssetUnits:   1.0,
 			},
 			setup: func(m *MockRiskRepo) {
 				m.On("UpsertRiskPair", ctx, nil, mock.MatchedBy(func(p repository.RiskPair) bool {
-					return p.RiskPerTrade == 100.0 && p.MaxPositionSize.Valid && p.MaxPositionSize.Float64 == 1.0
+					return p.AllocatedBudget == 100.0 && p.MaxAssetUnits.Valid && p.MaxAssetUnits.Float64 == 1.0
 				})).Return(nil).Once()
 			},
 		},
 		{
 			name: "successful risk update without max position size",
 			req: &pb.UpdateRiskRequest{
-				Exchange:     "binance",
-				Symbol:       "ETH/USDT",
-				RiskPerTrade: 50.0,
+				Exchange:        "binance",
+				Symbol:          "ETH/USDT",
+				AllocatedBudget: 50.0,
 			},
 			setup: func(m *MockRiskRepo) {
 				m.On("UpsertRiskPair", ctx, nil, mock.MatchedBy(func(p repository.RiskPair) bool {
-					return p.RiskPerTrade == 50.0 && !p.MaxPositionSize.Valid
+					return p.AllocatedBudget == 50.0 && !p.MaxAssetUnits.Valid
 				})).Return(nil).Once()
 			},
 		},
 		{
 			name: "risk update with database error",
 			req: &pb.UpdateRiskRequest{
-				Exchange:     "binance",
-				Symbol:       "BTC/USDT",
-				RiskPerTrade: 100.0,
+				Exchange:        "binance",
+				Symbol:          "BTC/USDT",
+				AllocatedBudget: 100.0,
 			},
 			setup: func(m *MockRiskRepo) {
 				m.On("UpsertRiskPair", ctx, nil, mock.Anything).Return(errors.New("db error")).Once()

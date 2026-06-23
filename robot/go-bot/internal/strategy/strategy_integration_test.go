@@ -60,7 +60,7 @@ type initConfig struct {
 	highestPrice float64
 }
 
-func TestStrategy_DataDriven(t *testing.T) {
+func TestStrategy_Integration_DataDriven(t *testing.T) {
 	tests := []struct {
 		name     string
 		filename string

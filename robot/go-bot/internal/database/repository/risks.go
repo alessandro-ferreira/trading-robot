@@ -12,8 +12,8 @@ import (
 type RiskPair struct {
 	ExchangeName     string
 	InstrumentSymbol string
-	RiskPerTrade     float64
-	MaxPositionSize  sql.NullFloat64
+	AllocatedBudget  float64
+	MaxAssetUnits    sql.NullFloat64
 	CreatedAt        time.Time
 	UpdatedAt        sql.NullTime
 }
@@ -39,8 +39,8 @@ func (r *pgRisksRepo) GetRiskPair(
 		SELECT
 			e.name,
 			i.name,
-			rp.risk_per_trade,
-			rp.max_position_size,
+			rp.allocated_budget,
+			rp.max_asset_units,
 			rp.created_at,
 			rp.updated_at
 		FROM trading.risk_pairs rp
@@ -53,8 +53,8 @@ func (r *pgRisksRepo) GetRiskPair(
 	err := db.QueryRow(ctx, query, exchange, symbol).Scan(
 		&data.ExchangeName,
 		&data.InstrumentSymbol,
-		&data.RiskPerTrade,
-		&data.MaxPositionSize,
+		&data.AllocatedBudget,
+		&data.MaxAssetUnits,
 		&data.CreatedAt,
 		&data.UpdatedAt,
 	)
@@ -87,13 +87,13 @@ func (r *pgRisksRepo) UpsertRiskPair(ctx context.Context, db DBExecutor, data Ri
 	// Try to Update first
 	updateQuery := `
 		UPDATE trading.risk_pairs
-		SET risk_per_trade = $3, max_position_size = $4, updated_at = NOW(), updated_by = $5
+		SET allocated_budget = $3, max_asset_units = $4, updated_at = NOW(), updated_by = $5
 		WHERE exchange_id = $1 AND instrument_id = $2 AND active
 		RETURNING id
 	`
 	var id int64
 	err := db.QueryRow(
-		ctx, updateQuery, exchangeID, instrumentID, data.RiskPerTrade, data.MaxPositionSize, DefaultUser,
+		ctx, updateQuery, exchangeID, instrumentID, data.AllocatedBudget, data.MaxAssetUnits, DefaultUser,
 	).Scan(&id)
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -103,11 +103,11 @@ func (r *pgRisksRepo) UpsertRiskPair(ctx context.Context, db DBExecutor, data Ri
 	if errors.Is(err, sql.ErrNoRows) {
 		// If we get here, it means no existing record was updated, so we should insert.
 		insertQuery := `
-			INSERT INTO trading.risk_pairs (exchange_id, instrument_id, risk_per_trade, max_position_size, created_by)
+			INSERT INTO trading.risk_pairs (exchange_id, instrument_id, allocated_budget, max_asset_units, created_by)
 			VALUES ($1, $2, $3, $4, $5)
 		`
 		if _, err := db.Exec(
-			ctx, insertQuery, exchangeID, instrumentID, data.RiskPerTrade, data.MaxPositionSize, DefaultUser,
+			ctx, insertQuery, exchangeID, instrumentID, data.AllocatedBudget, data.MaxAssetUnits, DefaultUser,
 		); err != nil {
 			return fmt.Errorf("failed to insert risk pair: %w", err)
 		}

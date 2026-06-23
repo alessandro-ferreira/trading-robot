@@ -14,9 +14,9 @@ BEGIN
     SELECT id INTO v_ltc_id FROM trading.instruments WHERE name = 'LTC/USDT' AND exchange_id = v_dummy_id AND active;
 
     -- Insert Risk Configurations for Dummy Exchange
-    INSERT INTO trading.risk_pairs (exchange_id, instrument_id, risk_per_trade, max_position_size, created_by)
+    INSERT INTO trading.risk_pairs (exchange_id, instrument_id, allocated_budget, max_asset_units, created_by)
     VALUES
-        (v_dummy_id, v_btc_id, 100.0, 1.0, v_created_by),
-        (v_dummy_id, v_eth_id, 50.0, 10.0, v_created_by),
-        (v_dummy_id, v_ltc_id, 25.0, 5.0, v_created_by);
+        (v_dummy_id, v_btc_id, 500.0, 0.01, v_created_by),
+        (v_dummy_id, v_eth_id, 300.0, 1.0, v_created_by),
+        (v_dummy_id, v_ltc_id, 200.0, 25.0, v_created_by);
 END $$;

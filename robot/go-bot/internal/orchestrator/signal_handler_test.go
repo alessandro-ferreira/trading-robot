@@ -1,3 +1,5 @@
+//go:build unit
+
 package orchestrator
 
 import (
@@ -32,7 +34,7 @@ func initTestSignalGenerator(t *testing.T, o *Orchestrator, target strategy.Stra
 		Type:             repository.StrategyMomentumProfit,
 		Momentum:         momentum,
 	}
-	sig, err := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{RiskPerTrade: 100}, pair, "test")
+	sig, err := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{AllocatedBudget: 100}, pair, "test")
 	require.NoError(t, err)
 
 	now := time.Now().Unix()
@@ -113,7 +115,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", 10).
 					Return([]repository.MarketDataTick{{Price: 50000}}, nil).Once()
 				repo.Risks.(*MockRiskRepo).On("GetRiskPair", mock.Anything, mock.Anything, "binance", "BTC/USDT").
-					Return(repository.RiskPair{RiskPerTrade: 100}, nil).Once()
+					Return(repository.RiskPair{AllocatedBudget: 100}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").
 					Return(repository.PositionData{EntryPrice: 49000, HighestPrice: 51000}, nil).Once()
 			},
@@ -371,19 +373,19 @@ func TestOrchestrator_SignalSearchingBuyEntry(t *testing.T) {
 func TestOrchestrator_SignalBuy(t *testing.T) {
 	tests := []struct {
 		name           string
-		setup          func(mPf *MockPortfolio, mExec *MockExecutionService)
+		setup          func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo)
 		expectedSignal strategy.StrategySignal
 	}{
 		{
 			name: "Skip if position exists",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true}, nil).Once()
 			},
 			expectedSignal: strategy.SignalWaitingBuyFill,
 		},
 		{
 			name: "Handle UnknownOrigin position - Reset strategy",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").
 					Return(repository.PositionData{UnknownOrigin: true, Active: true}, nil).Once()
 			},
@@ -391,7 +393,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Query position error - Trigger retry",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").
 					Return(repository.PositionData{}, errors.New("db timeout")).Once()
 			},
@@ -399,18 +401,22 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Risk manager pre-check rejection",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				// MaxOpenPositions is 3 in setupOrchestratorTest
 				mPf.On("GetActivePositionsCount").Return(5).Once()
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 			},
 			expectedSignal: strategy.SignalBuy,
 		},
 		{
 			name: "Skip if pending buy order exists on exchange",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				mPf.On("GetActivePositionsCount").Return(0).Once()
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).
 					Return([]repository.OrderData{{Side: repository.OrderSideBuy}}, nil).Once()
 			},
@@ -418,9 +424,11 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Skip if balance already exists on exchange",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				mPf.On("GetActivePositionsCount").Return(0).Once()
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").
 					Return([]repository.BalanceData{{Total: 1.0}}, nil).Once()
@@ -429,9 +437,11 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Risk manager final-check rejection (after exchange latency)",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				mPf.On("GetActivePositionsCount").Return(0).Once() // First check ok
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
 				mPf.On("GetActivePositionsCount").Return(5).Once() // Second check fails
@@ -440,9 +450,11 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Market buy order API failure",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				mPf.On("GetActivePositionsCount").Return(0).Twice()
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
 				mExec.On("CreateOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeMarket, mock.Anything, float64(0)).
@@ -452,9 +464,11 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Execute market buy - Partial fill / Open status",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				mPf.On("GetActivePositionsCount").Return(0).Twice()
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
 				mExec.On("CreateOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeMarket, mock.Anything, float64(0)).
@@ -465,9 +479,11 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 		},
 		{
 			name: "Execute market buy",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mBal *MockBalancesRepo) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				mPf.On("GetActivePositionsCount").Return(0).Twice()
+				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
+					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
 				mExec.On("CreateOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeMarket, mock.Anything, float64(0)).
@@ -480,9 +496,11 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			orch, _, mPf, _, mExec := setupOrchestratorTest(t)
+			orch, repo, mPf, _, mExec := setupOrchestratorTest(t)
 			sig := initTestSignalGenerator(t, orch, strategy.SignalBuy)
-			tt.setup(mPf, mExec)
+			mBal := repo.Balances.(*MockBalancesRepo)
+
+			tt.setup(mPf, mExec, mBal)
 			orch.signalBuy(context.Background(), orch.logger, sig, 102)
 			s, _ := sig.GetSignal(102, time.Now().Unix())
 			assert.Equal(t, tt.expectedSignal, s)

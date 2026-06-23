@@ -1,3 +1,5 @@
+//go:build unit
+
 package portfolio
 
 import (
@@ -52,6 +54,10 @@ func (m *MockPositionsRepo) DeletePosition(ctx context.Context, db repository.DB
 // MockBalancesRepo implements repository.BalancesRepo for testing
 type MockBalancesRepo struct {
 	GetAllBalancesFn func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error)
+}
+
+func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
+	return repository.BalanceData{}, nil
 }
 
 func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {

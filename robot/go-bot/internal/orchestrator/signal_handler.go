@@ -130,7 +130,12 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	case strategy.SignalSearchingBuyEntry:
 		o.signalSearchingBuyEntry(ctx, log, sig)
 	case strategy.SignalBuy:
-		o.signalBuy(ctx, log, sig, price)
+		if sig.IsPendingTerminate() {
+			_ = sig.RetrySignal(strategy.SignalBuy)
+			signal = strategy.SignalSearchingBuyEntry
+		} else {
+			o.signalBuy(ctx, log, sig, price)
+		}
 	case strategy.SignalWaitingBuyFill:
 		o.signalWaitingBuyFill(ctx, log, sig)
 	case strategy.SignalTrackingSellExit:
@@ -267,9 +272,24 @@ func (o *Orchestrator) signalBuy(
 		return
 	}
 
+	parts := strings.Split(sym, "/")
+	if len(parts) != 2 {
+		log.Error("invalid symbol format during buy signal", "symbol", sym)
+		_ = sig.RetrySignal(strategy.SignalBuy)
+		return
+	}
+	asset := parts[0]
+	budgetAsset := parts[1]
+
 	// Check risk first using local data to avoid unnecessary exchange requests.
 	openCount := o.portfolio.GetActivePositionsCount()
-	eval := o.risk.EvaluateEntry(openCount, 0, price, sig.Risk())
+
+	availableBudget := 0.0
+	if b, err := o.repo.Balances.GetBalance(ctx, o.db, ex, budgetAsset); err == nil {
+		availableBudget = b.Total
+	}
+	eval := o.risk.EvaluateEntry(openCount, 0, price, availableBudget, sig.Risk())
+
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (pre-check)", "reason", eval.Reason)
 		_ = sig.RetrySignal(strategy.SignalBuy)
@@ -293,7 +313,6 @@ func (o *Orchestrator) signalBuy(
 		}
 	}
 
-	asset := strings.Split(sig.InstrumentSymbol(), "/")[0]
 	balances, err := o.exec.GetBalance(ctx, ex, asset)
 	if err != nil || len(balances) == 0 {
 		if err != nil {
@@ -313,18 +332,23 @@ func (o *Orchestrator) signalBuy(
 		return
 	}
 
-	// Double check risk after exchange latency.
+	// Double check risk after exchange latency (use updated budget balance).
+	availableBudget = 0.0
+	if b, err := o.repo.Balances.GetBalance(ctx, o.db, ex, budgetAsset); err == nil {
+		availableBudget = b.Total
+	}
 	openCount = o.portfolio.GetActivePositionsCount()
-	eval = o.risk.EvaluateEntry(openCount, 0, price, sig.Risk())
+	eval = o.risk.EvaluateEntry(openCount, 0, price, availableBudget, sig.Risk())
+
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (final-check)", "reason", eval.Reason)
 		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
 
-	log.Info("placing market buy order", "qty", eval.ApprovedSize)
+	log.Info("placing market buy order", "qty", eval.ApprovedUnits)
 	order, err := o.exec.CreateOrder(
-		ctx, ex, sym, repository.OrderSideBuy, repository.OrderTypeMarket, eval.ApprovedSize, 0,
+		ctx, ex, sym, repository.OrderSideBuy, repository.OrderTypeMarket, eval.ApprovedUnits, 0,
 	)
 	if err != nil {
 		log.Error("market buy order failed", "err", err)

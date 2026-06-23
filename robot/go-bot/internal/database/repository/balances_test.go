@@ -1,3 +1,5 @@
+//go:build unit
+
 package repository
 
 import (
@@ -34,6 +36,64 @@ func getSampleBalance() BalanceData {
 
 func toRow(b BalanceData) []any {
 	return []any{b.ID, b.ExchangeName, b.AssetSymbol, b.Free, b.Used, b.Total, b.CreatedAt, b.UpdatedAt}
+}
+
+func TestPgBalancesRepo_GetBalance(t *testing.T) {
+	repo := NewBalancesRepo()
+	b := getSampleBalance()
+
+	testCases := []struct {
+		name                string
+		setupMock           func(mockDB pgxmock.PgxPoolIface)
+		expectedErrContains string
+	}{
+		{
+			name: "Success",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				rows := pgxmock.NewRows(balanceColumns).AddRow(toRow(b)...)
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").
+					WithArgs(b.ExchangeName, b.AssetSymbol).
+					WillReturnRows(rows)
+			},
+		},
+		{
+			name: "Not Found",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").
+					WithArgs(b.ExchangeName, b.AssetSymbol).
+					WillReturnError(pgx.ErrNoRows)
+			},
+			expectedErrContains: "failed to get balance",
+		},
+		{
+			name: "Query Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").
+					WithArgs(b.ExchangeName, b.AssetSymbol).
+					WillReturnError(errors.New("db error"))
+			},
+			expectedErrContains: "db error",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDB, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tc.setupMock(mockDB)
+			_, err = repo.GetBalance(context.Background(), mockDB, b.ExchangeName, b.AssetSymbol)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, mockDB.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestPgBalancesRepo_GetAllBalances(t *testing.T) {

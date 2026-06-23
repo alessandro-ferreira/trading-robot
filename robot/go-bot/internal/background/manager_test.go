@@ -1,7 +1,10 @@
+//go:build unit
+
 package background
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"testing"
 
@@ -26,7 +29,7 @@ func (m *mockTask) Run(ctx context.Context) {
 }
 
 func TestManager_Lifecycle(t *testing.T) {
-	logger := slog.Default()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mgr := NewManager(logger)
 
 	task1 := &mockTask{name: "task1", running: make(chan struct{})}

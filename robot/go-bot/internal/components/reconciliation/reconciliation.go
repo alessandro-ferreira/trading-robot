@@ -195,9 +195,8 @@ func (r *reconciler) SyncPositions(
 				"Reconciliation: Adjusting position quantity",
 				"symbol", posData.InstrumentSymbol, "old", posData.Quantity, "new", walletQty,
 			)
-			err = r.pf.UpdatePosition(
-				ctx, exchange, posData.InstrumentSymbol, repository.PositionData{Quantity: walletQty},
-			)
+			posData.Quantity = walletQty
+			err = r.pf.UpdatePosition(ctx, exchange, posData.InstrumentSymbol, posData)
 			if err != nil {
 				log.Error("Failed to update position for adjusting quantity", "error", err)
 			}

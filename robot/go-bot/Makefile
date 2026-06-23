@@ -92,15 +92,9 @@ coverage:
 
 test: strategy-core
 	@echo "==> Running unit tests..."
-	@go test -v ./...
+	@go test -v -tags=unit ./...
 
 test-integration: strategy-core
-	@echo "==> Running integration tests (requires running DB and Gateway)..."
-	@go test -v -tags=integration -count=1 ./...
-
-test-all: strategy-core
-	@echo "==> Running unit tests..."
-	@$(MAKE) test
 	@echo "\n==> Starting test environment (DB + Gateway)..."
 	@$(COMPOSE_CMD) up --build -d python-gateway test-db
 	@echo "==> Waiting for services..."
@@ -111,10 +105,17 @@ test-all: strategy-core
 	@for migration_file in $$(find $(MIGRATIONS_PATH) -name "*.up.sql" | sort); do \
  		$(COMPOSE_CMD) exec -T test-db psql -U testuser -d testdb -f "$$migration_file" > /dev/null; \
  	done
-	@echo "==> Running integration tests..."
-	@$(MAKE) test-integration
+	@echo "==> Running integration tests (requires running DB and Gateway)..."
+# use -count=1 to disable test caching and -p 1 to prevent concurrent database conflicts (orders and balance)
+	@go test -v -tags=integration -count=1 -p 1 ./...
 	@echo "==> Tearing down environment..."
 	@$(COMPOSE_CMD) down
+
+test-all: strategy-core
+	@echo "==> Running unit tests..."
+	@$(MAKE) test
+	@echo "==> Running integration tests..."
+	@$(MAKE) test-integration
 
 db-up:
 	@echo "==> Starting test database..."

@@ -22,8 +22,6 @@ services:
     volumes:
       - ./python-gateway:/app
       - ./config.toml:/config.toml:ro
-    depends_on:
-      - test-db
     environment:
       - PYTHONUNBUFFERED=1
     ports:

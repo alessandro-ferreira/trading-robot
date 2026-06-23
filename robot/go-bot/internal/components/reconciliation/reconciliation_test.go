@@ -1,3 +1,5 @@
+//go:build unit
+
 package reconcil
 
 import (
@@ -72,6 +74,9 @@ func (m *MockOrdersRepo) UpdateOrder(ctx context.Context, db repository.DBExecut
 
 type MockBalancesRepo struct{ mock.Mock }
 
+func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
+	return repository.BalanceData{}, nil
+}
 func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
 	args := m.Called(ctx, db)
 	return args.Get(0).([]repository.BalanceData), args.Error(1)

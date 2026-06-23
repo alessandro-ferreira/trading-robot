@@ -7,6 +7,7 @@ DECLARE
     v_btc_id BIGINT;
     v_eth_id BIGINT;
     v_ltc_id BIGINT;
+    v_sol_id BIGINT;
     v_usdt_id BIGINT;
     v_brl_id BIGINT;
     v_created_by TEXT := 'migration_000010';
@@ -20,6 +21,7 @@ BEGIN
     SELECT id INTO v_btc_id FROM trading.assets WHERE symbol = 'BTC' AND active;
     SELECT id INTO v_eth_id FROM trading.assets WHERE symbol = 'ETH' AND active;
     SELECT id INTO v_ltc_id FROM trading.assets WHERE symbol = 'LTC' AND active;
+    SELECT id INTO v_sol_id FROM trading.assets WHERE symbol = 'SOL' AND active;
     SELECT id INTO v_usdt_id FROM trading.assets WHERE symbol = 'USDT' AND active;
     SELECT id INTO v_brl_id FROM trading.assets WHERE symbol = 'BRL' AND active;
 
@@ -34,5 +36,6 @@ BEGIN
         (v_binance_id, 'ETH/USDT', v_eth_id, v_usdt_id, 2, 2, 0.01, v_created_by),
         (v_mb_id,      'ETH/BRL',  v_eth_id, v_brl_id,  2, 2, 0.01, v_created_by),
         (v_dummy_id,   'ETH/USDT',  v_eth_id, v_usdt_id,  2, 2, 0.01, v_created_by),
-        (v_dummy_id,   'LTC/USDT',  v_ltc_id, v_usdt_id,  2, 2, 0.01, v_created_by);
+        (v_dummy_id,   'LTC/USDT',  v_ltc_id, v_usdt_id,  2, 2, 0.01, v_created_by),
+        (v_dummy_id,   'SOL/USDT',  v_sol_id, v_usdt_id,  2, 2, 0.01, v_created_by);
 END $$;

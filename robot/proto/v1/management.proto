@@ -54,8 +54,8 @@ message UpdateStrategyResponse {
 message UpdateRiskRequest {
   string exchange = 1;
   string symbol = 2;
-  double risk_per_trade = 3;
-  double max_position_size = 4;
+  double allocated_budget = 3;
+  double max_asset_units = 4;
 }
 
 // UpdateRiskResponse is the message returned from the UpdateRisk RPC.

@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"trading/robot/go-bot/internal/config"
@@ -32,8 +31,6 @@ func NewDBPool(ctx context.Context, dbConfig config.DatabaseConfig) (*DB, error)
 	poolConfig.MaxConnLifetime = maxConnLifetime
 	poolConfig.HealthCheckPeriod = healthCheckPeriod
 	poolConfig.ConnConfig.ConnectTimeout = connectTimeout
-
-	slog.Info("Connecting to database...")
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {

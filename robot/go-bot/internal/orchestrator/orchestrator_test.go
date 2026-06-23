@@ -1,3 +1,5 @@
+//go:build unit
+
 package orchestrator
 
 import (
@@ -50,6 +52,24 @@ func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db reposito
 }
 func (m *MockMarketDataRepo) InsertTick(ctx context.Context, db repository.DBExecutor, t repository.MarketDataTick) error {
 	return m.Called(ctx, db, t).Error(0)
+}
+
+type MockBalancesRepo struct{ mock.Mock }
+
+func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
+	args := m.Called(ctx, db, exchange, asset)
+	return args.Get(0).(repository.BalanceData), args.Error(1)
+}
+func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+	args := m.Called(ctx, db)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]repository.BalanceData), args.Error(1)
+}
+func (m *MockBalancesRepo) UpsertBalance(ctx context.Context, db repository.DBExecutor, b repository.BalanceData) (int64, error) {
+	args := m.Called(ctx, db, b)
+	return int64(args.Int(0)), args.Error(1)
 }
 
 type MockRiskRepo struct{ mock.Mock }
@@ -152,11 +172,13 @@ func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, 
 	mExec := new(MockExecutionService)
 	mMD := new(MockMarketDataRepo)
 	mRisk := new(MockRiskRepo)
+	mBal := new(MockBalancesRepo)
 
 	repo := &repository.Container{
 		Strategies: mStrats,
 		MarketData: mMD,
 		Risks:      mRisk,
+		Balances:   mBal,
 	}
 
 	cfg := &config.Config{
@@ -183,7 +205,7 @@ func mockWorkerInit(repo *repository.Container, mPf *MockPortfolio, mExec *MockE
 	mMD.On("GetMarketDataTicks", mock.Anything, mock.Anything, ex, sym, mock.Anything).
 		Return([]repository.MarketDataTick{}, nil).Maybe()
 	mRisk.On("GetRiskPair", mock.Anything, mock.Anything, ex, sym).
-		Return(repository.RiskPair{}, nil).Maybe()
+		Return(repository.RiskPair{AllocatedBudget: 100.0}, nil).Maybe()
 	mPf.On("GetPosition", mock.Anything, ex, sym).
 		Return(repository.PositionData{}, nil).Maybe()
 

@@ -24,6 +24,7 @@ type BalanceData struct {
 
 // BalancesRepo defines the interface for interacting with the balances data.
 type BalancesRepo interface {
+	GetBalance(ctx context.Context, db DBExecutor, exchange, asset string) (BalanceData, error)
 	GetAllBalances(ctx context.Context, db DBExecutor) ([]BalanceData, error)
 	UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) (int64, error)
 }
@@ -35,6 +36,42 @@ type pgBalancesRepo struct {
 // NewBalancesRepo creates a new PostgreSQL BalancesRepo.
 func NewBalancesRepo() BalancesRepo {
 	return &pgBalancesRepo{}
+}
+
+// GetBalance retrieves a specific balance for an exchange and asset.
+func (r *pgBalancesRepo) GetBalance(
+	ctx context.Context, db DBExecutor, exchange, asset string,
+) (BalanceData, error) {
+	query := `
+		SELECT
+			b.id,
+			e.name AS exchange_name,
+			a.symbol AS asset_symbol,
+			b.free,
+			b.used,
+			b.total,
+			b.created_at,
+			b.updated_at
+		FROM trading.balances b
+		INNER JOIN trading.exchanges e ON e.id = b.exchange_id AND e.active
+		INNER JOIN trading.assets a ON a.id = b.asset_id AND a.active
+		WHERE b.active AND e.name = $1 AND a.symbol = $2
+	`
+	var b BalanceData
+	err := db.QueryRow(ctx, query, exchange, asset).Scan(
+		&b.ID,
+		&b.ExchangeName,
+		&b.AssetSymbol,
+		&b.Free,
+		&b.Used,
+		&b.Total,
+		&b.CreatedAt,
+		&b.UpdatedAt,
+	)
+	if err != nil {
+		return BalanceData{}, fmt.Errorf("failed to get balance: %w", err)
+	}
+	return b, nil
 }
 
 // GetAllBalances retrieves all balances from the database, joined with their
@@ -84,7 +121,9 @@ func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]B
 }
 
 // UpsertBalance updates the balance for a given asset and exchange, or inserts it if it doesn't exist.
-func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) (int64, error) {
+func (r *pgBalancesRepo) UpsertBalance(
+	ctx context.Context, db DBExecutor, balance BalanceData,
+) (int64, error) {
 	// Try to Update first
 	updateQuery := `
 		UPDATE trading.balances
@@ -102,7 +141,16 @@ func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balan
 	`
 	var id int64
 	err := db.
-		QueryRow(ctx, updateQuery, balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
+		QueryRow(
+			ctx,
+			updateQuery,
+			balance.ExchangeName,
+			balance.AssetSymbol,
+			balance.Free,
+			balance.Used,
+			balance.Total,
+			DefaultUser,
+		).
 		Scan(&id)
 	if err == nil {
 		return id, nil
@@ -122,7 +170,16 @@ func (r *pgBalancesRepo) UpsertBalance(ctx context.Context, db DBExecutor, balan
 		RETURNING id
 	`
 	err = db.
-		QueryRow(ctx, insertQuery, balance.ExchangeName, balance.AssetSymbol, balance.Free, balance.Used, balance.Total, DefaultUser).
+		QueryRow(
+			ctx,
+			insertQuery,
+			balance.ExchangeName,
+			balance.AssetSymbol,
+			balance.Free,
+			balance.Used,
+			balance.Total,
+			DefaultUser,
+		).
 		Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert balance: %w", err)

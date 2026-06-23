@@ -1,3 +1,5 @@
+//go:build unit
+
 package signal_generator
 
 import (
@@ -16,7 +18,7 @@ import (
 var (
 	testSymbol   = "BTC/USD"
 	testExchange = "binance"
-	testRisk     = repository.RiskPair{RiskPerTrade: 100.0}
+	testRisk     = repository.RiskPair{AllocatedBudget: 100.0}
 )
 
 func TestNewSignalGenerator(t *testing.T) {
@@ -114,8 +116,8 @@ func TestSignalGenerator_Metadata(t *testing.T) {
 	assert.Equal(t, testSymbol, sg.InstrumentSymbol())
 	assert.Equal(t, testExchange, sg.Exchange())
 	assert.Equal(t, name, sg.Name())
-	assert.Equal(t, testRisk.RiskPerTrade, sg.Risk().RiskPerTrade)
-	assert.Equal(t, testRisk.MaxPositionSize.Float64, sg.Risk().MaxPositionSize)
+	assert.Equal(t, testRisk.AllocatedBudget, sg.Risk().AllocatedBudget)
+	assert.Equal(t, testRisk.MaxAssetUnits.Float64, sg.Risk().MaxAssetUnits)
 	assert.Equal(t, strategy.StrategyDummy, sg.StrategyConfig().Type)
 }
 

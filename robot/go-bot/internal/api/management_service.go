@@ -133,14 +133,14 @@ func (s *ManagementServer) UpdateRisk(
 ) (*pb.UpdateRiskResponse, error) {
 	s.logger.Info("received risk update request",
 		"symbol", req.GetSymbol(),
-		"risk_per_trade", req.GetRiskPerTrade())
+		"allocated_budget", req.GetAllocatedBudget())
 
 	riskPair := repository.RiskPair{
 		ExchangeName:     req.GetExchange(),
 		InstrumentSymbol: req.GetSymbol(),
-		RiskPerTrade:     req.GetRiskPerTrade(),
-		MaxPositionSize: sql.NullFloat64{
-			Float64: req.GetMaxPositionSize(), Valid: req.GetMaxPositionSize() > 0,
+		AllocatedBudget:  req.GetAllocatedBudget(),
+		MaxAssetUnits: sql.NullFloat64{
+			Float64: req.GetMaxAssetUnits(), Valid: req.GetMaxAssetUnits() > 0,
 		},
 	}
 

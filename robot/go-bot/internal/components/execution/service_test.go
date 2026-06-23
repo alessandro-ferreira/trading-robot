@@ -1,3 +1,5 @@
+//go:build unit
+
 package execution
 
 import (
@@ -126,6 +128,10 @@ func TestService_GetTicker(t *testing.T) {
 // MockBalancesRepo is a mock implementation of repository.BalancesRepo
 type MockBalancesRepo struct {
 	mock.Mock
+}
+
+func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
+	return repository.BalanceData{}, nil
 }
 
 func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {

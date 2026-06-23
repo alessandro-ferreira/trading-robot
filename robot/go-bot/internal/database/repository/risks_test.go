@@ -1,3 +1,5 @@
+//go:build unit
+
 package repository
 
 import (
@@ -13,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var riskColumns = []string{"exchange_name", "instrument_symbol", "risk_per_trade", "max_position_size", "created_at", "updated_at"}
+var riskColumns = []string{"exchange_name", "instrument_symbol", "allocated_budget", "max_asset_units", "created_at", "updated_at"}
 
 func getSampleRisk() RiskPair {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -22,15 +24,15 @@ func getSampleRisk() RiskPair {
 	return RiskPair{
 		ExchangeName:     "binance",
 		InstrumentSymbol: "BTC/USDT",
-		RiskPerTrade:     r.Float64() * 500,
-		MaxPositionSize:  sql.NullFloat64{Float64: r.Float64() * 5, Valid: true},
+		AllocatedBudget:  r.Float64() * 500,
+		MaxAssetUnits:    sql.NullFloat64{Float64: r.Float64() * 5, Valid: true},
 		CreatedAt:        now,
 		UpdatedAt:        sql.NullTime{Time: now, Valid: true},
 	}
 }
 
 func toRiskRow(rp RiskPair) []any {
-	return []any{rp.ExchangeName, rp.InstrumentSymbol, rp.RiskPerTrade, rp.MaxPositionSize, rp.CreatedAt, rp.UpdatedAt}
+	return []any{rp.ExchangeName, rp.InstrumentSymbol, rp.AllocatedBudget, rp.MaxAssetUnits, rp.CreatedAt, rp.UpdatedAt}
 }
 
 func TestPgRisksRepo_GetRiskPair(t *testing.T) {
@@ -55,8 +57,8 @@ func TestPgRisksRepo_GetRiskPair(t *testing.T) {
 				mock.ExpectQuery("SELECT").WithArgs(risk.ExchangeName, risk.InstrumentSymbol).WillReturnRows(rows)
 			},
 			validate: func(t *testing.T, data RiskPair) {
-				assert.Equal(t, risk.RiskPerTrade, data.RiskPerTrade)
-				assert.Equal(t, risk.MaxPositionSize, data.MaxPositionSize)
+				assert.Equal(t, risk.AllocatedBudget, data.AllocatedBudget)
+				assert.Equal(t, risk.MaxAssetUnits, data.MaxAssetUnits)
 			},
 		},
 		{
@@ -111,7 +113,7 @@ func TestPgRisksRepo_UpsertRiskPair(t *testing.T) {
 
 	// Internal lambda for argument mapping to ensure encapsulation.
 	toUpsertArgs := func(rp RiskPair) []any {
-		return []any{exchangeID, instrumentID, rp.RiskPerTrade, rp.MaxPositionSize, DefaultUser}
+		return []any{exchangeID, instrumentID, rp.AllocatedBudget, rp.MaxAssetUnits, DefaultUser}
 	}
 
 	testCases := []struct {

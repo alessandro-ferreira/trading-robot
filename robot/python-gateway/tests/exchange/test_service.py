@@ -212,11 +212,12 @@ class TestExchangeService(unittest.TestCase):
         self.assertIn("USDT", assets)
         self.assertNotIn("SHIB", assets)
 
-    def test_get_balance_filter_no_match(self):
-        """Verify empty response when filter doesn't match available balance."""
+    def test_get_balance_ignores_filter(self):
+        """Verify that currency filter is ignored and all supported balances are returned."""
         request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="ETH")
         response = self.service.GetBalance(request, self.context)
-        self.assertEqual(len(response.balances), 0)
+        self.assertEqual(len(response.balances), 1)
+        self.assertEqual(response.balances[0].asset, "USDT")
 
     def test_get_balance_internal_error(self):
         """Verify balance error handling."""

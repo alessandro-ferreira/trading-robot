@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -56,12 +55,11 @@ func NewGatewayClient(cfg *config.GRPCConfig) (GatewayClient, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectionTimeout)
 	defer cancel()
 
-	resp, err := gwClient.Ping(ctx)
+	_, err = gwClient.Ping(ctx)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("initial health check to python-gateway failed: %w", err)
 	}
-	slog.Info("Connected to python-gateway successfully", "message", resp)
 
 	return gwClient, nil
 }
