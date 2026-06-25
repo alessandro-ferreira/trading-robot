@@ -42,7 +42,7 @@ func (p *portfolio) CreatePosition(
 			existing.EntryPrice = price
 			existing.Quantity = quantity
 			existing.HighestPrice = math.Max(existing.HighestPrice, price)
-			existing.StopLossBlock = true
+			existing.StopLossActive = false
 			existing.UnknownOrigin = false
 			if err := p.repo.Positions.UpsertPosition(ctx, p.db, existing); err != nil {
 				return err
@@ -59,7 +59,7 @@ func (p *portfolio) CreatePosition(
 			Quantity:         quantity,
 			EntryPrice:       price,
 			HighestPrice:     price,
-			StopLossBlock:    true,
+			StopLossActive:   false,
 			UnknownOrigin:    orderID == 0,
 			Active:           true,
 		}
@@ -100,8 +100,8 @@ func (p *portfolio) UpdatePosition(
 	if updates.HighestPrice > 0 {
 		pos.HighestPrice = math.Max(pos.HighestPrice, updates.HighestPrice)
 	}
+	pos.StopLossActive = updates.StopLossActive
 	pos.UnknownOrigin = updates.UnknownOrigin
-	pos.StopLossBlock = updates.StopLossBlock
 
 	return p.repo.Positions.UpsertPosition(ctx, p.db, pos)
 }

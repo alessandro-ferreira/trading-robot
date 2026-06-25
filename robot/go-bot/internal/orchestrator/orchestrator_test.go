@@ -60,8 +60,8 @@ func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecu
 	args := m.Called(ctx, db, exchange, asset)
 	return args.Get(0).(repository.BalanceData), args.Error(1)
 }
-func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
-	args := m.Called(ctx, db)
+func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
+	args := m.Called(ctx, db, exchange)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

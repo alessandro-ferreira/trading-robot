@@ -112,7 +112,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 			name: "Success Initialization",
 			pair: repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy", WarmupWindow: 10},
 			setup: func(o *Orchestrator, repo *repository.Container, mPf *MockPortfolio, mExec *MockExecutionService) {
-				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", 10).
+				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything).
 					Return([]repository.MarketDataTick{{Price: 50000}}, nil).Once()
 				repo.Risks.(*MockRiskRepo).On("GetRiskPair", mock.Anything, mock.Anything, "binance", "BTC/USDT").
 					Return(repository.RiskPair{AllocatedBudget: 100}, nil).Once()
@@ -124,7 +124,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 			name: "Warmup Data Failure",
 			pair: repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", WarmupWindow: 10},
 			setup: func(o *Orchestrator, repo *repository.Container, mPf *MockPortfolio, mExec *MockExecutionService) {
-				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", 10).
+				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything).
 					Return(nil, errors.New("db disconnect")).Once()
 			},
 			wantErr:   true,
@@ -511,13 +511,24 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 func TestOrchestrator_SignalWaitingBuyFill(t *testing.T) {
 	tests := []struct {
 		name           string
+		price          float64
 		setup          func(mPf *MockPortfolio, mExec *MockExecutionService, mRecon *MockReconciler, sig *signal_generator.SignalGenerator)
 		expectedSignal strategy.StrategySignal
 	}{
 		{
-			name: "Happy flow - Position already active (no SL block)",
+			name:  "Happy flow - Position active found",
+			price: 102,
 			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mRecon *MockReconciler, sig *signal_generator.SignalGenerator) {
-				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossBlock: false, EntryPrice: 102, HighestPrice: 102}, nil).Once()
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{EntryPrice: 102, HighestPrice: 102, UnknownOrigin: false}, nil).Once()
+			},
+			expectedSignal: strategy.SignalTrackingSellExit,
+		},
+		{
+			name:  "Happy flow - Update highest price",
+			price: 105,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mRecon *MockReconciler, sig *signal_generator.SignalGenerator) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{EntryPrice: 102, HighestPrice: 102, UnknownOrigin: false}, nil).Once()
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", repository.PositionData{EntryPrice: 102, HighestPrice: 105}).Return(nil).Once()
 			},
 			expectedSignal: strategy.SignalTrackingSellExit,
 		},
@@ -575,34 +586,6 @@ func TestOrchestrator_SignalWaitingBuyFill(t *testing.T) {
 			},
 			expectedSignal: strategy.SignalWaitingBuyFill,
 		},
-		{
-			name: "Activate if stop loss already exists",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mRecon *MockReconciler, sig *signal_generator.SignalGenerator) {
-				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossBlock: true, EntryPrice: 102}, nil).Once()
-				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{{Side: repository.OrderSideSell}}, nil).Once()
-				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", mock.MatchedBy(func(p repository.PositionData) bool { return !p.StopLossBlock })).Return(nil).Once()
-			},
-			expectedSignal: strategy.SignalTrackingSellExit,
-		},
-		{
-			name: "Place stop loss and activate",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mRecon *MockReconciler, sig *signal_generator.SignalGenerator) {
-				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossBlock: true, EntryPrice: 102, Quantity: 1.0}, nil).Once()
-				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
-				mExec.On("CreateStopOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideSell, 1.0, mock.Anything, float64(0)).Return(repository.OrderData{}, nil).Once()
-				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", mock.MatchedBy(func(p repository.PositionData) bool { return !p.StopLossBlock })).Return(nil).Once()
-			},
-			expectedSignal: strategy.SignalTrackingSellExit,
-		},
-		{
-			name: "Failed to place stop loss order",
-			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mRecon *MockReconciler, sig *signal_generator.SignalGenerator) {
-				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossBlock: true, EntryPrice: 102, Quantity: 1.0}, nil).Once()
-				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
-				mExec.On("CreateStopOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideSell, 1.0, mock.Anything, float64(0)).Return(repository.OrderData{}, errors.New("rpc error")).Once()
-			},
-			expectedSignal: strategy.SignalWaitingBuyFill,
-		},
 	}
 
 	for _, tt := range tests {
@@ -610,7 +593,7 @@ func TestOrchestrator_SignalWaitingBuyFill(t *testing.T) {
 			orch, _, mPf, mRecon, mExec := setupOrchestratorTest(t)
 			sig := initTestSignalGenerator(t, orch, strategy.SignalBuy)
 			tt.setup(mPf, mExec, mRecon, sig)
-			orch.signalWaitingBuyFill(context.Background(), orch.logger, sig)
+			orch.signalWaitingBuyFill(context.Background(), orch.logger, sig, tt.price)
 			s, _ := sig.GetSignal(102, time.Now().Unix())
 			assert.Equal(t, tt.expectedSignal, s)
 		})
@@ -620,38 +603,89 @@ func TestOrchestrator_SignalWaitingBuyFill(t *testing.T) {
 func TestOrchestrator_SignalTrackingSellExit(t *testing.T) {
 	tests := []struct {
 		name           string
-		setup          func(mPf *MockPortfolio)
+		price          float64
+		setup          func(mPf *MockPortfolio, mExec *MockExecutionService)
 		expectedSignal strategy.StrategySignal
 	}{
 		{
-			name: "Happy flow - Position exists",
-			setup: func(mPf *MockPortfolio) {
-				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true}, nil).Once()
+			name:  "Happy flow - Position already with SL active",
+			price: 102,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true, HighestPrice: 102, StopLossActive: true}, nil).Once()
 			},
 			expectedSignal: strategy.SignalTrackingSellExit,
 		},
 		{
-			name: "Reset if position missing",
-			setup: func(mPf *MockPortfolio) {
+			name:  "Reset if position missing",
+			price: 102,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 			},
 			expectedSignal: strategy.SignalSearchingBuyEntry,
 		},
 		{
-			name: "Reset if unknown origin",
-			setup: func(mPf *MockPortfolio) {
+			name:  "Reset if unknown origin",
+			price: 102,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{UnknownOrigin: true}, nil).Once()
 			},
 			expectedSignal: strategy.SignalSearchingBuyEntry,
+		},
+		{
+			name:  "Activate if stop loss already exists",
+			price: 102,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossActive: false, EntryPrice: 102}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{{Side: repository.OrderSideSell}}, nil).Once()
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", mock.MatchedBy(func(p repository.PositionData) bool { return p.StopLossActive })).Return(nil).Once()
+			},
+			expectedSignal: strategy.SignalTrackingSellExit,
+		},
+		{
+			name: "Place stop loss and activate",
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossActive: false, EntryPrice: 102, Quantity: 1.0}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
+				mExec.On("CreateStopOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideSell, 1.0, mock.Anything, float64(0)).Return(repository.OrderData{}, nil).Once()
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", mock.MatchedBy(func(p repository.PositionData) bool { return p.StopLossActive })).Return(nil).Once()
+			},
+			expectedSignal: strategy.SignalTrackingSellExit,
+		},
+		{
+			name: "Failed to place stop loss order",
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{StopLossActive: false, EntryPrice: 102, Quantity: 1.0}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10).Return([]repository.OrderData{}, nil).Once()
+				mExec.On("CreateStopOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideSell, 1.0, mock.Anything, float64(0)).Return(repository.OrderData{}, errors.New("rpc error")).Once()
+			},
+			expectedSignal: strategy.SignalTrackingSellExit,
+		},
+		{
+			name:  "Position with stop loss active and higher price - Update HighestPrice",
+			price: 105,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{HighestPrice: 102, StopLossActive: true}, nil).Once()
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", repository.PositionData{HighestPrice: 105, StopLossActive: true}).Return(nil).Once()
+			},
+			expectedSignal: strategy.SignalTrackingSellExit,
+		},
+		{
+			name:  "Position with stop loss active and higher price - error on update",
+			price: 105,
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService) {
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{HighestPrice: 102, StopLossActive: true}, nil).Once()
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", repository.PositionData{HighestPrice: 105, StopLossActive: true}).Return(errors.New("update error")).Once()
+			},
+			expectedSignal: strategy.SignalTrackingSellExit,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			orch, _, mPf, _, _ := setupOrchestratorTest(t)
+			orch, _, mPf, _, mExec := setupOrchestratorTest(t)
 			sig := initTestSignalGenerator(t, orch, strategy.SignalTrackingSellExit)
-			tt.setup(mPf)
-			orch.signalTrackingSellExit(context.Background(), orch.logger, sig)
+			tt.setup(mPf, mExec)
+			orch.signalTrackingSellExit(context.Background(), orch.logger, sig, tt.price)
 
 			s, _ := sig.GetSignal(100.0, time.Now().Unix())
 			assert.Equal(t, tt.expectedSignal, s)

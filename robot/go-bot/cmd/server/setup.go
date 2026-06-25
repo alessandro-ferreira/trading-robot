@@ -55,6 +55,7 @@ func setupOrderSync(cfg *config.Config, recon reconcil.Reconciler, bgManager *ba
 		"order-sync", 15*time.Second, false,
 		func(ctx context.Context) error {
 			for _, ex := range cfg.Exchanges {
+				slog.Info("Order Sync: Starting sync for exchange", "exchange", ex.Name)
 				if err := recon.SyncOrders(ctx, ex.Name, ""); err != nil {
 					slog.Error(
 						"Order Sync: Failed to sync orders",
@@ -81,6 +82,7 @@ func setupPositionSync(
 		"position-sync", 1*time.Minute, false,
 		func(ctx context.Context) error {
 			for _, ex := range cfg.Exchanges {
+				slog.Info("Position Sync: Starting sync for exchange", "exchange", ex.Name)
 				if _, err := exec.GetBalance(ctx, ex.Name, ""); err != nil {
 					slog.Error(
 						"Position Sync: Failed to fetch balance",
@@ -127,6 +129,7 @@ func setupTradeAudit(cfg *config.Config, recon reconcil.Reconciler, bgManager *b
 		"trade-audit", 15*time.Minute, false,
 		func(ctx context.Context) error {
 			for _, ex := range cfg.Exchanges {
+				slog.Info("Trade Audit: Starting periodic sync for exchange", "exchange", ex.Name)
 				if err := recon.SyncTradeHistory(ctx, ex.Name, "", periodicAuditLookback); err != nil {
 					slog.Error(
 						"Trade Audit: Periodic sync failed",

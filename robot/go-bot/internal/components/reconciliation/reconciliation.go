@@ -3,6 +3,7 @@ package reconcil
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -13,6 +14,8 @@ import (
 	"trading/robot/go-bot/internal/components/portfolio"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -84,14 +87,15 @@ func (r *reconciler) SyncOrders(
 		log = log.With("symbol", instrumentSymbol)
 	}
 
-	// --- Resolve Vanished Orders ---
-	// Fetch orders our DB thinks are new or open.
+	// --- Resolve Vanished Buy Orders ---
+	// Fetch buy orders our DB thinks are new or open.
 	statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
+	side := []string{repository.OrderSideBuy}
 	dbOrders, err := r.repo.Orders.GetOrders(
-		ctx, r.db, exchange, instrumentSymbol, statuses, limitOpenOrders,
+		ctx, r.db, exchange, instrumentSymbol, statuses, []string{}, side, limitOpenOrders,
 	)
 	if err != nil {
-		return fmt.Errorf("order sync: db fetch failed: %w", err)
+		return fmt.Errorf("order sync: get buy open orders failed: %w", err)
 	}
 
 	for _, dbo := range dbOrders {
@@ -100,7 +104,7 @@ func (r *reconciler) SyncOrders(
 		res, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID)
 		if err != nil {
 			log.Error(
-				"Order sync: failed to fetch individual order status",
+				"Order sync: failed to fetch individual buy order status",
 				"id", dbo.ExchangeOrderID, "error", err,
 			)
 			continue
@@ -119,6 +123,41 @@ func (r *reconciler) SyncOrders(
 		}
 	}
 
+	// --- Resolve Vanished Sell Orders ---
+	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
+	if err != nil {
+		return fmt.Errorf("order sync: balance fetch failed: %w", err)
+	}
+
+	walletBalances := make(map[string]float64)
+	for _, b := range balances {
+		walletBalances[b.AssetSymbol] = b.Total
+	}
+
+	// Fetch sell orders our DB thinks are new or open.
+	side = []string{repository.OrderSideSell}
+	dbOrders, err = r.repo.Orders.GetOrders(
+		ctx, r.db, exchange, instrumentSymbol, statuses, []string{}, side, limitOpenOrders,
+	)
+	if err != nil {
+		return fmt.Errorf("order sync: get sell open orders failed: %w", err)
+	}
+
+	for _, dbo := range dbOrders {
+		asset, _ := splitSymbol(dbo.InstrumentSymbol)
+		// If no balance left, fetch the individual status from the exchange to update the order in our database.
+		if isZeroEps(walletBalances[asset]) {
+			_, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID)
+			if err != nil {
+				log.Error(
+					"Order sync: failed to fetch individual sell order status",
+					"id", dbo.ExchangeOrderID, "error", err,
+				)
+				continue
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -130,16 +169,14 @@ func (r *reconciler) SyncPositions(
 	log := r.logger.With("exchange", exchange)
 
 	// Fetch liquid truth
-	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db)
+	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
 	if err != nil {
 		return fmt.Errorf("position sync: balance fetch failed: %w", err)
 	}
 
 	walletBalances := make(map[string]float64)
 	for _, b := range balances {
-		if b.ExchangeName == exchange {
-			walletBalances[b.AssetSymbol] = b.Total
-		}
+		walletBalances[b.AssetSymbol] = b.Total
 	}
 
 	// Fetch all actives positions for the exchange to detect base asset collisions.
@@ -224,11 +261,14 @@ func (r *reconciler) SyncPositions(
 	}
 
 	for _, iSymbol := range instruments {
-		// If there are open orders in DB, no need to adopt, the position will be created when the order is filled.
+		// If there are buy open orders in DB, no need to adopt, the position will be created when the order is filled.
 		statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
-		openOrders, err := r.repo.Orders.GetOrders(ctx, r.db, exchange, iSymbol, statuses, 1)
+		sides := []string{repository.OrderSideBuy}
+		openOrders, err := r.repo.Orders.GetOrders(
+			ctx, r.db, exchange, iSymbol, statuses, []string{}, sides, 1,
+		)
 		if err != nil {
-			log.Error("Failed querying open orders", "symbol", iSymbol, "error", err)
+			log.Error("Failed querying buy open orders", "symbol", iSymbol, "error", err)
 			continue
 		}
 		if len(openOrders) > 0 {
@@ -301,12 +341,18 @@ func (r *reconciler) SyncTradeHistory(
 
 	// --- Promotion Logic ---
 	for _, o := range orders {
+		if o.Side == repository.OrderSideSell {
+			continue
+		}
+
 		pos, err := r.pf.GetPosition(ctx, exchange, o.InstrumentSymbol)
 		if err != nil {
-			log.Error(
-				"Trade history sync: failed to lookup position",
-				"symbol", o.InstrumentSymbol, "error", err,
-			)
+			if !errors.Is(err, pgx.ErrNoRows) {
+				log.Error(
+					"Trade history sync: failed to lookup position",
+					"symbol", o.InstrumentSymbol, "error", err,
+				)
+			}
 			continue
 		}
 
@@ -315,8 +361,8 @@ func (r *reconciler) SyncTradeHistory(
 			// Check if the execution is not too old to be promoted automatically.
 			if !o.ExchangeTimestamp.Valid || time.Since(o.ExchangeTimestamp.Time) > promotionMaxAge {
 				log.Warn(
-					"Execution found but too old for automatic promotion",
-					"symbol", o.InstrumentSymbol, "id", o.ExchangeOrderID,
+					"Execution found but too old for automatic promotion", "symbol", o.InstrumentSymbol,
+					"now", time.Now(), "exchange_timestamp", o.ExchangeTimestamp.Time,
 				)
 				continue
 			}

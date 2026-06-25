@@ -133,7 +133,7 @@ func (m *Manager) EvaluateEntry(
 	assetUnits := targetBudget / price
 
 	if pr.MaxAssetUnits > 0 && assetUnits > pr.MaxAssetUnits {
-		m.logger.Info("Position quantity capped by asset unit limit",
+		m.logger.Warn("Position quantity capped by asset unit limit",
 			"requested", assetUnits,
 			"limit", pr.MaxAssetUnits)
 		assetUnits = pr.MaxAssetUnits

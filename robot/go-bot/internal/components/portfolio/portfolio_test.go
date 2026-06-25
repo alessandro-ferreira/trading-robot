@@ -53,16 +53,16 @@ func (m *MockPositionsRepo) DeletePosition(ctx context.Context, db repository.DB
 
 // MockBalancesRepo implements repository.BalancesRepo for testing
 type MockBalancesRepo struct {
-	GetAllBalancesFn func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error)
+	GetAllBalancesFn func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error)
 }
 
 func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
 	return repository.BalanceData{}, nil
 }
 
-func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
 	if m.GetAllBalancesFn != nil {
-		return m.GetAllBalancesFn(ctx, db)
+		return m.GetAllBalancesFn(ctx, db, exchange)
 	}
 	return []repository.BalanceData{}, nil
 }
@@ -92,7 +92,7 @@ func TestPortfolio_LoadState(t *testing.T) {
 		{
 			name: "Success hydration",
 			setupBalances: func() {
-				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
 					return []repository.BalanceData{
 						{ExchangeName: "binance", AssetSymbol: "USDT", Free: 1000.0, Total: 1000.0},
 					}, nil
@@ -112,7 +112,7 @@ func TestPortfolio_LoadState(t *testing.T) {
 		{
 			name: "Returns error when GetActivePositions fails",
 			setupBalances: func() {
-				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
 					return []repository.BalanceData{}, nil
 				}
 			},
@@ -149,13 +149,13 @@ func TestPortfolio_GetTotalValue(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		getAllBalancesFn func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error)
+		getAllBalancesFn func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error)
 		expectedTotals   map[string]float64
 		expectedErr      bool
 	}{
 		{
 			name: "Success aggregation",
-			getAllBalancesFn: func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+			getAllBalancesFn: func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
 				return []repository.BalanceData{
 					{AssetSymbol: "USDT", Total: 1000.0},
 					{AssetSymbol: "USDT", Total: 500.0},
@@ -166,7 +166,7 @@ func TestPortfolio_GetTotalValue(t *testing.T) {
 		},
 		{
 			name: "Repository error",
-			getAllBalancesFn: func(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
+			getAllBalancesFn: func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
 				return nil, errors.New("db error")
 			},
 			expectedErr: true,

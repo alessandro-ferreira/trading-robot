@@ -1,4 +1,5 @@
--- Define ENUMs for order types and statuses to ensure data consistency
+-- Define ENUMs for order sides, types and statuses to ensure data consistency
+CREATE TYPE trading.order_side AS ENUM ('buy', 'sell');
 CREATE TYPE trading.order_type AS ENUM ('limit', 'market', 'stop_limit', 'stop_market');
 CREATE TYPE trading.order_status AS ENUM ('new', 'open', 'closed', 'canceled', 'rejected', 'expired');
 
@@ -9,7 +10,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     client_order_id TEXT,
     exchange_id BIGINT NOT NULL,
     instrument_id BIGINT NOT NULL,
-    side TEXT NOT NULL,
+    order_side trading.order_side NOT NULL,
     order_type trading.order_type NOT NULL,
     price NUMERIC,
     amount NUMERIC NOT NULL,

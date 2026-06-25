@@ -84,7 +84,10 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	// Perform initial load of strategies
 	o.refreshStrategies(ctx, &wg)
 
-	o.logger.Info("Orchestrator active", "loop_interval", o.cfg.Server.OrchestratorInterval)
+	o.logger.Info("Orchestrator active",
+		"loop_interval", o.cfg.Server.OrchestratorInterval.String(),
+		"refresh_stat_interval", o.cfg.Server.RefreshStratInterval.String(),
+	)
 
 	for {
 		select {
@@ -217,7 +220,9 @@ func (o *Orchestrator) updateWorker(
 
 // runWorker manages the infinite trading loop for a single signal generator.
 func (o *Orchestrator) runWorker(ctx context.Context, sig *signal_generator.SignalGenerator) {
-	o.logger.Info("Starting worker loop", "pair", sig.Name(), "interval", o.cfg.Server.OrchestratorInterval)
+	o.logger.Info("Starting worker loop", "pair", sig.Name(),
+		"interval", o.cfg.Server.OrchestratorInterval.String(),
+	)
 
 	ticker := time.NewTicker(o.cfg.Server.OrchestratorInterval)
 	defer ticker.Stop()

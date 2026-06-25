@@ -60,7 +60,7 @@ type OrdersRepo interface {
 	GetOrder(ctx context.Context, db DBExecutor, exchangeName, exchangeOrderID string) (OrderData, error)
 	GetOrders(
 		ctx context.Context, db DBExecutor,
-		exchangeName, instrumentSymbol string, statuses []string, limit int,
+		exchangeName, instrumentSymbol string, statuses, types, sides []string, limit int,
 	) ([]OrderData, error)
 	CreateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error)
 	UpdateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error)
@@ -87,7 +87,7 @@ func (r *pgOrdersRepo) GetOrder(
 			i.name  AS instrument_symbol,
 			o.exchange_order_id,
 			o.client_order_id,
-			o.side,
+			o.order_side,
 			o.order_type,
 			o.price,
 			o.amount,
@@ -139,12 +139,12 @@ func (r *pgOrdersRepo) GetOrder(
 	return order, nil
 }
 
-// GetOrders retrieves a list of orders, optionally filtered by instrument symbol and status.
+// GetOrders retrieves a list of orders, optionally filtered by instrument symbol, status, type, and side.
 func (r *pgOrdersRepo) GetOrders(
 	ctx context.Context,
 	db DBExecutor,
 	exchangeName, instrumentSymbol string,
-	statuses []string,
+	statuses, types, sides []string,
 	limit int,
 ) ([]OrderData, error) {
 	query := `
@@ -154,7 +154,7 @@ func (r *pgOrdersRepo) GetOrders(
 			i.name  AS instrument_symbol,
 			o.exchange_order_id,
 			o.client_order_id,
-			o.side,
+			o.order_side,
 			o.order_type,
 			o.price,
 			o.amount,
@@ -176,11 +176,13 @@ func (r *pgOrdersRepo) GetOrders(
 		LEFT JOIN trading.assets fa ON fa.id = o.fee_asset_id AND fa.active
 		WHERE o.active
 			AND (array_length($3::trading.order_status[], 1) IS NULL OR o.order_status = ANY($3::trading.order_status[]))
+			AND (array_length($4::trading.order_type[], 1) IS NULL OR o.order_type = ANY($4::trading.order_type[]))
+			AND (array_length($5::trading.order_side[], 1) IS NULL OR o.order_side = ANY($5::trading.order_side[]))
 		ORDER BY o.created_at DESC
-		LIMIT $4
+		LIMIT $6
 	`
 
-	rows, err := db.Query(ctx, query, exchangeName, instrumentSymbol, statuses, limit)
+	rows, err := db.Query(ctx, query, exchangeName, instrumentSymbol, statuses, types, sides, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get orders: %w", err)
 	}
@@ -244,7 +246,7 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 			client_order_id,
 			exchange_id,
 			instrument_id,
-			side,
+			order_side,
 			order_type,
 			price,
 			amount,

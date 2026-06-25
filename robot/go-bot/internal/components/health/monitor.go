@@ -49,7 +49,11 @@ func (m *Monitor) CheckHealth(ctx context.Context, checkMethod func(context.Cont
 	return nil
 }
 
-func (m *Monitor) checkExchange(ctx context.Context, exchange string, checkMethod func(context.Context, string) error) {
+func (m *Monitor) checkExchange(
+	ctx context.Context,
+	exchange string,
+	checkMethod func(context.Context, string) error,
+) {
 	start := time.Now()
 	err := checkMethod(ctx, exchange)
 	latency := time.Since(start)
@@ -64,8 +68,7 @@ func (m *Monitor) checkExchange(ctx context.Context, exchange string, checkMetho
 		status.IsHealthy = false
 		status.LastError = err.Error()
 	} else {
-		// Log at debug level to avoid spamming logs on every tick
-		m.logger.Debug("Health check passed", "exchange", exchange, "latency", latency)
+		m.logger.Info("Health check passed", "exchange", exchange, "latency", latency)
 		status.IsHealthy = true
 	}
 

@@ -18,7 +18,7 @@ import (
 
 var positionColumns = []string{
 	"id", "exchange_name", "instrument_symbol", "order_id", "side", "quantity",
-	"entry_price", "highest_price", "stop_loss_block", "unknown_origin", "active", "created_at", "updated_at",
+	"entry_price", "highest_price", "stop_loss_active", "unknown_origin", "active", "created_at", "updated_at",
 }
 
 func getSamplePosition() PositionData {
@@ -33,7 +33,7 @@ func getSamplePosition() PositionData {
 		Quantity:         r.Float64() * 2,
 		EntryPrice:       r.Float64() * 50000,
 		HighestPrice:     r.Float64() * 52000,
-		StopLossBlock:    false,
+		StopLossActive:   false,
 		UnknownOrigin:    false,
 		Active:           true,
 		CreatedAt:        now,
@@ -44,7 +44,7 @@ func getSamplePosition() PositionData {
 func toPositionRow(p PositionData) []any {
 	return []any{
 		p.ID, p.ExchangeName, p.InstrumentSymbol, p.OrderID, p.Side, p.Quantity,
-		p.EntryPrice, p.HighestPrice, p.StopLossBlock, p.UnknownOrigin, p.Active, p.CreatedAt, p.UpdatedAt,
+		p.EntryPrice, p.HighestPrice, p.StopLossActive, p.UnknownOrigin, p.Active, p.CreatedAt, p.UpdatedAt,
 	}
 }
 
@@ -207,13 +207,13 @@ func TestPgPositionsRepo_UpsertPosition(t *testing.T) {
 	toUpsertArgs := func(p PositionData) []any {
 		return []any{
 			exchangeID, instrumentID, p.OrderID, p.Quantity, p.EntryPrice,
-			p.HighestPrice, p.StopLossBlock, p.UnknownOrigin, DefaultUser,
+			p.HighestPrice, p.StopLossActive, p.UnknownOrigin, DefaultUser,
 		}
 	}
 	toInsertArgs := func(p PositionData) []any {
 		return []any{
 			exchangeID, instrumentID, p.OrderID, p.Side, p.Quantity, p.EntryPrice,
-			p.HighestPrice, p.StopLossBlock, p.UnknownOrigin, DefaultUser,
+			p.HighestPrice, p.StopLossActive, p.UnknownOrigin, DefaultUser,
 		}
 	}
 

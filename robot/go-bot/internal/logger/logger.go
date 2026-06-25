@@ -49,6 +49,7 @@ func New(w io.Writer, cfg config.LogConfig) *slog.Logger {
 					} else {
 						source.File = filepath.Base(source.File)
 					}
+					source.Function = "" // Forces slog to completely omit the function field
 				}
 			}
 			return a

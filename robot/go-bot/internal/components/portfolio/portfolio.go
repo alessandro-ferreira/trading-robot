@@ -93,7 +93,7 @@ func (p *portfolio) GetTotalValue(ctx context.Context) (map[string]float64, erro
 	totals := make(map[string]float64)
 
 	// Aggregate Cash Balances
-	balances, err := p.repo.Balances.GetAllBalances(ctx, p.db)
+	balances, err := p.repo.Balances.GetAllBalances(ctx, p.db, "")
 	if err != nil {
 		return nil, fmt.Errorf("total value: failed to fetch balances: %w", err)
 	}

@@ -114,6 +114,11 @@ func (s *service) GetBalance(
 		return nil, fmt.Errorf("failed to fetch balances from gateway: %w", err)
 	}
 
+	log.Info("Balances received", "count", len(resp.Balances))
+	for _, b := range resp.Balances {
+		log.Debug("Balance received", "asset", b.Asset, "total", b.Total)
+	}
+
 	collected := make([]repository.BalanceData, 0, len(resp.Balances))
 	// Iterate through all assets returned by the exchange to update the database
 	for _, b := range resp.Balances {
@@ -200,7 +205,7 @@ func (s *service) CreateOrder(
 		Status:           resp.Status,
 		Price:            sql.NullFloat64{Float64: price, Valid: price > 0},
 		AveragePrice:     sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
-		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.Fee > 0},
+		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{
 			String: resp.FeeCurrency,
 			Valid:  resp.FeeCurrency != "",
@@ -266,7 +271,7 @@ func (s *service) CreateStopOrder(
 		Status:           resp.Status,
 		Price:            sql.NullFloat64{Float64: stopPrice, Valid: stopPrice > 0},
 		AveragePrice:     sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
-		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.Fee > 0},
+		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{
 			String: resp.FeeCurrency,
 			Valid:  resp.FeeCurrency != "",
@@ -329,7 +334,7 @@ func (s *service) CancelOrder(
 		AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
 		Cost:         orderResp.Cost,
 		Status:       orderResp.Status,
-		Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.Fee > 0},
+		Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{
 			String: orderResp.FeeCurrency,
 			Valid:  orderResp.FeeCurrency != "",
@@ -403,7 +408,7 @@ func (s *service) GetOrder(
 			Time:  time.UnixMilli(orderResp.Timestamp),
 			Valid: orderResp.Timestamp > 0,
 		},
-		Fee: sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.Fee > 0},
+		Fee: sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{
 			String: orderResp.FeeCurrency,
 			Valid:  orderResp.FeeCurrency != "",
@@ -467,7 +472,7 @@ func (s *service) GetOpenOrders(
 			AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
 			Cost:         orderResp.Cost,
 			Status:       orderResp.Status,
-			Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.Fee > 0},
+			Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.FeeCurrency != ""},
 			FeeAssetSymbol: sql.NullString{
 				String: orderResp.FeeCurrency,
 				Valid:  orderResp.FeeCurrency != "",
@@ -535,7 +540,7 @@ func (s *service) GetRecentTrades(
 			AveragePrice:     sql.NullFloat64{Float64: o.Average, Valid: o.Average > 0},
 			Cost:             o.Cost,
 			Status:           o.Status,
-			Fee:              sql.NullFloat64{Float64: o.Fee, Valid: o.Fee > 0},
+			Fee:              sql.NullFloat64{Float64: o.Fee, Valid: o.FeeCurrency != ""},
 			FeeAssetSymbol: sql.NullString{
 				String: o.FeeCurrency,
 				Valid:  o.FeeCurrency != "",

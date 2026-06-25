@@ -59,8 +59,8 @@ func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor,
 	args := m.Called(ctx, db, ex, id)
 	return args.Get(0).(repository.OrderData), args.Error(1)
 }
-func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, ex, sym string, st []string, lim int) ([]repository.OrderData, error) {
-	args := m.Called(ctx, db, ex, sym, st, lim)
+func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, ex, sym string, st, tp, sd []string, lim int) ([]repository.OrderData, error) {
+	args := m.Called(ctx, db, ex, sym, st, tp, sd, lim)
 	return args.Get(0).([]repository.OrderData), args.Error(1)
 }
 func (m *MockOrdersRepo) CreateOrder(ctx context.Context, db repository.DBExecutor, o repository.OrderData) (int64, error) {
@@ -77,8 +77,8 @@ type MockBalancesRepo struct{ mock.Mock }
 func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
 	return repository.BalanceData{}, nil
 }
-func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
-	args := m.Called(ctx, db)
+func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
+	args := m.Called(ctx, db, exchange)
 	return args.Get(0).([]repository.BalanceData), args.Error(1)
 }
 func (m *MockBalancesRepo) UpsertBalance(ctx context.Context, db repository.DBExecutor, b repository.BalanceData) (int64, error) {
@@ -187,15 +187,16 @@ func TestReconciler_SyncOrders(t *testing.T) {
 		name     string
 		exchange string
 		symbol   string
-		setup    func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo)
+		setup    func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo)
 		wantErr  bool
 	}{
 		{
-			name:     "Investigation of vanished order",
+			name:     "Investigation of Buy vanished order",
 			exchange: "binance",
 			symbol:   "BTC/USDT",
-			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo) {
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{"new", "open"}, 100).Return([]repository.OrderData{
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"buy"}, 100).Return([]repository.OrderData{
 					{ID: 10, ExchangeOrderID: "closed-1", InstrumentSymbol: "BTC/USDT", Status: "open"},
 				}, nil)
 				mExec.On("GetOrder", mock.Anything, "binance", "BTC/USDT", "closed-1").Return(repository.OrderData{
@@ -203,27 +204,83 @@ func TestReconciler_SyncOrders(t *testing.T) {
 					Filled: 1.0, Price: toNullFloat64(50000),
 				}, nil)
 				mPf.On("CreatePosition", mock.Anything, "binance", "BTC/USDT", 1.0, 50000.0, int64(10)).Return(nil)
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"sell"}, 100).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
-			name:     "Gateway failure - GetOrder fails",
+			name:     "Get Buy Orders failure",
 			exchange: "binance",
 			symbol:   "BTC/USDT",
-			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo) {
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything).Return([]repository.OrderData{
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything, mock.Anything, 100).Return([]repository.OrderData{}, errors.New("db disconnect"))
+			},
+			wantErr: true,
+		},
+		{
+			name:     "Gateway failure - GetOrder buy fails",
+			exchange: "binance",
+			symbol:   "BTC/USDT",
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]repository.OrderData{
 					{ExchangeOrderID: "fail-1", InstrumentSymbol: "BTC/USDT"},
 				}, nil)
 				mExec.On("GetOrder", mock.Anything, "binance", "BTC/USDT", "fail-1").Return(repository.OrderData{}, errors.New("rpc fail"))
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"sell"}, 100).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
-			name:     "DB query failure",
+			name:     "Investigation of Sell vanished order",
 			exchange: "binance",
 			symbol:   "BTC/USDT",
-			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo) {
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, 100).Return([]repository.OrderData{}, errors.New("db disconnect"))
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"buy"}, 100).Return([]repository.OrderData{}, nil)
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
+					{ExchangeName: "binance", AssetSymbol: "BTC", Total: 0.0},
+				}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"sell"}, 100).Return([]repository.OrderData{
+					{ID: 10, ExchangeOrderID: "closed-2", InstrumentSymbol: "BTC/USDT", Status: "open"},
+				}, nil)
+				mExec.On("GetOrder", mock.Anything, "binance", "BTC/USDT", "closed-2").Return(repository.OrderData{
+					ExchangeOrderID: "closed-2", InstrumentSymbol: "BTC/USDT", Status: repository.OrderStatusClosed,
+					Filled: 1.0, Price: toNullFloat64(50000),
+				}, nil)
+			},
+		},
+		{
+			name:     "Get Sell Orders failure",
+			exchange: "binance",
+			symbol:   "BTC/USDT",
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"buy"}, 100).Return([]repository.OrderData{}, nil)
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
+					{ExchangeName: "binance", AssetSymbol: "BTC", Total: 0.0},
+				}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything, mock.Anything, 100).Return([]repository.OrderData{}, errors.New("db disconnect"))
 			},
 			wantErr: true,
+		},
+		{
+			name:     "Gateway failure - GetOrder Sell fails",
+			exchange: "binance",
+			symbol:   "BTC/USDT",
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo, mBalances *MockBalancesRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{}, []string{"buy"}, 100).Return([]repository.OrderData{}, nil)
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
+					{ExchangeName: "binance", AssetSymbol: "BTC", Total: 0.0},
+				}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]repository.OrderData{
+					{ExchangeOrderID: "fail-2", InstrumentSymbol: "BTC/USDT"},
+				}, nil)
+				mExec.On("GetOrder", mock.Anything, "binance", "BTC/USDT", "fail-2").Return(repository.OrderData{}, errors.New("rpc fail"))
+			},
 		},
 	}
 
@@ -231,7 +288,8 @@ func TestReconciler_SyncOrders(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r, mExec, mPf, repo := setupReconciler(t)
 			mOrders := repo.Orders.(*MockOrdersRepo)
-			tc.setup(mExec, mPf, mOrders)
+			mBalances := repo.Balances.(*MockBalancesRepo)
+			tc.setup(mExec, mPf, mOrders, mBalances)
 
 			err := r.SyncOrders(context.Background(), tc.exchange, tc.symbol)
 			if tc.wantErr {
@@ -256,14 +314,14 @@ func TestReconciler_SyncPositions(t *testing.T) {
 			exchange: "binance",
 			symbol:   "BTC/USDT",
 			setup: func(mBalances *MockBalancesRepo, mPositions *MockPositionsRepo, mStrategies *MockStrategiesRepo, mOrders *MockOrdersRepo, mPf *MockPortfolio) {
-				mBalances.On("GetAllBalances", mock.Anything, mock.Anything).Return([]repository.BalanceData{
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
 					{ExchangeName: "binance", AssetSymbol: "BTC", Total: 0.0},
 				}, nil)
 				mPositions.On("GetActivePositions", mock.Anything, mock.Anything, "binance", "").Return([]repository.PositionData{
 					{InstrumentSymbol: "BTC/USDT", Quantity: 1.0},
 				}, nil)
 				mPf.On("DeletePosition", mock.Anything, "binance", "BTC/USDT").Return(nil)
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, 1).Return([]repository.OrderData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything, mock.Anything, 1).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
@@ -271,7 +329,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 			exchange: "binance",
 			symbol:   "LTC/USDT",
 			setup: func(mBalances *MockBalancesRepo, mPositions *MockPositionsRepo, mStrategies *MockStrategiesRepo, mOrders *MockOrdersRepo, mPf *MockPortfolio) {
-				mBalances.On("GetAllBalances", mock.Anything, mock.Anything).Return([]repository.BalanceData{
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
 					{ExchangeName: "binance", AssetSymbol: "LTC", Total: 10.0},
 				}, nil)
 				mPositions.On("GetActivePositions", mock.Anything, mock.Anything, "binance", "").Return([]repository.PositionData{}, nil)
@@ -279,7 +337,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 					{ExchangeName: "binance", InstrumentSymbol: "LTC/USDT"},
 				}, nil)
 				mPf.On("CreatePosition", mock.Anything, "binance", "LTC/USDT", 10.0, 0.0, int64(0)).Return(nil)
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "LTC/USDT", mock.Anything, 1).Return([]repository.OrderData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "LTC/USDT", mock.Anything, mock.Anything, mock.Anything, 1).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
@@ -287,7 +345,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 			exchange: "binance",
 			symbol:   "BTC/USDT",
 			setup: func(mBalances *MockBalancesRepo, mPositions *MockPositionsRepo, mStrategies *MockStrategiesRepo, mOrders *MockOrdersRepo, mPf *MockPortfolio) {
-				mBalances.On("GetAllBalances", mock.Anything, mock.Anything).Return([]repository.BalanceData{
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
 					{ExchangeName: "binance", AssetSymbol: "BTC", Total: 1.0005},
 				}, nil)
 				mPositions.On("GetActivePositions", mock.Anything, mock.Anything, "binance", "").Return([]repository.PositionData{
@@ -296,7 +354,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", mock.MatchedBy(func(p repository.PositionData) bool {
 					return p.Quantity == 1.0005
 				})).Return(nil)
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, 1).Return([]repository.OrderData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything, mock.Anything, mock.Anything, 1).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
@@ -304,7 +362,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 			exchange: "binance",
 			symbol:   "",
 			setup: func(mBalances *MockBalancesRepo, mPositions *MockPositionsRepo, mStrategies *MockStrategiesRepo, mOrders *MockOrdersRepo, mPf *MockPortfolio) {
-				mBalances.On("GetAllBalances", mock.Anything, mock.Anything).Return([]repository.BalanceData{
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
 					{ExchangeName: "binance", AssetSymbol: "ETH", Total: 2.0},
 				}, nil)
 				mPositions.On("GetActivePositions", mock.Anything, mock.Anything, "binance", "").Return([]repository.PositionData{}, nil)
@@ -312,7 +370,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 					{ExchangeName: "binance", InstrumentSymbol: "ETH/USDT"},
 				}, nil)
 				mPf.On("CreatePosition", mock.Anything, "binance", "ETH/USDT", 2.0, 0.0, int64(0)).Return(nil)
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "ETH/USDT", mock.Anything, 1).Return([]repository.OrderData{}, nil)
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "ETH/USDT", mock.Anything, mock.Anything, mock.Anything, 1).Return([]repository.OrderData{}, nil)
 			},
 		},
 		{
@@ -320,12 +378,12 @@ func TestReconciler_SyncPositions(t *testing.T) {
 			exchange: "binance",
 			symbol:   "ETH/USDT",
 			setup: func(mBalances *MockBalancesRepo, mPositions *MockPositionsRepo, mStrategies *MockStrategiesRepo, mOrders *MockOrdersRepo, mPf *MockPortfolio) {
-				mBalances.On("GetAllBalances", mock.Anything, mock.Anything).Return([]repository.BalanceData{
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{
 					{ExchangeName: "binance", AssetSymbol: "ETH", Total: 2.0},
 				}, nil)
 				mPositions.On("GetActivePositions", mock.Anything, mock.Anything, "binance", "").Return([]repository.PositionData{}, nil)
 				// Mock an open order existing for this symbol
-				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "ETH/USDT", mock.Anything, 1).Return([]repository.OrderData{
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "ETH/USDT", mock.Anything, mock.Anything, mock.Anything, 1).Return([]repository.OrderData{
 					{ExchangeOrderID: "pending-1"},
 				}, nil)
 			},
@@ -335,7 +393,7 @@ func TestReconciler_SyncPositions(t *testing.T) {
 			exchange: "binance",
 			symbol:   "BTC/USDT",
 			setup: func(mBalances *MockBalancesRepo, mPositions *MockPositionsRepo, mStrategies *MockStrategiesRepo, mOrders *MockOrdersRepo, mPf *MockPortfolio) {
-				mBalances.On("GetAllBalances", mock.Anything, mock.Anything).Return([]repository.BalanceData{}, errors.New("db down"))
+				mBalances.On("GetAllBalances", mock.Anything, mock.Anything, mock.Anything).Return([]repository.BalanceData{}, errors.New("db down"))
 			},
 			wantErr: true,
 		},

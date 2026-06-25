@@ -195,13 +195,11 @@ func TestPortfolio_Integration_StateManagement(t *testing.T) {
 	assert.Equal(t, 0, p.GetActivePositionsCount())
 
 	// LoadState - Hydrate the in-memory map from DB
-	t.Log("Loading state from DB")
 	err := p.LoadState(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, p.GetActivePositionsCount())
 
 	// RefreshState (Simulate an external change: position closed in DB)
-	t.Log("Refreshing state for closed position")
 	require.NoError(t, repo.Positions.DeletePosition(ctx, db, exchange, symbol1))
 
 	err = p.RefreshState(ctx, exchange, symbol1)
@@ -209,7 +207,6 @@ func TestPortfolio_Integration_StateManagement(t *testing.T) {
 	assert.Equal(t, 1, p.GetActivePositionsCount(), "Map should have updated after refresh")
 
 	// RefreshState (Simulate an external change: new position created in DB)
-	t.Log("Refreshing state for new position")
 	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos1))
 
 	err = p.RefreshState(ctx, exchange, symbol1)

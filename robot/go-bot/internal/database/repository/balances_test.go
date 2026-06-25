@@ -104,14 +104,16 @@ func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 
 	testCases := []struct {
 		name          string
+		exchange      string
 		setupMock     func(mockDB pgxmock.PgxPoolIface)
 		assertResults func(t *testing.T, balances []BalanceData, err error)
 	}{
 		{
-			name: "Success",
+			name:     "Success",
+			exchange: "",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows(columns).AddRow(baseRow...)
-				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WillReturnRows(rows)
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WithArgs("").WillReturnRows(rows)
 			},
 			assertResults: func(t *testing.T, balances []BalanceData, err error) {
 				require.NoError(t, err)
@@ -121,7 +123,22 @@ func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 			},
 		},
 		{
-			name: "Success many rows",
+			name:     "Success with exchange",
+			exchange: "dummy",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				rows := pgxmock.NewRows(columns).AddRow(baseRow...)
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WithArgs("dummy").WillReturnRows(rows)
+			},
+			assertResults: func(t *testing.T, balances []BalanceData, err error) {
+				require.NoError(t, err)
+				require.Len(t, balances, 1)
+				assert.Equal(t, b.AssetSymbol, balances[0].AssetSymbol)
+				assert.Equal(t, b.UpdatedAt, balances[0].UpdatedAt)
+			},
+		},
+		{
+			name:     "Success many rows",
+			exchange: "",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				b2 := getSampleBalance()
 				b2.AssetSymbol = "ETH"
@@ -129,7 +146,7 @@ func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 
 				rows := pgxmock.NewRows(columns).
 					AddRow(baseRow...).AddRow(row2...)
-				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WillReturnRows(rows)
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WithArgs("").WillReturnRows(rows)
 			},
 			assertResults: func(t *testing.T, balances []BalanceData, err error) {
 				require.NoError(t, err)
@@ -139,9 +156,10 @@ func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 			},
 		},
 		{
-			name: "Query Error",
+			name:     "Query Error",
+			exchange: "binance",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WillReturnError(errors.New("db query error"))
+				mockDB.ExpectQuery("SELECT b.id, e.name AS exchange_name").WithArgs("binance").WillReturnError(errors.New("db query error"))
 			},
 			assertResults: func(t *testing.T, balances []BalanceData, err error) {
 				require.Error(t, err)
@@ -158,7 +176,7 @@ func TestPgBalancesRepo_GetAllBalances(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			balances, err := repo.GetAllBalances(context.Background(), mockDB)
+			balances, err := repo.GetAllBalances(context.Background(), mockDB, tc.exchange)
 
 			tc.assertResults(t, balances, err)
 

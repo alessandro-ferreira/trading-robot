@@ -64,7 +64,7 @@ func setupReconcilerIntegrationTest(
 	require.NoError(t, err, "failed to reset gateway state")
 
 	// Initialize Components
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // slog.Default()
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(logger, db, repoContainer)
 	execSvc := execution.NewService(logger, db, client, repoContainer)
@@ -86,16 +86,16 @@ func setupReconcilerIntegrationTest(
 	return recon, execSvc, db, repoContainer, cleanup
 }
 
-// TestReconciler_Integration_SyncOpenOrder verifies a filled exchange order is converted into a local position.
-func TestReconciler_Integration_SyncOpenOrder(t *testing.T) {
+// TestReconciler_Integration_SyncBuyOrder verifies a buy filled exchange order is converted into a local position.
+func TestReconciler_Integration_SyncBuyOrder(t *testing.T) {
 	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
 	defer cleanup()
 
-	// Create a filled order on the dummy gateway to simulate DB stale state
 	ctx := context.Background()
 	exchange := "dummy"
 	symbol := "BTC/USDT"
 
+	// Create a filled order on the dummy gateway to simulate DB stale state
 	order, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
 	require.NoError(t, err)
 	require.Equal(t, repository.OrderStatusClosed, order.Status)
@@ -115,6 +115,52 @@ func TestReconciler_Integration_SyncOpenOrder(t *testing.T) {
 	assert.False(t, pos.UnknownOrigin)
 	assert.Equal(t, order.Filled, pos.Quantity)
 	assert.NotZero(t, pos.EntryPrice)
+}
+
+// TestReconciler_Integration_SyncSellOrder verifies a sell filled exchange order and update it locally.
+func TestReconciler_Integration_SyncSellOrder(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "BTC/USDT"
+
+	// Create a buy order to have sufficient funds and then create a filled sell order to simulate DB stale state
+	_, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+
+	order, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideSell, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, order.Status)
+
+	// Set the balance to zero to simulate a liquidation scenario and check if the reconciler handles it correctly.
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "BTC",
+		Free:         0,
+		Used:         0,
+		Total:        0,
+	})
+	require.NoError(t, err)
+
+	// Make DB think the order is still open to check its status
+	order.Status = repository.OrderStatusOpen
+	_, err = repo.Orders.UpdateOrder(ctx, db, order)
+	require.NoError(t, err)
+
+	openOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID)
+	require.NoError(t, err)
+	assert.Equal(t, repository.OrderStatusOpen, openOrder.Status)
+
+	// Run the reconciler
+	err = recon.SyncOrders(ctx, exchange, symbol)
+	require.NoError(t, err)
+
+	// Validate that the order status is updated to closed in the database after reconciliation.
+	updatedOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID)
+	require.NoError(t, err)
+	assert.Equal(t, repository.OrderStatusClosed, updatedOrder.Status)
 }
 
 // TestReconciler_Integration_NoSyncCanceledOrder verifies that when the exchange reports a canceled order

@@ -140,7 +140,7 @@ func main() {
 	slog.Info("All background tasks stopped. Closing connections...")
 
 	if cfg.Server.ShutdownTimeout > 0 {
-		slog.Info("Waiting for shutdown delay", "duration", cfg.Server.ShutdownTimeout)
+		slog.Info("Waiting for shutdown delay", "duration", cfg.Server.ShutdownTimeout.String())
 		time.Sleep(cfg.Server.ShutdownTimeout)
 	}
 

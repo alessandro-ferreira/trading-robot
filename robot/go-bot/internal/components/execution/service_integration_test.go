@@ -110,7 +110,7 @@ func TestService_Integration_GetBalance(t *testing.T) {
 	assert.Equal(t, 10000.0, resp[0].Total)
 
 	// Verify persistence
-	storedBalances, _ := repo.Balances.GetAllBalances(ctx, db)
+	storedBalances, _ := repo.Balances.GetAllBalances(ctx, db, "")
 	var foundUSDT bool
 	for _, b := range storedBalances {
 		if b.AssetSymbol == "USDT" {
@@ -132,11 +132,11 @@ func TestService_Integration_GetBalance(t *testing.T) {
 	assert.Equal(t, amount, resp[0].Total)
 
 	// Verify persistence of the new BTC balance
-	storedBalances, _ = repo.Balances.GetAllBalances(ctx, db)
+	storedBalances, _ = repo.Balances.GetAllBalances(ctx, db, exchangeName)
 	var storedBalance repository.BalanceData
 	var found bool
 	for _, b := range storedBalances {
-		if b.ExchangeName == exchangeName && b.AssetSymbol == "BTC" {
+		if b.AssetSymbol == "BTC" {
 			storedBalance = b
 			found = true
 		}

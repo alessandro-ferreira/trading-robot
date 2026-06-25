@@ -42,8 +42,9 @@ func (o *Orchestrator) initSignalHandler(
 	log.Info("Init signal generator")
 
 	// Load historical ticks and risk configuration
+	intervalSeconds := max(int(o.cfg.Server.OrchestratorInterval.Seconds()), 1)
 	ticks, err := o.repo.MarketData.GetMarketDataTicks(
-		ctx, o.db, p.ExchangeName, p.InstrumentSymbol, p.WarmupWindow,
+		ctx, o.db, p.ExchangeName, p.InstrumentSymbol, (p.WarmupWindow/intervalSeconds)+1,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetch warmup data failed %w", err)
@@ -61,8 +62,11 @@ func (o *Orchestrator) initSignalHandler(
 	}
 
 	if len(ticks) > 0 {
-		if err := sigGen.Warmup(ticks); err != nil {
-			log.Error("warmup failed", "err", err)
+		log.Info("Warming up signal generator with historical ticks", "count", len(ticks))
+
+		err = sigGen.Warmup(ticks)
+		if err != nil {
+			return nil, fmt.Errorf("warmup failed %w", err)
 		}
 	}
 
@@ -74,11 +78,11 @@ func (o *Orchestrator) initSignalHandler(
 	pos, err := o.portfolio.GetPosition(ctx, p.ExchangeName, p.InstrumentSymbol)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			log.Error("Error getting position, strategy state not hydrated", "err", err)
+			log.Error("error getting position, strategy state not hydrated", "err", err)
 		}
 	} else {
 		if !pos.UnknownOrigin {
-			log.Info("hydrate strategy state", "entry", pos.EntryPrice, "high", pos.HighestPrice)
+			log.Info("Hydrate strategy state", "entry", pos.EntryPrice, "high", pos.HighestPrice)
 			sigGen.SetInPosition(true, pos.EntryPrice, pos.HighestPrice)
 		}
 	}
@@ -123,7 +127,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		return
 	}
 
-	log.Info("Signal generated", "signal", signal)
+	log.Info("Signal generated", "signal", signal.String())
 
 	// Handle the signal with corresponding logic
 	switch signal {
@@ -137,9 +141,9 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 			o.signalBuy(ctx, log, sig, price)
 		}
 	case strategy.SignalWaitingBuyFill:
-		o.signalWaitingBuyFill(ctx, log, sig)
+		o.signalWaitingBuyFill(ctx, log, sig, price)
 	case strategy.SignalTrackingSellExit:
-		o.signalTrackingSellExit(ctx, log, sig)
+		o.signalTrackingSellExit(ctx, log, sig, price)
 	case strategy.SignalSell:
 		o.signalSell(ctx, log, sig, price)
 	case strategy.SignalWaitingSellFill:
@@ -147,7 +151,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	case strategy.SignalInvalid:
 		o.signalInvalid(ctx, log, sig)
 	default:
-		log.Error("unknown signal received: ", "signal", signal)
+		log.Error("unknown signal received: ", "signal", signal.String())
 	}
 
 	// Termination logic: if scheduled to disable and no position is active, finalize.
@@ -164,7 +168,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 				o.stopWorker(sig.Name())
 			}
 		} else if err != nil {
-			log.Error("Error checking position for pending disablement", "err", err)
+			log.Error("error checking position for pending disablement", "err", err)
 		}
 	}
 }
@@ -178,9 +182,12 @@ func (o *Orchestrator) signalSearchingBuyEntry(
 	log *slog.Logger,
 	sig *signal_generator.SignalGenerator,
 ) {
+	ex := sig.Exchange()
+	sym := sig.InstrumentSymbol()
+
 	posIsSync := false
 	for {
-		pos, err := o.portfolio.GetPosition(ctx, sig.Exchange(), sig.InstrumentSymbol())
+		pos, err := o.portfolio.GetPosition(ctx, ex, sym)
 		if err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
 				log.Error("failed to query position during searching buy entry", "err", err)
@@ -194,21 +201,14 @@ func (o *Orchestrator) signalSearchingBuyEntry(
 		}
 
 		// Request balance from exchange.
-		asset := strings.Split(sig.InstrumentSymbol(), "/")[0]
-		balances, err := o.exec.GetBalance(ctx, sig.Exchange(), asset)
-		if err != nil || len(balances) == 0 {
-			if err != nil {
-				log.Error("failed to verify balance on exchange", "err", err)
-			} else {
-				log.Warn("Balance no found on exchange", "asset", asset)
-			}
+		balance, err := o.getBalance(ctx, log, ex, sym)
+		if err != nil {
 			return
 		}
-		balance := balances[0]
 
 		// If the database position quantity matches the exchange total balance, we sync the strategy metadata.
 		if isEqualEps(balance.Total, pos.Quantity) {
-			log.Info(
+			log.Warn(
 				"syncing strategy to active state due to existing position",
 				"position", pos.Quantity,
 			)
@@ -278,7 +278,6 @@ func (o *Orchestrator) signalBuy(
 		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
-	asset := parts[0]
 	budgetAsset := parts[1]
 
 	// Check risk first using local data to avoid unnecessary exchange requests.
@@ -289,7 +288,6 @@ func (o *Orchestrator) signalBuy(
 		availableBudget = b.Total
 	}
 	eval := o.risk.EvaluateEntry(openCount, 0, price, availableBudget, sig.Risk())
-
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (pre-check)", "reason", eval.Reason)
 		_ = sig.RetrySignal(strategy.SignalBuy)
@@ -303,7 +301,6 @@ func (o *Orchestrator) signalBuy(
 		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
-
 	for _, ord := range openOrders {
 		if ord.Side == repository.OrderSideBuy {
 			log.Warn(
@@ -313,18 +310,11 @@ func (o *Orchestrator) signalBuy(
 		}
 	}
 
-	balances, err := o.exec.GetBalance(ctx, ex, asset)
-	if err != nil || len(balances) == 0 {
-		if err != nil {
-			log.Error("failed to verify balance on exchange", "err", err)
-		} else {
-			log.Warn("Balance no found on exchange", "asset", asset)
-		}
+	balance, err := o.getBalance(ctx, log, ex, sym)
+	if err != nil {
 		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
-	balance := balances[0]
-
 	if !isZeroEps(balance.Total) {
 		log.Warn(
 			"buy skipped: existent balance, proceeding to avoid duplication", "balance", balance.Total,
@@ -361,9 +351,12 @@ func (o *Orchestrator) signalBuy(
 		if fillPrice <= 0 {
 			fillPrice = order.Price.Float64
 		}
-		_ = o.portfolio.CreatePosition(
+		err = o.portfolio.CreatePosition(
 			ctx, ex, sym, order.Filled, fillPrice, order.ID,
 		)
+		if err != nil {
+			log.Error("failed to create position for filled order", "err", err)
+		}
 	}
 }
 
@@ -371,6 +364,7 @@ func (o *Orchestrator) signalWaitingBuyFill(
 	ctx context.Context,
 	log *slog.Logger,
 	sig *signal_generator.SignalGenerator,
+	price float64,
 ) {
 	ex := sig.Exchange()
 	sym := sig.InstrumentSymbol()
@@ -400,17 +394,10 @@ func (o *Orchestrator) signalWaitingBuyFill(
 			log.Info("buy order still processing on exchange, waiting...")
 
 		} else {
-			asset := strings.Split(sym, "/")[0]
-			balances, err := o.exec.GetBalance(ctx, ex, asset)
-			if err != nil || len(balances) == 0 {
-				if err != nil {
-					log.Error("failed to verify balance on exchange", "err", err)
-				} else {
-					log.Warn("Balance no found on exchange", "asset", asset)
-				}
+			balance, err := o.getBalance(ctx, log, ex, sym)
+			if err != nil {
 				return
 			}
-			balance := balances[0]
 
 			// If SyncOrders can't find the order, SyncPositions will create a position from the existent balance.
 			if balance.Total > 0 {
@@ -447,49 +434,17 @@ func (o *Orchestrator) signalWaitingBuyFill(
 		}
 	}
 
-	// Handle Active Position and Stop Loss logic.
-	if !pos.StopLossBlock {
-		log.Info("stop loss exists, activating position")
-		sig.SetInPosition(true, pos.EntryPrice, pos.HighestPrice)
-		return
-	}
-
-	// Verify if a stop loss (SELL order) is already placed on the exchange
-	openOrders, err := o.exec.GetOpenOrders(ctx, ex, sym, 10)
-	if err != nil {
-		log.Error("failed to fetch open orders for stop loss verification", "err", err)
-		return
-	}
-	var sellOrderExists bool
-	for _, ord := range openOrders {
-		if ord.Side == repository.OrderSideSell {
-			sellOrderExists = true
-			break
-		}
-	}
-
-	if !sellOrderExists {
-		log.Info("active position found without stop loss, placing protection")
-
-		stopLossPrice := pos.EntryPrice * (1.0 - sig.StrategyConfig().StopLossPct)
-		_, err := o.exec.CreateStopOrder(
-			ctx, ex, sym, repository.OrderSideSell, pos.Quantity, stopLossPrice, 0, // 0 limit = Stop Market
-		)
+	if price > pos.HighestPrice {
+		log.Info("updating highest price for trailing stop", "old", pos.HighestPrice, "new", price)
+		pos.HighestPrice = price
+		err = o.portfolio.UpdatePosition(ctx, ex, sym, pos)
 		if err != nil {
-			log.Error("failed to place stop loss order", "err", err)
-			return
+			// log the error but proceed to confirm the signal
+			log.Error("failed to update position with new highest price", "err", err)
 		}
 	}
 
-	// Stop loss is created, finalize position activation.
-	pos.StopLossBlock = false
-	err = o.portfolio.UpdatePosition(ctx, ex, sym, pos)
-	if err != nil {
-		log.Error("failed to update position to unblock stop loss", "err", err)
-		return
-	}
-
-	log.Info("stop loss created, activating position and confirming signal")
+	log.Info("position active found, confirming signal")
 	sig.SetInPosition(true, pos.EntryPrice, pos.HighestPrice)
 }
 
@@ -497,8 +452,12 @@ func (o *Orchestrator) signalTrackingSellExit(
 	ctx context.Context,
 	log *slog.Logger,
 	sig *signal_generator.SignalGenerator,
+	price float64,
 ) {
-	pos, err := o.portfolio.GetPosition(ctx, sig.Exchange(), sig.InstrumentSymbol())
+	ex := sig.Exchange()
+	sym := sig.InstrumentSymbol()
+
+	pos, err := o.portfolio.GetPosition(ctx, ex, sym)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Warn("position removed externally or missing, resetting strategy state")
@@ -512,6 +471,57 @@ func (o *Orchestrator) signalTrackingSellExit(
 	if pos.UnknownOrigin {
 		log.Warn("position unlinked during tracking sell exit, resetting strategy state")
 		sig.SetInPosition(false, 0, 0)
+		return
+	}
+
+	stopLossMissing := !pos.StopLossActive
+	if stopLossMissing || price > pos.HighestPrice {
+		// If stop loss is missing, verify if a stop loss is already placed on the exchange.
+		if stopLossMissing {
+			openOrders, err := o.exec.GetOpenOrders(ctx, ex, sym, 10)
+			if err != nil {
+				log.Error("failed to fetch open orders for stop loss verification", "err", err)
+				return
+			}
+			var sellOrderExists bool
+			for _, ord := range openOrders {
+				if ord.Side == repository.OrderSideSell {
+					sellOrderExists = true
+					break
+				}
+			}
+
+			if !sellOrderExists {
+				log.Info("active position found without stop loss, placing protection")
+
+				stopLossPrice := pos.EntryPrice * (1.0 - sig.StrategyConfig().StopLossPct)
+				_, err := o.exec.CreateStopOrder(
+					// limitPrice 0 => Stop Market
+					ctx, ex, sym, repository.OrderSideSell, pos.Quantity, stopLossPrice, 0,
+				)
+				if err != nil {
+					log.Error("failed to place stop loss order", "err", err)
+					return
+				}
+			}
+
+			pos.StopLossActive = true
+		}
+
+		if price > pos.HighestPrice {
+			log.Info("updating highest price for trailing stop", "old", pos.HighestPrice, "new", price)
+			pos.HighestPrice = price
+		}
+
+		err = o.portfolio.UpdatePosition(ctx, ex, sym, pos)
+		if err != nil {
+			if stopLossMissing {
+				log.Error("failed to update position to set stop loss active", "err", err)
+			} else {
+				log.Error("failed to update position with new highest price", "err", err)
+			}
+			return
+		}
 	}
 }
 
@@ -543,19 +553,11 @@ func (o *Orchestrator) signalSell(
 	}
 
 	// Request balance from exchange, if gone, delete position and set strategy to IDLE.
-	asset := strings.Split(sym, "/")[0]
-	balances, err := o.exec.GetBalance(ctx, ex, asset)
-	if err != nil || len(balances) == 0 {
-		if err != nil {
-			log.Error("failed to verify balance on exchange", "err", err)
-		} else {
-			log.Warn("Balance no found on exchange", "asset", asset)
-		}
+	balance, err := o.getBalance(ctx, log, ex, sym)
+	if err != nil {
 		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
-	balance := balances[0]
-
 	if isZeroEps(balance.Total) {
 		log.Info("exchange balance is zero, closing local position and setting strategy to idle")
 		_ = o.portfolio.DeletePosition(ctx, ex, sym)
@@ -563,7 +565,7 @@ func (o *Orchestrator) signalSell(
 		return
 	}
 
-	// Check if we have a market sell order or limit (Stop Loss).
+	// Check if we have a market sell order or limit (stop loss).
 	openOrders, err := o.exec.GetOpenOrders(ctx, ex, sym, 10)
 	if err != nil {
 		log.Error("failed to fetch open orders for sell check", "err", err)
@@ -587,14 +589,13 @@ func (o *Orchestrator) signalSell(
 	}
 
 	if marketSellExists {
-		log.Info("market sell order already in flight, skipping duplication")
+		log.Info("market sell order already in flight, proceeding to avoid duplication")
 		return
 	}
 
 	if stopLossOrder != nil {
 		isProfitTake := price >= pos.EntryPrice
 		if !isProfitTake {
-			// If we should place stop loss, we just proceed as well to keep existing SL order.
 			log.Info("stop loss order already exists on exchange, waiting for fill")
 			return
 		}
@@ -654,18 +655,10 @@ func (o *Orchestrator) signalWaitingSellFill(
 	}
 
 	// Request balance from exchange, if gone, delete position and set strategy to IDLE
-	asset := strings.Split(sym, "/")[0]
-	balances, err := o.exec.GetBalance(ctx, ex, asset)
-	if err != nil || len(balances) == 0 {
-		if err != nil {
-			log.Error("failed to verify balance on exchange", "err", err)
-		} else {
-			log.Warn("Balance no found on exchange", "asset", asset)
-		}
+	balance, err := o.getBalance(ctx, log, ex, sym)
+	if err != nil {
 		return
 	}
-	balance := balances[0]
-
 	if isZeroEps(balance.Total) {
 		log.Info("exchange balance is zero, closing local position and setting strategy to idle")
 		_ = o.portfolio.DeletePosition(ctx, ex, sym)
@@ -701,7 +694,7 @@ func (o *Orchestrator) signalInvalid(
 	log *slog.Logger,
 	sig *signal_generator.SignalGenerator,
 ) {
-	log.Error("Invalid signal received, resyncing the strategy state")
+	log.Error("invalid signal received, resyncing the strategy state")
 
 	pos, err := o.portfolio.GetPosition(ctx, sig.Exchange(), sig.InstrumentSymbol())
 	if err != nil {
@@ -720,4 +713,23 @@ func (o *Orchestrator) signalInvalid(
 
 	log.Info("Set strategy state in position", "entry", pos.EntryPrice, "high", pos.HighestPrice)
 	sig.SetInPosition(true, pos.EntryPrice, pos.HighestPrice)
+}
+
+func (o *Orchestrator) getBalance(
+	ctx context.Context,
+	log *slog.Logger,
+	exchange, instrumentSymbol string,
+) (repository.BalanceData, error) {
+	asset := strings.Split(instrumentSymbol, "/")[0]
+	balances, err := o.exec.GetBalance(ctx, exchange, asset)
+	if err != nil || len(balances) == 0 {
+		if err != nil {
+			log.Error("failed to verify balance on exchange", "err", err)
+		} else {
+			log.Warn("balance no found on exchange", "asset", asset)
+		}
+		return repository.BalanceData{}, fmt.Errorf("failed to get balance")
+	}
+
+	return balances[0], nil
 }

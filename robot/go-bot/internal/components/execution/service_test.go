@@ -134,8 +134,8 @@ func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecu
 	return repository.BalanceData{}, nil
 }
 
-func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor) ([]repository.BalanceData, error) {
-	args := m.Called(ctx, db)
+func (m *MockBalancesRepo) GetAllBalances(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
+	args := m.Called(ctx, db, exchange)
 	return args.Get(0).([]repository.BalanceData), args.Error(1)
 }
 
@@ -277,8 +277,8 @@ func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor,
 	return args.Get(0).(repository.OrderData), args.Error(1)
 }
 
-func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, status []string, limit int) ([]repository.OrderData, error) {
-	args := m.Called(ctx, db, exchangeName, symbol, status, limit)
+func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, statuses, types, sides []string, limit int) ([]repository.OrderData, error) {
+	args := m.Called(ctx, db, exchangeName, symbol, statuses, types, sides, limit)
 	return args.Get(0).([]repository.OrderData), args.Error(1)
 }
 

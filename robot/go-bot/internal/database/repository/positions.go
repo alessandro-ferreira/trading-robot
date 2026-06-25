@@ -27,7 +27,7 @@ type PositionData struct {
 	Quantity         float64
 	EntryPrice       float64
 	HighestPrice     float64
-	StopLossBlock    bool
+	StopLossActive   bool
 	UnknownOrigin    bool
 	Active           bool
 	CreatedAt        time.Time
@@ -68,7 +68,7 @@ func (r *pgPositionsRepo) GetPosition(
 			p.quantity,
 			p.entry_price,
 			p.highest_price,
-			p.stop_loss_block,
+			p.stop_loss_active,
 			p.unknown_origin,
 			p.active,
 			p.created_at,
@@ -90,7 +90,7 @@ func (r *pgPositionsRepo) GetPosition(
 		&pos.Quantity,
 		&pos.EntryPrice,
 		&pos.HighestPrice,
-		&pos.StopLossBlock,
+		&pos.StopLossActive,
 		&pos.UnknownOrigin,
 		&pos.Active,
 		&pos.CreatedAt,
@@ -117,7 +117,7 @@ func (r *pgPositionsRepo) GetActivePositions(
 			p.quantity,
 			p.entry_price,
 			p.highest_price,
-			p.stop_loss_block,
+			p.stop_loss_active,
 			p.unknown_origin,
 			p.active,
 			p.created_at,
@@ -139,7 +139,7 @@ func (r *pgPositionsRepo) GetActivePositions(
 		var pos PositionData
 		if err := rows.Scan(
 			&pos.ID, &pos.ExchangeName, &pos.InstrumentSymbol, &pos.OrderID, &pos.Side,
-			&pos.Quantity, &pos.EntryPrice, &pos.HighestPrice, &pos.StopLossBlock,
+			&pos.Quantity, &pos.EntryPrice, &pos.HighestPrice, &pos.StopLossActive,
 			&pos.UnknownOrigin, &pos.Active, &pos.CreatedAt, &pos.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan position: %w", err)
@@ -175,7 +175,7 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 			quantity = $4,
 			entry_price = $5,
 			highest_price = $6,
-			stop_loss_block = $7,
+			stop_loss_active = $7,
 			unknown_origin = $8,
 			updated_at = NOW(),
 			updated_by = $9
@@ -191,7 +191,7 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 		pos.Quantity,
 		pos.EntryPrice,
 		pos.HighestPrice,
-		pos.StopLossBlock,
+		pos.StopLossActive,
 		pos.UnknownOrigin,
 		DefaultUser,
 	).Scan(&id)
@@ -214,7 +214,7 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 			quantity,
 			entry_price,
 			highest_price,
-			stop_loss_block,
+			stop_loss_active,
 			unknown_origin,
 			active,
 			created_at,
@@ -232,7 +232,7 @@ func (r *pgPositionsRepo) UpsertPosition(ctx context.Context, db DBExecutor, pos
 		pos.Quantity,
 		pos.EntryPrice,
 		pos.HighestPrice,
-		pos.StopLossBlock,
+		pos.StopLossActive,
 		pos.UnknownOrigin,
 		DefaultUser,
 	)

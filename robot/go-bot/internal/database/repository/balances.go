@@ -25,7 +25,7 @@ type BalanceData struct {
 // BalancesRepo defines the interface for interacting with the balances data.
 type BalancesRepo interface {
 	GetBalance(ctx context.Context, db DBExecutor, exchange, asset string) (BalanceData, error)
-	GetAllBalances(ctx context.Context, db DBExecutor) ([]BalanceData, error)
+	GetAllBalances(ctx context.Context, db DBExecutor, exchange string) ([]BalanceData, error)
 	UpsertBalance(ctx context.Context, db DBExecutor, balance BalanceData) (int64, error)
 }
 
@@ -74,9 +74,11 @@ func (r *pgBalancesRepo) GetBalance(
 	return b, nil
 }
 
-// GetAllBalances retrieves all balances from the database, joined with their
-// respective exchange and asset names for easy display.
-func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]BalanceData, error) {
+// GetAllBalances retrieves all balances from the database, optionally filtered by exchange,
+// joined with their respective exchange and asset names for easy display.
+func (r *pgBalancesRepo) GetAllBalances(
+	ctx context.Context, db DBExecutor, exchange string,
+) ([]BalanceData, error) {
 	query := `
 		SELECT
 			b.id,
@@ -88,12 +90,12 @@ func (r *pgBalancesRepo) GetAllBalances(ctx context.Context, db DBExecutor) ([]B
 			b.created_at,
 			b.updated_at
 		FROM trading.balances b
-		INNER JOIN trading.exchanges e ON e.id = b.exchange_id AND e.active
+		INNER JOIN trading.exchanges e ON e.id = b.exchange_id AND ($1 = '' OR e.name = $1) AND e.active
 		INNER JOIN trading.assets a ON a.id = b.asset_id AND a.active
 		WHERE b.active
 		ORDER BY e.name ASC, a.symbol ASC
 	`
-	rows, err := db.Query(ctx, query)
+	rows, err := db.Query(ctx, query, exchange)
 	if err != nil {
 		return nil, err
 	}

@@ -26,8 +26,8 @@ PROTO_FILES := $(PROTO_DIR)/v1/exchange.proto $(PROTO_DIR)/v1/management.proto
 .PHONY: help run proto install-tools pre-commit
 .PHONY: strategy-core clean-strategy
 .PHONY: coverage test test-integration test-all
-.PHONY: db-up db-down db-drop-all debug-db
 .PHONY: install-migrate migrate-up migrate-down migrate-create migrate-force migrate-version
+.PHONY: db-drop-all debug-db
 
 help:
 	@echo "Usage: make <target>"
@@ -44,8 +44,6 @@ help:
 	@echo "  test             Run all unit tests (excluding integration tests)."
 	@echo "  test-integration Run integration tests (requires running DB and Gateway)."
 	@echo "  test-all         Run all unit and integration tests, managing the test environment."
-	@echo "  db-up            Start the test database in the background."
-	@echo "  db-down          Stop and remove the test database."
 	@echo "  install-migrate  Install the golang-migrate CLI tool."
 	@echo "  migrate-up       Apply all database migrations."
 	@echo "  migrate-down     Revert the last database migration."
@@ -87,7 +85,7 @@ pre-commit: install-tools
 # Testing targets
 coverage:
 	@echo "==> Running tests with coverage..."
-	@go test -timeout 30s -coverprofile=coverage.out ./...
+	@go test -tags=unit -timeout 30s -coverprofile=coverage.out ./...
 	@rm -f coverage.out
 
 test: strategy-core
@@ -116,14 +114,6 @@ test-all: strategy-core
 	@$(MAKE) test
 	@echo "==> Running integration tests..."
 	@$(MAKE) test-integration
-
-db-up:
-	@echo "==> Starting test database..."
-	@$(COMPOSE_CMD) up -d test-db
-
-db-down:
-	@echo "==> Tearing down test database..."
-	@$(COMPOSE_CMD) down
 
 # Database Migrations
 install-migrate:

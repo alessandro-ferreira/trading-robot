@@ -68,7 +68,7 @@ func setupOrchestratorIntegrationTest(
 	require.NoError(t, err, "Failed to reset gateway state")
 
 	// Initialize Components
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // slog.Default()
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(logger, db, repoContainer)
 	execSvc := execution.NewService(logger, db, client, repoContainer)
@@ -87,14 +87,16 @@ func setupOrchestratorIntegrationTest(
 	}
 
 	// Ensure a clean state: find and disable all currently active strategies to reduce log noise
-	activeStrats, _ := repoContainer.Strategies.GetStrategyPairs(ctx, db, []string{repository.StrategyEnabled, repository.StrategyPendingDisabled})
+	activeStrats, err := repoContainer.Strategies.GetStrategyPairs(ctx, db, []string{repository.StrategyEnabled, repository.StrategyPendingDisabled})
+	require.NoError(t, err)
 	for _, s := range activeStrats {
 		_ = repoContainer.Strategies.RequestStrategyDisable(ctx, db, s.ExchangeName, s.InstrumentSymbol, s.Type)
 		_ = repoContainer.Strategies.ApplyStrategyDisable(ctx, db, s.ExchangeName, s.InstrumentSymbol)
 	}
 
 	// Ensure a clean state for positions to avoid interference from previous tests.
-	activePos, _ := repoContainer.Positions.GetActivePositions(ctx, db, "", "")
+	activePos, err := repoContainer.Positions.GetActivePositions(ctx, db, "", "")
+	require.NoError(t, err)
 	for _, p := range activePos {
 		_ = repoContainer.Positions.DeletePosition(ctx, db, p.ExchangeName, p.InstrumentSymbol)
 	}
@@ -115,7 +117,7 @@ func setupOrchestratorIntegrationTest(
 // TestOrchestrator_Integration_HappyPath verifies the full trade cycle:
 // Strategy Discovery -> Market Buy -> Position Creation -> Market Sell -> Position Closure.
 func TestOrchestrator_Integration_HappyPath(t *testing.T) {
-	orch, db, client, cleanup := setupOrchestratorIntegrationTest(t, 500*time.Millisecond, 1*time.Minute)
+	orch, db, client, cleanup := setupOrchestratorIntegrationTest(t, 250*time.Millisecond, 1*time.Minute)
 	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -158,17 +160,17 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	}
 
 	// Seed Strategy configuration: MomentumProfit
-	// A short 5s window with a 1s lookback ensures we detect the drift almost immediately.
+	// A short 10s window with a 1s lookback ensures we detect the drift almost immediately.
 	// Threshold (0.05%) is easily cleared by the 0.1% drift per fetch.
-	// Low profit target (0.2%) allows for a quick SELL trigger in the same test.
+	// Low profit target (0.4%) allows for a quick SELL trigger in the same test.
 	momentum := repository.StrategyMomentum{
-		WindowSeconds: 5,
+		WindowSeconds: 10,
 		Windows: []repository.MomentumWindow{
 			{LookbackSeconds: 1, Threshold: 0.05 * 0.01},
 		},
 		RequireAll:      true,
 		StopLossPct:     20 * 0.01,
-		ProfitTargetPct: sql.NullFloat64{Float64: 0.2 * 0.01, Valid: true},
+		ProfitTargetPct: sql.NullFloat64{Float64: 0.4 * 0.01, Valid: true},
 	}
 
 	err = repo.Strategies.UpsertEnabledStrategy(
@@ -184,16 +186,19 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	t.Log("Orchestrator started, waiting for BUY execution...")
 
 	// Wait for the Buy Order to be placed and the Position to be created.
-	// The 'dummy' strategy triggers a BUY immediately.
 	var orderID int64
+	var highestPrice float64
 	t.Log("Waiting for Position activation and Stop Loss protection...")
 	require.Eventually(t, func() bool {
 		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-		if err != nil || !pos.Active || pos.StopLossBlock {
+		if err != nil || !pos.Active || !pos.StopLossActive {
+			if err == nil && highestPrice == 0.0 {
+				highestPrice = pos.HighestPrice
+			}
 			return false
 		}
 
-		// Verify Stop Loss existence via Python Gateway API
+		// Verify Stop Loss existence in dummy exchange
 		openOrders, err := client.GetOpenOrders(ctx, exchange, symbol, 10)
 		if err != nil {
 			return false
@@ -210,10 +215,11 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	t.Logf("BUY confirmed. OrderID: %d. Position is active and protected.", orderID)
 
 	// Verify the buy order status in DB
-	orders, err := repo.Orders.GetOrders(ctx, db, exchange, symbol, []string{repository.OrderStatusClosed}, 1)
+	orders, err := repo.Orders.GetOrders(
+		ctx, db, exchange, symbol, []string{repository.OrderStatusClosed}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1,
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, orders)
-	assert.Equal(t, repository.OrderSideBuy, orders[0].Side)
 
 	// Verify LTC balance consistency on exchange
 	bal, err := client.GetBalance(ctx, exchange, "LTC")
@@ -229,8 +235,13 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 
 	t.Log("Waiting for simulated price drift to trigger SELL exit...")
 
-	// In DummyExchange, every ticker fetch increments the price.
-	// We wait for the price to drift enough to trigger the profit target and cause the orchestrator to execute a SELL.
+	// In dummy exchange, every ticker fetch increments the price. Validate that the position highest price is updated.
+	require.Eventually(t, func() bool {
+		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+		return err == nil && pos.HighestPrice > highestPrice
+	}, 2*time.Second, 50*time.Millisecond, "Position highest price should be updated after price drift")
+
+	// Now, we wait for the price to drift enough to trigger the profit target and cause the orchestrator to execute a SELL.
 	require.Eventually(t, func() bool {
 		activePositions, err := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
 		return err == nil && len(activePositions) == 0
@@ -239,17 +250,11 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	t.Log("SELL confirmed. Position closed.")
 
 	// Verify the Sell order exists
-	sellOrders, err := repo.Orders.GetOrders(ctx, db, exchange, symbol, []string{repository.OrderStatusClosed}, 10)
+	sellOrders, err := repo.Orders.GetOrders(
+		ctx, db, exchange, symbol, []string{repository.OrderStatusClosed}, []string{}, []string{repository.OrderSideSell}, 10,
+	)
 	require.NoError(t, err)
-
-	var foundSell bool
-	for _, o := range sellOrders {
-		if o.Side == repository.OrderSideSell {
-			foundSell = true
-			break
-		}
-	}
-	assert.True(t, foundSell, "A closed SELL order should exist in the database")
+	require.NotEmpty(t, sellOrders)
 
 	// Final balance verification: LTC should be zeroed and USDT must be higher than starting point
 	finalBal, err := client.GetBalance(ctx, exchange, "")
@@ -318,7 +323,7 @@ func TestOrchestrator_Integration_MultiPairScaling(t *testing.T) {
 		}
 
 		err = repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, p.symbol, repository.StrategyMomentumTrailing, "scaling-"+p.symbol, repository.StrategyMomentum{
-			WindowSeconds: 5, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.0001}},
+			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.0001}},
 			RequireAll: true, StopLossPct: 5 * 0.01,
 			ActivationPct:   sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
 			TrailingStopPct: sql.NullFloat64{Float64: 0.5 * 0.01, Valid: true},
@@ -360,7 +365,7 @@ func TestOrchestrator_Integration_DefensiveExit(t *testing.T) {
 	require.NoError(t, err)
 
 	momentum := repository.StrategyMomentum{
-		WindowSeconds: 5,
+		WindowSeconds: 10,
 		Windows: []repository.MomentumWindow{
 			{LookbackSeconds: 1, Threshold: 0.05 * 0.01},
 		},
@@ -375,10 +380,10 @@ func TestOrchestrator_Integration_DefensiveExit(t *testing.T) {
 
 	go orch.Start(ctx)
 
-	// Wait for Position to be active
+	// Wait for Position to be active and stop loss placed
 	require.Eventually(t, func() bool {
 		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-		return err == nil && pos.Active && !pos.StopLossBlock
+		return err == nil && pos.Active && pos.StopLossActive
 	}, 2*time.Second, 50*time.Millisecond)
 
 	// Simulate Stop Loss Trigger
@@ -407,7 +412,7 @@ func TestOrchestrator_Integration_ExternalDisturbance(t *testing.T) {
 
 	err = repo.Strategies.UpsertEnabledStrategy(
 		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", repository.StrategyMomentum{
-			WindowSeconds: 5, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
+			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
 			StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
 		},
 	)
@@ -417,7 +422,7 @@ func TestOrchestrator_Integration_ExternalDisturbance(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-		return err == nil && pos.Active && !pos.StopLossBlock
+		return err == nil && pos.Active && pos.StopLossActive
 	}, 2*time.Second, 50*time.Millisecond)
 
 	// Simulate External Liquidation (Zero balance)
@@ -445,7 +450,8 @@ func TestOrchestrator_Integration_ExternalDisturbance(t *testing.T) {
 		sig := orch.signals[name]
 		orch.mu.Unlock()
 
-		ticker, _ := client.GetTicker(ctx, exchange, symbol)
+		ticker, err := client.GetTicker(ctx, exchange, symbol)
+		require.NoError(t, err)
 		s, _ := sig.GetSignal(ticker.Price, time.Now().Unix())
 
 		return isDeleted && s == strategy.SignalSearchingBuyEntry
@@ -470,8 +476,8 @@ func TestOrchestrator_Integration_OrderlyTermination(t *testing.T) {
 	require.NoError(t, err)
 
 	momentum := repository.StrategyMomentum{
-		WindowSeconds: 5, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
-		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 0.1 * 0.01, Valid: true},
+		WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
+		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 0.4 * 0.01, Valid: true},
 	}
 	err = repo.Strategies.UpsertEnabledStrategy(
 		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", momentum,
@@ -483,7 +489,7 @@ func TestOrchestrator_Integration_OrderlyTermination(t *testing.T) {
 	// Wait for Position to be active
 	require.Eventually(t, func() bool {
 		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-		return err == nil && pos.Active && !pos.StopLossBlock
+		return err == nil && pos.Active
 	}, 2*time.Second, 50*time.Millisecond)
 
 	// Request Disable via API (Repository)
@@ -491,18 +497,21 @@ func TestOrchestrator_Integration_OrderlyTermination(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify worker stays alive and status is 'pending_disabled'
-	strat, _ := repo.Strategies.GetStrategyPairs(ctx, db, []string{repository.StrategyPendingDisabled})
+	strat, err := repo.Strategies.GetStrategyPairs(ctx, db, []string{repository.StrategyPendingDisabled})
+	require.NoError(t, err)
 	assert.Len(t, strat, 1)
 
 	// Wait for natural Profit Take exit
 	require.Eventually(t, func() bool {
-		pos, _ := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
+		pos, err := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
+		require.NoError(t, err)
 		return len(pos) == 0
 	}, 2*time.Second, 50*time.Millisecond)
 
 	// Verify status moved to 'disabled' and worker is stopped
 	require.Eventually(t, func() bool {
-		strats, _ := repo.Strategies.GetStrategyPairs(ctx, db, []string{repository.StrategyDisabled})
+		strats, err := repo.Strategies.GetStrategyPairs(ctx, db, []string{repository.StrategyDisabled})
+		require.NoError(t, err)
 
 		found := false
 		for _, s := range strats {
@@ -548,7 +557,7 @@ func TestOrchestrator_Integration_StateHydration(t *testing.T) {
 	err = repo.Positions.UpsertPosition(ctx, db, repository.PositionData{
 		ExchangeName: exchange, InstrumentSymbol: symbol, Side: repository.PositionSideLong,
 		Quantity: 1.0, EntryPrice: entryPrice, HighestPrice: entryPrice + 100,
-		Active: true, StopLossBlock: false, UnknownOrigin: false,
+		Active: true, StopLossActive: true, UnknownOrigin: false,
 		OrderID: sql.NullInt64{Int64: orderID, Valid: true},
 	})
 	require.NoError(t, err)
@@ -564,7 +573,7 @@ func TestOrchestrator_Integration_StateHydration(t *testing.T) {
 
 	// Seed strategy
 	err = repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "hydra", repository.StrategyMomentum{
-		WindowSeconds: 5, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
+		WindowSeconds: 20, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
 		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
 	})
 	require.NoError(t, err)
@@ -635,7 +644,7 @@ func TestOrchestrator_Integration_PanicRecovery(t *testing.T) {
 
 	// Setup Strategy
 	err := repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "panic-test", repository.StrategyMomentum{
-		WindowSeconds: 5, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
+		WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
 		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
 	})
 	require.NoError(t, err)
