@@ -2,6 +2,10 @@
 
 This repository contains a suite of tools for automated trading.
 
+> **Status:** Active development.
+
+The overall system architecture is documented in `robot/ARCHITECTURE.md`.
+
 ## Project Structure
 
 The repository is structured around a central trading system supported by specialized auxiliary tools:
@@ -12,7 +16,16 @@ The repository is structured around a central trading system supported by specia
 ### Auxiliary Tools
 - `ml-engine`: A C++ service for machine learning inference, optimizing trading models and communicating strategic insights to the robot via the Management gRPC API.
 
-For more information and setup instructions, please see the `README.md` file within each respective directory.
+## Documentation
+
+Each project contains its own documentation and setup instructions.
+
+- `robot/README.md`
+- `robot/ARCHITECTURE.md`
+- `robot/go-bot/README.md`
+- `robot/python-gateway/README.md`
+- `robot/strategy-core/README.md`
+- `ml-engine/README.md`
 
 ## Code Quality
 
@@ -30,3 +43,11 @@ Follow these steps after setting up your Go, Python and C++ environments:
     ```bash
     pre-commit install --hook-type pre-commit --hook-type commit-msg
     ```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Disclaimer
+
+This software is for educational, research, and portfolio purposes only. It is not financial advice, and it does not guarantee profitable trading. Cryptocurrency trading involves substantial risk of financial loss. The author accepts no responsibility or liability for any financial losses or damages incurred from using or modifying this software.

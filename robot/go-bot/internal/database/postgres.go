@@ -37,5 +37,10 @@ func NewDBPool(ctx context.Context, dbConfig config.DatabaseConfig) (*DB, error)
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("database ping failed: %w", err)
+	}
+
 	return New(pool), nil
 }

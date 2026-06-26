@@ -112,8 +112,7 @@ def load(path: str) -> Config:
             data = tomllib.load(f)
             return load_from_dict(data)
     except FileNotFoundError:
-        logging.warning(f"Config file not found at {path}. Using default values.")
-        return Config()
+        raise FileNotFoundError(f"configuration file not found: {path}")
     except tomllib.TOMLDecodeError as e:
         logging.error(f"Failed to decode TOML file: {e}")
         raise

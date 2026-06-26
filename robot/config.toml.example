@@ -47,6 +47,7 @@ name = "dummy"
 sandbox_mode = false
 # if ccxt is false exchange must have a custom implementation
 ccxt = false
+health_check = true
 
 [[exchange]]
 name = "binance"

@@ -40,10 +40,8 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(first_ex.name, "mercadobitcoin")
 
     def test_load_nonexistent_file(self):
-        cfg = config.load("nonexistent.toml")
-        self.assertIsInstance(cfg, config.Config)
-        # Defaults for an empty config usually mean 0 exchanges
-        self.assertEqual(len(cfg.exchanges), 0)
+        with self.assertRaises(FileNotFoundError):
+            config.load("nonexistent.toml")
 
 
 # To run this test directly, use:

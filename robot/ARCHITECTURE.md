@@ -10,7 +10,15 @@ The system is designed as a set of decoupled projects to leverage the best techn
 -   **Python (`python-gateway`)**: To provide a flexible bridge to various exchanges, leveraging a factory pattern to select the appropriate connector (e.g., `ccxt` or custom implementations).
 -   **C++ (`strategy-core`)**: For a high-performance, extensible strategy engine, designed with a component-based architecture that can be easily adapted and tested.
 
-## 2. Technology Stack
+## 2. Architectural Principles
+
+- Exchange-agnostic trading engine.
+- One active position per exchange/instrument.
+- Strategy execution isolated from orchestration.
+- Explicit reconciliation after failures or restart.
+- Clear component boundaries with minimal shared state.
+
+## 3. Technology Stack
 
 -   **Primary Language (Core Bot):** Go
 -   **Exchange Gateway:** Python
@@ -20,7 +28,7 @@ The system is designed as a set of decoupled projects to leverage the best techn
 -   **Database Access:** Raw SQL queries via the `pgx` library in Go (No ORM).
 -   **Configuration:** TOML
 
-## 3. High-Level Architecture
+## 4. High-Level Architecture
 
 The system is composed of three main projects:
 

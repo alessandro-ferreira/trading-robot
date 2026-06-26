@@ -28,7 +28,7 @@ func TestNewDBPool(t *testing.T) {
 			expectedErrContains: "failed to parse database config",
 		},
 		{
-			name: "Constructor Success",
+			name: "Constructor Success, error on ping",
 			dbConfig: config.DatabaseConfig{
 				Host:    "localhost",
 				Port:    5432,
@@ -36,7 +36,7 @@ func TestNewDBPool(t *testing.T) {
 				DBName:  "test_db",
 				SSLMode: "disable",
 			},
-			expectedErrContains: "",
+			expectedErrContains: "database ping failed",
 		},
 	}
 

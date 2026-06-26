@@ -112,6 +112,30 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	log := o.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	log.Info("Processing signal")
 
+	var signal strategy.StrategySignal
+
+	defer func() {
+		// Termination logic: if scheduled to disable and no position is active, finalize.
+		if !sig.IsPendingTerminate() || signal != strategy.SignalSearchingBuyEntry {
+			return
+		}
+
+		_, err := o.portfolio.GetPosition(ctx, exchange, instrumentSymbol)
+		if err != nil && errors.Is(err, pgx.ErrNoRows) {
+			log.Info("Applying strategy disablement for pending_disabled pair")
+
+			if err := o.repo.Strategies.ApplyStrategyDisable(
+				ctx, o.db, exchange, instrumentSymbol,
+			); err != nil {
+				log.Error("Failed to apply strategy disablement", "err", err)
+			} else {
+				o.stopWorker(sig.Name())
+			}
+		} else if err != nil {
+			log.Error("error checking position for pending disablement", "err", err)
+		}
+	}()
+
 	// Fetch latest price for valuation and sizing
 	ticker, err := o.exec.GetTicker(ctx, exchange, instrumentSymbol)
 	if err != nil {
@@ -121,7 +145,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	price := ticker.Price
 
 	// Update strategy with latest price and get next signal
-	signal, err := sig.GetSignal(price, time.Now().Unix())
+	signal, err = sig.GetSignal(price, time.Now().Unix())
 	if err != nil {
 		log.Error("strategy update price and get signal failed", "err", err)
 		return
@@ -152,24 +176,6 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		o.signalInvalid(ctx, log, sig)
 	default:
 		log.Error("unknown signal received: ", "signal", signal.String())
-	}
-
-	// Termination logic: if scheduled to disable and no position is active, finalize.
-	if sig.IsPendingTerminate() && signal == strategy.SignalSearchingBuyEntry {
-		_, err := o.portfolio.GetPosition(ctx, exchange, instrumentSymbol)
-		if err != nil && errors.Is(err, pgx.ErrNoRows) {
-			log.Info("Applying strategy disablement for pending_disabled pair")
-
-			if err := o.repo.Strategies.ApplyStrategyDisable(
-				ctx, o.db, exchange, instrumentSymbol,
-			); err != nil {
-				log.Error("Failed to apply strategy disablement", "err", err)
-			} else {
-				o.stopWorker(sig.Name())
-			}
-		} else if err != nil {
-			log.Error("error checking position for pending disablement", "err", err)
-		}
 	}
 }
 
