@@ -2,6 +2,9 @@ import unittest
 import logging
 import io
 import json
+import os
+import tempfile
+from datetime import datetime
 from unittest.mock import patch
 
 from core import config, logger
@@ -64,6 +67,47 @@ class LoggerTest(unittest.TestCase):
         logger.setup(log_config)
         logging.info("covered default stream")
         self.assertIn("INFO", mock_stdout.getvalue())
+
+    def test_file_logging(self):
+        """Tests that the logger correctly writes to a file when configured."""
+        with tempfile.NamedTemporaryFile(mode="w+", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+
+        try:
+            log_config = config.LogConfig(level="info", format="text", path=tmp_path)
+            # When path is set, it uses FileHandler
+            logger.setup(log_config)
+            logging.info("file log test")
+
+            with open(tmp_path, "r") as f:
+                content = f.read()
+
+            self.assertIn("INFO", content)
+            self.assertIn("file log test", content)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def test_rotate_logging(self):
+        """Tests that the logger appends the date to the filename when rotate is True."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_path = os.path.join(tmp_dir, "test.log")
+            log_config = config.LogConfig(
+                level="info", format="text", path=base_path, rotate=True
+            )
+
+            logger.setup(log_config)
+            logging.info("rotate test")
+
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            expected_path = os.path.join(tmp_dir, f"test-{date_str}.log")
+
+            self.assertTrue(
+                os.path.exists(expected_path), f"File {expected_path} should exist"
+            )
+            with open(expected_path, "r") as f:
+                content = f.read()
+            self.assertIn("rotate test", content)
 
 
 # To run this test directly, use:

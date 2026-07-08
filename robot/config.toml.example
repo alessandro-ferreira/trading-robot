@@ -7,12 +7,6 @@ refresh_strat_interval = "1m"       # Time interval for refreshing valid strateg
 default_exchange_timeout = "10s"    # Default timeout for exchange operations.
 shutdown_timeout = "10s"            # Time to wait for graceful shutdown before force-quitting.
 
-# Logging configuration
-[log]
-level = "info"    # Log level: "debug", "info", "warn", "error"
-format = "text"   # Log format: "text" or "json"
-source = true     # Enable source file and line number in logs
-
 # gRPC server settings
 [grpc]
 go_bot_address = "localhost:50050"          # Not used by go-bot, but for other potential clients
@@ -28,6 +22,22 @@ user = "robot_user"
 password = "your_password"
 dbname = "trading_db"
 sslmode = "disable" # Use "require" or "verify-full" in production
+
+# Go Bot Logging configuration
+[go_log]
+level = "info"                  # Log level: "debug", "info", "warn", "error"
+format = "text"                 # Log format: "text" or "json"
+path = "/var/log/go-bot.log"    # (Optional) File path to save logs. If empty, logs to stdout.
+rotate = true                   # (Optional) If true, appends "-YYYY-MM-DD" to the log filename.
+source = true                   # Enable source file and line number in logs
+
+# Python Gateway Logging configuration
+[python_log]
+level = "info"    # Log level: "debug", "info", "warn", "error"
+format = "text"   # Log format: "text" or "json"
+path = ""         # (Optional) File path to save logs. If empty, logs to stdout.
+rotate = false    # (Optional) If true, appends "-YYYY-MM-DD" to the log filename.
+source = true     # Enable source file and line number in logs
 
 # Health Check Configuration
 [health_check]

@@ -23,7 +23,7 @@ const (
 )
 
 // DefaultWarmupWindow is used when a strategy configuration (like dummy) doesn't specify a window.
-const DefaultWarmupWindow = 300
+const DefaultWarmupWindowSeconds = 300
 
 // MomentumWindow represents the trading.momentum_window composite type.
 type MomentumWindow struct {
@@ -44,14 +44,14 @@ type StrategyMomentum struct {
 
 // StrategyPair represents metadata from the trading.strategy_pairs table.
 type StrategyPair struct {
-	ExchangeName     string
-	InstrumentSymbol string
-	Type             string
-	Status           string
-	WarmupWindow     int
-	Momentum         StrategyMomentum
-	CreatedAt        time.Time
-	UpdatedAt        sql.NullTime
+	ExchangeName        string
+	InstrumentSymbol    string
+	Type                string
+	Status              string
+	WarmupWindowSeconds int
+	Momentum            StrategyMomentum
+	CreatedAt           time.Time
+	UpdatedAt           sql.NullTime
 }
 
 // StrategiesRepo defines the interface for managing strategy configurations.
@@ -146,9 +146,9 @@ func (r *pgStrategiesRepo) GetStrategyPairs(
 
 		if windowSeconds.Valid {
 			p.Momentum.WindowSeconds = int(windowSeconds.Int32)
-			p.WarmupWindow = p.Momentum.WindowSeconds
+			p.WarmupWindowSeconds = p.Momentum.WindowSeconds
 		} else {
-			p.WarmupWindow = DefaultWarmupWindow
+			p.WarmupWindowSeconds = DefaultWarmupWindowSeconds
 		}
 
 		p.Momentum.RequireAll = requireAll.Bool

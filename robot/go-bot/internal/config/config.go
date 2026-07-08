@@ -11,7 +11,7 @@ import (
 // Config holds the application's configuration.
 type Config struct {
 	Server    ServerConfig      `toml:"server"`
-	Log       LogConfig         `toml:"log"`
+	Log       LogConfig         `toml:"go_log"`
 	Database  DatabaseConfig    `toml:"database"`
 	GRPC      GRPCConfig        `toml:"grpc"`
 	Health    HealthCheckConfig `toml:"health_check"`
@@ -31,6 +31,8 @@ type ServerConfig struct {
 type LogConfig struct {
 	Level  string `toml:"level"`
 	Format string `toml:"format"`
+	Path   string `toml:"path"`
+	Rotate bool   `toml:"rotate"`
 	Source bool   `toml:"source"`
 }
 

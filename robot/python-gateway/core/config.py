@@ -25,6 +25,8 @@ class LogConfig:
 
     level: str = "info"
     format: str = "text"
+    path: str = ""
+    rotate: bool = False
     source: bool = False
 
 
@@ -81,9 +83,11 @@ def load_from_dict(data: dict) -> Config:
             "python_gateway_address", cfg.grpc.python_gateway_address
         )
 
-    if log_data := data.get("log"):
+    if log_data := data.get("python_log"):
         cfg.log.level = log_data.get("level", cfg.log.level)
         cfg.log.format = log_data.get("format", cfg.log.format)
+        cfg.log.path = log_data.get("path", cfg.log.path)
+        cfg.log.rotate = log_data.get("rotate", cfg.log.rotate)
         cfg.log.source = log_data.get("source", cfg.log.source)
 
     global_default = cfg.server.default_exchange_timeout

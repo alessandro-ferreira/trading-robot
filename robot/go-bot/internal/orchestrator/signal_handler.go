@@ -42,9 +42,9 @@ func (o *Orchestrator) initSignalHandler(
 	log.Info("Init signal generator")
 
 	// Load historical ticks and risk configuration
-	intervalSeconds := max(int(o.cfg.Server.OrchestratorInterval.Seconds()), 1)
+	sinceEpoch := time.Now().Unix() - int64(p.WarmupWindowSeconds)
 	ticks, err := o.repo.MarketData.GetMarketDataTicks(
-		ctx, o.db, p.ExchangeName, p.InstrumentSymbol, (p.WarmupWindow/intervalSeconds)+1,
+		ctx, o.db, p.ExchangeName, p.InstrumentSymbol, sinceEpoch,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetch warmup data failed %w", err)

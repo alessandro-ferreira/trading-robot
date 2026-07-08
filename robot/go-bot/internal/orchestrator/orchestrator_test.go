@@ -43,8 +43,8 @@ func (m *MockStrategiesRepo) ApplyStrategyDisable(ctx context.Context, db reposi
 
 type MockMarketDataRepo struct{ mock.Mock }
 
-func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db repository.DBExecutor, ex, sym string, lim int) ([]repository.MarketDataTick, error) {
-	args := m.Called(ctx, db, ex, sym, lim)
+func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db repository.DBExecutor, ex, sym string, since int64) ([]repository.MarketDataTick, error) {
+	args := m.Called(ctx, db, ex, sym, since)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

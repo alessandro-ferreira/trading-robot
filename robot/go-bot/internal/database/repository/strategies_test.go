@@ -41,14 +41,14 @@ func getSampleStrategyPair() StrategyPair {
 	// Truncate to seconds to avoid precision issues with database timestamp comparisons
 	now := time.Now().Truncate(time.Second)
 	return StrategyPair{
-		ExchangeName:     "binance",
-		InstrumentSymbol: "BTC/USDT",
-		Status:           StrategyEnabled,
-		Type:             StrategyMomentumTrailing,
-		WarmupWindow:     300,
-		Momentum:         getSampleMomentum(),
-		CreatedAt:        now,
-		UpdatedAt:        sql.NullTime{Time: now, Valid: true},
+		ExchangeName:        "binance",
+		InstrumentSymbol:    "BTC/USDT",
+		Status:              StrategyEnabled,
+		Type:                StrategyMomentumTrailing,
+		WarmupWindowSeconds: 300,
+		Momentum:            getSampleMomentum(),
+		CreatedAt:           now,
+		UpdatedAt:           sql.NullTime{Time: now, Valid: true},
 	}
 }
 
@@ -102,7 +102,7 @@ func TestPgStrategiesRepo_GetStrategyPairs(t *testing.T) {
 			expectedCount: 1,
 			validate: func(t *testing.T, results []StrategyPair) {
 				assert.Equal(t, "dummy", results[0].Type)
-				assert.Equal(t, DefaultWarmupWindow, results[0].WarmupWindow)
+				assert.Equal(t, DefaultWarmupWindowSeconds, results[0].WarmupWindowSeconds)
 				assert.Empty(t, results[0].Momentum.Windows)
 			},
 		},

@@ -94,6 +94,14 @@ TEST(SlidingWindowTest, InitWithSmallHistory) {
     EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(50), 10.0);
 }
 
+TEST(SlidingWindowTest, InitToleratesPriceJumpWithLargeGap) {
+    SlidingWindowPriceState state(100);
+    // 3600s gap between first and second point
+    vector<PricePoint> history = {{100, 100.0}, {3700, 200.0}};
+    EXPECT_TRUE(state.Init(history));
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 200.0);
+}
+
 TEST(SlidingWindowTest, ReadyStateRevertsOnGap) {
     SlidingWindowPriceState state(100);
     state.UpdatePrice({100, 10.0});
@@ -148,6 +156,21 @@ TEST(SlidingWindowTest, RejectsUnrealisticPriceJumps) {
     // Attempt to update with a valid <10% price jump (100 -> 105). Should be accepted.
     EXPECT_TRUE(state.UpdatePrice({102, 105.0}));
     EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 105.0);
+}
+
+TEST(SlidingWindowTest, ToleratesUnrealisticPriceJumpWithLargeGap) {
+    SlidingWindowPriceState state(100);
+    state.UpdatePrice({100, 100.0});
+
+    // Case 1: Small gap, large price jump -> should be rejected
+    // Gap = 10s (< 300s), Jump = 10% (> 5%)
+    EXPECT_FALSE(state.UpdatePrice({110, 110.0}));
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 100.0);
+
+    // Case 2: Large gap, large price jump -> should be accepted
+    // Gap = 301s (> 300s), Jump = 10% (> 5%)
+    EXPECT_TRUE(state.UpdatePrice({411, 110.0}));
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 110.0);
 }
 
 TEST(SlidingWindowTest, RejectsZeroOrNegativePrice) {

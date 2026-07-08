@@ -7,9 +7,13 @@ using std::vector;
 namespace trading {
 
 namespace {
-const double MAX_TICK_PRICE_CHANGE = 0.05;    // 5% max change per tick to filter out bad data
+
+const int MAX_GAP_FOR_PRICE_JUMP_CHECK = 300;  // Max gap between ticks to enforce unrealistic price jump check
+const double MAX_TICK_PRICE_CHANGE = 0.05;     // 5% max change per tick to filter out bad data
+
 const int CUTOFF_TOLERANCE_SECONDS = 60;      // Tolerance for evicting old entries beyond the window duration
 const long long MAX_LOOKBACK_STALENESS = 60;  // Max seconds a price point can be stale for a lookback
+
 }  // namespace
 
 SlidingWindowPriceState::SlidingWindowPriceState(long long window_seconds) {
@@ -43,8 +47,10 @@ bool SlidingWindowPriceState::Init(const vector<PricePoint>& history) {
                 return false;
             }
 
-            if (std::abs((p.price - prev.price) / prev.price) > MAX_TICK_PRICE_CHANGE) {
-                continue;
+            if ((p.timestamp - prev.timestamp) < MAX_GAP_FOR_PRICE_JUMP_CHECK) {
+                if (std::abs((p.price - prev.price) / prev.price) > MAX_TICK_PRICE_CHANGE) {
+                    continue;
+                }
             }
         }
 
@@ -73,9 +79,13 @@ bool SlidingWindowPriceState::UpdatePrice(const PricePoint& tick) {
 
     // Sanity check: ignore ticks that represent an unrealistic price jump.
     if (!entries_.empty()) {
-        const double previous_price = entries_.back().price;
-        if (std::abs((tick.price - previous_price) / previous_price) > MAX_TICK_PRICE_CHANGE) {
-            return false;
+        const auto& prev = entries_.back();
+        // Only check for unrealistic jumps if the time gap is not too large
+        // to avoid being stuck on a long gap of missing data.
+        if ((tick.timestamp - prev.timestamp) < MAX_GAP_FOR_PRICE_JUMP_CHECK) {
+            if (std::abs((tick.price - prev.price) / prev.price) > MAX_TICK_PRICE_CHANGE) {
+                return false;
+            }
         }
     }
 

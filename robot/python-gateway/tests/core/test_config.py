@@ -15,6 +15,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.grpc.python_gateway_address, "localhost:9999")
         self.assertEqual(cfg.log.level, "debug")
         self.assertEqual(cfg.log.format, "json")
+        self.assertEqual(cfg.log.rotate, True)
         self.assertEqual(cfg.log.source, True)
 
         # Accessing the first exchange in the list
@@ -33,6 +34,8 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.grpc.python_gateway_address, "[::]:50051")
         self.assertEqual(cfg.log.level, "info")
         self.assertEqual(cfg.log.format, "text")
+        self.assertEqual(cfg.log.path, "")
+        self.assertEqual(cfg.log.rotate, False)
         self.assertEqual(cfg.log.source, False)
 
         self.assertEqual(len(cfg.exchanges), 1)

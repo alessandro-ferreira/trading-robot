@@ -110,7 +110,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 	}{
 		{
 			name: "Success Initialization",
-			pair: repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy", WarmupWindow: 10},
+			pair: repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Type: "dummy", WarmupWindowSeconds: 10},
 			setup: func(o *Orchestrator, repo *repository.Container, mPf *MockPortfolio, mExec *MockExecutionService) {
 				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything).
 					Return([]repository.MarketDataTick{{Price: 50000}}, nil).Once()
@@ -122,7 +122,7 @@ func TestOrchestrator_InitSignalHandler(t *testing.T) {
 		},
 		{
 			name: "Warmup Data Failure",
-			pair: repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", WarmupWindow: 10},
+			pair: repository.StrategyPair{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", WarmupWindowSeconds: 10},
 			setup: func(o *Orchestrator, repo *repository.Container, mPf *MockPortfolio, mExec *MockExecutionService) {
 				repo.MarketData.(*MockMarketDataRepo).On("GetMarketDataTicks", mock.Anything, mock.Anything, "binance", "BTC/USDT", mock.Anything).
 					Return(nil, errors.New("db disconnect")).Once()

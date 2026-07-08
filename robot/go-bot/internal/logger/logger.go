@@ -1,18 +1,75 @@
 package logger
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"trading/robot/go-bot/internal/config"
 )
 
-// Setup configures the global structured logger to write to os.Stdout.
+// DailyRotatingWriter implements io.Writer and handles daily log rotation.
+type DailyRotatingWriter struct {
+	mu       sync.Mutex
+	basePath string
+	rotate   bool
+	current  *os.File
+	lastDate string
+}
+
+func NewDailyRotatingWriter(basePath string, rotate bool) *DailyRotatingWriter {
+	return &DailyRotatingWriter{
+		basePath: basePath,
+		rotate:   rotate,
+	}
+}
+
+func (w *DailyRotatingWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	date := time.Now().Format("2006-01-02")
+
+	if w.current != nil && (w.lastDate != date && w.rotate) {
+		w.current.Close()
+		w.current = nil
+	}
+
+	if w.current == nil {
+		logPath := w.basePath
+		if w.rotate {
+			ext := filepath.Ext(w.basePath)
+			base := strings.TrimSuffix(w.basePath, ext)
+			logPath = fmt.Sprintf("%s-%s%s", base, date, ext)
+		}
+
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			// If we fail to open the log file, write to stdout to avoid failing silently
+			os.Stdout.Write([]byte(fmt.Sprintf("failed to open log file %s: %v\n", logPath, err)))
+			return os.Stdout.Write(p)
+		}
+		w.current = f
+		w.lastDate = date
+	}
+
+	return w.current.Write(p)
+}
+
+// Setup configures the global structured logger.
 func Setup(cfg config.LogConfig) {
-	logger := New(os.Stdout, cfg)
+	var w io.Writer = os.Stdout
+
+	if cfg.Path != "" {
+		w = NewDailyRotatingWriter(cfg.Path, cfg.Rotate)
+	}
+
+	logger := New(w, cfg)
 	slog.SetDefault(logger)
 }
 

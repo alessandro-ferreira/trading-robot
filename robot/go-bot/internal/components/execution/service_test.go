@@ -26,8 +26,8 @@ type MockMarketDataRepo struct {
 	mock.Mock
 }
 
-func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, limit int) ([]repository.MarketDataTick, error) {
-	args := m.Called(ctx, db, exchangeName, symbol, limit)
+func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db repository.DBExecutor, exchangeName, symbol string, since int64) ([]repository.MarketDataTick, error) {
+	args := m.Called(ctx, db, exchangeName, symbol, since)
 	return args.Get(0).([]repository.MarketDataTick), args.Error(1)
 }
 

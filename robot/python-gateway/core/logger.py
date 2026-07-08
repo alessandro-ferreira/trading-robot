@@ -3,6 +3,7 @@ import sys
 import json
 import os
 
+from datetime import datetime
 from core.config import LogConfig
 
 # Determine the project root directory (one level up from core/)
@@ -64,14 +65,26 @@ def setup(cfg: LogConfig, stream=None):
     root_logger = logging.getLogger()
     root_logger.setLevel(cfg.level.upper())
 
-    # Remove all existing handlers to prevent duplicate logs
+    # Remove and close all existing handlers to prevent duplicate logs
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
+        handler.close()
 
     if stream is None:
         stream = sys.stdout
 
     handler = logging.StreamHandler(stream)
+    # If a log file path is specified, add a FileHandler to log to that file.
+    if cfg.path:
+        log_path = cfg.path
+        if cfg.rotate:
+            base, ext = os.path.splitext(log_path)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            log_path = f"{base}-{date_str}{ext}"
+        try:
+            handler = logging.FileHandler(log_path)
+        except Exception as e:
+            print(f"Failed to setup file logger at {log_path}: {e}", file=sys.stderr)
     handler.addFilter(RequestIDFilter())
 
     formatter: logging.Formatter

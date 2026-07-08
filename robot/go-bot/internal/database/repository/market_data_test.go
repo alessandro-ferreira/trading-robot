@@ -41,22 +41,22 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 		name                string
 		exchange            string
 		symbol              string
-		limit               int
+		sinceEpoch          int64
 		setupMock           func(mockDB pgxmock.PgxPoolIface)
 		expectedErrContains string
 		assertResult        func(t *testing.T, ticks []MarketDataTick)
 	}{
 		{
-			name:     "Success",
-			exchange: tick1.ExchangeName,
-			symbol:   tick1.Symbol,
-			limit:    2,
+			name:       "Success",
+			exchange:   tick1.ExchangeName,
+			symbol:     tick1.Symbol,
+			sinceEpoch: 1000,
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows(columns).
 					AddRow(toTickRow(tick1)...).
 					AddRow(toTickRow(tick2)...)
-				mockDB.ExpectQuery("SELECT tick_unix_at, price").
-					WithArgs(tick1.ExchangeName, tick1.Symbol, 2).
+				mockDB.ExpectQuery("SELECT t.tick_unix_at, t.price").
+					WithArgs(tick1.ExchangeName, tick1.Symbol, int64(1000)).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, ticks []MarketDataTick) {
@@ -65,13 +65,13 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 			},
 		},
 		{
-			name:     "Query Error",
-			exchange: "binance",
-			symbol:   "BTC/USDT",
-			limit:    2,
+			name:       "Query Error",
+			exchange:   "binance",
+			symbol:     "BTC/USDT",
+			sinceEpoch: 1000,
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
-				mockDB.ExpectQuery("SELECT tick_unix_at, price").
-					WithArgs("binance", "BTC/USDT", 2).
+				mockDB.ExpectQuery("SELECT t.tick_unix_at, t.price").
+					WithArgs("binance", "BTC/USDT", int64(1000)).
 					WillReturnError(errors.New("db query error"))
 			},
 			expectedErrContains: "failed to get market data ticks",
@@ -85,7 +85,7 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 			defer mockDB.Close()
 
 			tc.setupMock(mockDB)
-			result, err := repo.GetMarketDataTicks(context.Background(), mockDB, tc.exchange, tc.symbol, tc.limit)
+			result, err := repo.GetMarketDataTicks(context.Background(), mockDB, tc.exchange, tc.symbol, tc.sinceEpoch)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
