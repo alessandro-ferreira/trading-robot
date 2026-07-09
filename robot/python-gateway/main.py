@@ -61,9 +61,11 @@ def serve():
         # This is a non-blocking call that causes wait_for_termination() to unblock.
         server.stop(grace=1)
 
-    # Register the handler for SIGINT (Ctrl+C) and SIGTERM.
+    # Register the handler for various termination signals to ensure graceful shutdown.
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGHUP, handle_shutdown)
+    signal.signal(signal.SIGQUIT, handle_shutdown)
 
     # Block the main thread until the server is stopped by the signal handler.
     server.wait_for_termination()

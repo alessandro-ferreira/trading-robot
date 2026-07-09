@@ -1,3 +1,3 @@
 -- Delete exchanges
 DELETE FROM trading.exchanges
-WHERE name IN ('binance', 'coinbase', 'mercadobitcoin', 'dummy');
+WHERE name IN ('binance', 'mercadobitcoin', 'dummy');

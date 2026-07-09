@@ -112,6 +112,15 @@ def map_order(
         otype = "limit" if is_limit else "market"
         price = float(order.get("price") or getattr(req, "price", 0.0) or 0.0)
 
+    # Handle fee information, which may be a dict or a simple value
+    fee = order.get("fee")
+    if isinstance(fee, dict):
+        fee_cost = float(fee.get("cost") or 0.0)
+        fee_currency = str(fee.get("currency") or "")
+    else:
+        fee_cost = float(fee or 0.0)
+        fee_currency = str(order.get("fee_currency") or "")
+
     return exchange_pb2.OrderResponse(
         id=oid,
         symbol=order.get("symbol", getattr(req, "symbol", "")),
@@ -126,6 +135,6 @@ def map_order(
         average=float(order.get("average") or 0.0),
         client_order_id=str(order.get("clientOrderId") or ""),
         timestamp=int(order.get("timestamp") or 0),
-        fee=float(order.get("fee") or 0.0),
-        fee_currency=str(order.get("fee_currency") or ""),
+        fee=fee_cost,
+        fee_currency=fee_currency,
     )

@@ -28,8 +28,10 @@ import (
 
 func main() {
 
-	// Create a context that is canceled on a SIGINT or SIGTERM signal.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	// Create a context that is canceled when an interrupt signal is received.
+	ctx, stop := signal.NotifyContext(
+		context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT,
+	)
 	defer stop()
 
 	// --- Configuration & Logger ---

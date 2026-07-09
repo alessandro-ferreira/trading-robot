@@ -202,15 +202,15 @@ class TestExchangeService(unittest.TestCase):
     def test_get_balance_whitelisting(self):
         """Verify that unsupported assets are filtered out."""
         self.mock_exchange.fetch_balance.return_value = {
-            "free": {"USDT": 1000.0, "SHIB": 9999999.0},
-            "used": {"USDT": 0.0, "SHIB": 0.0},
-            "total": {"USDT": 1000.0, "SHIB": 9999999.0},
+            "free": {"USDT": 1000.0, "CRO": 9999999.0},
+            "used": {"USDT": 0.0, "CRO": 0.0},
+            "total": {"USDT": 1000.0, "CRO": 9999999.0},
         }
         request = exchange_pb2.GetBalanceRequest(exchange="binance")
         response = self.service.GetBalance(request, self.context)
         assets = [b.asset for b in response.balances]
         self.assertIn("USDT", assets)
-        self.assertNotIn("SHIB", assets)
+        self.assertNotIn("CRO", assets)
 
     def test_get_balance_ignores_filter(self):
         """Verify that currency filter is ignored and all supported balances are returned."""
