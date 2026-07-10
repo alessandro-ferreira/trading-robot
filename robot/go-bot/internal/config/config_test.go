@@ -73,7 +73,8 @@ func TestLoad(t *testing.T) {
 
 		// Verify Risk Config
 		assert.Equal(t, 3, cfg.Risk.MaxOpenPositions)
-		assert.Equal(t, 100.0, cfg.Risk.MaxDailyLoss)
+		assert.Equal(t, 100.0, cfg.Risk.MaxBudgetPerTrade["USDT"])
+		assert.Equal(t, 500.0, cfg.Risk.MaxBudgetPerTrade["BRL"])
 	})
 
 	t.Run("file not found", func(t *testing.T) {

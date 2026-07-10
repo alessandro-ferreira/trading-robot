@@ -1,5 +1,8 @@
 import argparse
+import fcntl
 import logging
+import os
+import sys
 import signal
 import time
 from concurrent import futures
@@ -23,14 +26,32 @@ def serve():
     )
     args = parser.parse_args()
 
+    # Ensure only one instance is running and is not running as root
+    if os.geteuid() == 0:
+        print("Running as root is not allowed for security reasons", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        lock_file = open(config.LOCK_FILE_PATH, "a+")
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.write(str(os.getpid()))
+        lock_file.truncate()
+    except Exception as e:
+        print(
+            f"Another instance is possibly running (failed to acquire file lock). Error: {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Load configuration and setup logging.
     try:
         cfg = config.load(args.config)
     except Exception as e:
-        # If config loading fails before logging is set up, use basicConfig to log the error.
-        logging.basicConfig()
-        logging.critical(f"Failed to load configuration, cannot start: {e}")
-        return
+        print(f"Failed to load configuration: {e}", file=sys.stderr)
+        sys.exit(1)
 
     logger.setup(cfg.log)
 
@@ -76,6 +97,14 @@ def serve():
         time.sleep(cfg.server.shutdown_timeout)
 
     logging.info("Server stopped.")
+
+    # Cleanup lock file
+    try:
+        lock_file.close()
+        if os.path.exists(config.LOCK_FILE_PATH):
+            os.remove(config.LOCK_FILE_PATH)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+const LockFilePath = "/tmp/go-bot.lock"
+
 // Config holds the application's configuration.
 type Config struct {
 	Server    ServerConfig      `toml:"server"`
@@ -76,8 +78,8 @@ type ExchangeConfig struct {
 type RiskConfig struct {
 	// MaxOpenPositions defines the maximum number of simultaneous positions allowed.
 	MaxOpenPositions int `toml:"max_open_positions"`
-	// MaxDailyLoss defines the maximum allowed loss in quote currency for the day.
-	MaxDailyLoss float64 `toml:"max_daily_loss"`
+	// MaxBudgetPerTrade limits the maximum budget allocated per trade for specific assets.
+	MaxBudgetPerTrade map[string]float64 `toml:"max_budget_per_trade"`
 }
 
 // newWithDefaults creates a Config struct with sensible default values.

@@ -14,12 +14,13 @@ services:
       - test-db-data:/var/lib/postgresql/data
       # Mount the migrations folder so the database can init.
       - ./go-bot/migrations:/migrations
-  
+
   # gateway for the go-bot integration tests
   python-gateway:
     build:
       context: ./python-gateway
     container_name: trading-bot-python-gateway
+    user: "1000:1000"  # Forces the process to run with UID 1000 instead of root (UID 0)
     command: ["python", "main.py", "--config", "/config.toml"]
     volumes:
       - ./python-gateway:/app

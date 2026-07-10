@@ -3,7 +3,7 @@
 # Server settings
 [server]
 orchestrator_interval = "5s"        # Time interval for processing the signal of each pair.
-refresh_strat_interval = "1m"       # Time interval for refreshing valid strategies and recover from panic.
+refresh_strat_interval = "5m"       # Time interval for refreshing valid strategies and recover from panic.
 default_exchange_timeout = "10s"    # Default timeout for exchange operations.
 shutdown_timeout = "10s"            # Time to wait for graceful shutdown before force-quitting.
 
@@ -49,7 +49,9 @@ retry_delay = "5s"      # Delay between retries
 # Global Risk Management Settings
 [risk]
 max_open_positions = 3
-max_daily_loss = 100.0
+# Limit the maximum budget allocated per trade for specific assets (USDT, BRL, etc.)
+# If no limit is set for an asset, only the pair-specific budget is used.
+max_budget_per_trade = { USDT = 500.0, BRL = 1000.0 }
 
 # Exchanges configuration for the Python gateway
 [[exchange]]

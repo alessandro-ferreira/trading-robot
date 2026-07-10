@@ -72,7 +72,7 @@ func (s *service) GetTicker(
 ) (repository.MarketDataTick, error) {
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
-	log.Info("Fetching ticker from exchange")
+	log.Debug("Fetching ticker from exchange")
 
 	// Fetch from Exchange via gRPC
 	resp, err := s.client.GetTicker(ctx, exchange, instrumentSymbol)
@@ -80,7 +80,7 @@ func (s *service) GetTicker(
 		return repository.MarketDataTick{}, fmt.Errorf("failed to fetch ticker from gateway: %w", err)
 	}
 
-	log.Info("Ticker received", "price", resp.Price)
+	log.Debug("Ticker received", "price", resp.Price)
 
 	// Persist the tick to the database for historical analysis and strategy warm-up
 	tick := repository.MarketDataTick{

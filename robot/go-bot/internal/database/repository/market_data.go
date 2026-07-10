@@ -6,6 +6,8 @@ import (
 	"fmt"
 )
 
+const TICKS_LIMIT = 10000
+
 // MarketDataTick represents a historical price point for warming up strategies.
 type MarketDataTick struct {
 	ExchangeName string
@@ -33,16 +35,21 @@ func (r *pgMarketDataRepo) GetMarketDataTicks(
 	ctx context.Context, db DBExecutor, exchangeName, symbol string, sinceEpoch int64,
 ) ([]MarketDataTick, error) {
 	query := `
-		SELECT t.tick_unix_at, t.price
-		FROM trading.market_data_ticks t
-		INNER JOIN trading.exchanges e ON e.id = t.exchange_id AND e.name = $1 AND e.active
-		INNER JOIN trading.instruments i ON i.id = t.instrument_id AND i.exchange_id = t.exchange_id
-			AND i.name = $2 AND i.active
-		WHERE t.tick_unix_at >= $3
-		ORDER BY t.tick_unix_at ASC
+		SELECT tick_unix_at, price
+		FROM (
+			SELECT t.tick_unix_at, t.price
+			FROM trading.market_data_ticks t
+			INNER JOIN trading.exchanges e ON e.id = t.exchange_id AND e.name = $1 AND e.active
+			INNER JOIN trading.instruments i ON i.id = t.instrument_id AND i.exchange_id = t.exchange_id
+				AND i.name = $2 AND i.active
+			WHERE t.tick_unix_at >= $3 AND $3 > 0
+			ORDER BY t.tick_unix_at DESC
+			LIMIT $4
+		) sub
+		ORDER BY tick_unix_at ASC
 	`
 
-	rows, err := db.Query(ctx, query, exchangeName, symbol, sinceEpoch)
+	rows, err := db.Query(ctx, query, exchangeName, symbol, sinceEpoch, TICKS_LIMIT)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get market data ticks: %w", err)
 	}

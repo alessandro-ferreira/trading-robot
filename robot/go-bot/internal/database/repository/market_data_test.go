@@ -56,7 +56,7 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 					AddRow(toTickRow(tick1)...).
 					AddRow(toTickRow(tick2)...)
 				mockDB.ExpectQuery("SELECT t.tick_unix_at, t.price").
-					WithArgs(tick1.ExchangeName, tick1.Symbol, int64(1000)).
+					WithArgs(tick1.ExchangeName, tick1.Symbol, int64(1000), TICKS_LIMIT).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, ticks []MarketDataTick) {
@@ -71,7 +71,7 @@ func TestPgMarketDataRepo_GetMarketDataTicks(t *testing.T) {
 			sinceEpoch: 1000,
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT t.tick_unix_at, t.price").
-					WithArgs("binance", "BTC/USDT", int64(1000)).
+					WithArgs("binance", "BTC/USDT", int64(1000), TICKS_LIMIT).
 					WillReturnError(errors.New("db query error"))
 			},
 			expectedErrContains: "failed to get market data ticks",

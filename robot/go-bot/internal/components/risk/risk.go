@@ -3,6 +3,7 @@ package risk
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"trading/robot/go-bot/internal/config"
 )
@@ -19,14 +20,15 @@ const SlippageBuffer = 0.99 // 1% safety buffer
 
 // Config defines the global risk parameters for the manager.
 type RiskConfig struct {
-	MaxOpenPositions int
-	MaxDailyLoss     float64
+	MaxOpenPositions  int
+	MaxBudgetPerTrade map[string]float64
 }
 
 // PairRisk defines the operational risk rules for a specific trading pair.
 type PairRisk struct {
-	AllocatedBudget float64
-	MaxAssetUnits   float64
+	InstrumentSymbol string
+	AllocatedBudget  float64
+	MaxAssetUnits    float64
 }
 
 // Manager handles risk checks and policy enforcement.
@@ -49,14 +51,14 @@ type Evaluation struct {
 func NewManager(logger *slog.Logger, cfg config.RiskConfig) *Manager {
 	logger.Info("Initializing Risk Manager",
 		"max_open_positions", cfg.MaxOpenPositions,
-		"max_daily_loss", cfg.MaxDailyLoss,
+		"max_budget_per_trade", cfg.MaxBudgetPerTrade,
 	)
 
 	return &Manager{
 		logger: logger,
 		config: RiskConfig{
-			MaxOpenPositions: cfg.MaxOpenPositions,
-			MaxDailyLoss:     cfg.MaxDailyLoss,
+			MaxOpenPositions:  cfg.MaxOpenPositions,
+			MaxBudgetPerTrade: cfg.MaxBudgetPerTrade,
 		},
 	}
 }
@@ -64,7 +66,7 @@ func NewManager(logger *slog.Logger, cfg config.RiskConfig) *Manager {
 // EvaluateEntry checks if a new trade can be opened and calculates the position size.
 // It now considers the available quote balance (USDT/BRL) on the exchange.
 func (m *Manager) EvaluateEntry(
-	currentPositions int, currentDailyLoss float64, price float64, availableBudget float64, pr PairRisk,
+	currentPositions int, price float64, availableBudget float64, pr PairRisk,
 ) Evaluation {
 	// --- Global Validation Checks ---
 	if m.config.MaxOpenPositions > 0 && currentPositions >= m.config.MaxOpenPositions {
@@ -75,31 +77,6 @@ func (m *Manager) EvaluateEntry(
 			Allowed: false,
 			Reason: fmt.Sprintf(
 				"max open positions reached (%d >= %d)", currentPositions, m.config.MaxOpenPositions,
-			),
-		}
-	}
-
-	// Check Daily Loss Limit
-	if m.config.MaxDailyLoss > 0 && currentDailyLoss >= m.config.MaxDailyLoss {
-		m.logger.Warn("Risk check failed: Max daily loss reached",
-			"current_loss", currentDailyLoss,
-			"limit", m.config.MaxDailyLoss)
-		return Evaluation{
-			Allowed: false,
-			Reason: fmt.Sprintf(
-				"max daily loss reached (%.2f >= %.2f)", currentDailyLoss, m.config.MaxDailyLoss,
-			),
-		}
-	}
-
-	// --- Pair Validation Checks ---
-	if pr.AllocatedBudget < MinExchangeBudget {
-		m.logger.Warn("Risk check failed: Invalid budget configuration", "value", pr.AllocatedBudget)
-		return Evaluation{
-			Allowed: false,
-			Reason: fmt.Sprintf(
-				"invalid allocated budget configuration (must be >= %.2f)",
-				MinExchangeBudget,
 			),
 		}
 	}
@@ -119,14 +96,38 @@ func (m *Manager) EvaluateEntry(
 		}
 	}
 
-	// Cap allocated budget by real available balance on the exchange
+	// --- Pair Validation Checks ---
+	asset, budgetAsset := "", ""
+	if parts := strings.Split(pr.InstrumentSymbol, "/"); len(parts) == 2 {
+		asset = parts[0]
+		budgetAsset = parts[1]
+	}
+
+	// Cap allocated budget by global budget limit and available exchange balance
 	targetBudget := pr.AllocatedBudget
+
+	if limit, ok := m.config.MaxBudgetPerTrade[budgetAsset]; ok && limit > 0 {
+		if targetBudget > limit {
+			m.logger.Warn("Risk check: Budget capped by global budget limit",
+				"asset", budgetAsset, "requested", pr.AllocatedBudget, "limit", limit)
+			targetBudget = limit
+		}
+	}
 
 	if targetBudget > availableBudget {
 		m.logger.Warn("Budget exceeds available exchange balance, adjusting target value",
-			"budget", targetBudget,
-			"available", availableBudget)
+			"asset", budgetAsset, "budget", targetBudget, "available", availableBudget)
 		targetBudget = availableBudget
+	}
+
+	if targetBudget < MinExchangeBudget {
+		m.logger.Warn("Risk check failed: Invalid budget configuration", "value", targetBudget)
+		return Evaluation{
+			Allowed: false,
+			Reason: fmt.Sprintf(
+				"invalid (capped) allocated budget configuration (must be >= %.2f)", MinExchangeBudget,
+			),
+		}
 	}
 
 	// Final cap by Max Asset Units (Quantity cap)
@@ -134,8 +135,7 @@ func (m *Manager) EvaluateEntry(
 
 	if pr.MaxAssetUnits > 0 && assetUnits > pr.MaxAssetUnits {
 		m.logger.Warn("Position quantity capped by asset unit limit",
-			"requested", assetUnits,
-			"limit", pr.MaxAssetUnits)
+			"asset", asset, "requested", assetUnits, "limit", pr.MaxAssetUnits)
 		assetUnits = pr.MaxAssetUnits
 	}
 

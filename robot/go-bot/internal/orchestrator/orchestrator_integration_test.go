@@ -81,8 +81,8 @@ func setupOrchestratorIntegrationTest(
 			RefreshStratInterval: refreshInterval,
 		},
 		Risk: config.RiskConfig{
-			MaxOpenPositions: 10,
-			MaxDailyLoss:     1000.0,
+			MaxOpenPositions:  10,
+			MaxBudgetPerTrade: map[string]float64{"USDT": 1000.0},
 		},
 	}
 

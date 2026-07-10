@@ -15,9 +15,11 @@ import (
 var (
 	defaultRiskConfig = config.RiskConfig{
 		MaxOpenPositions: 5,
-		MaxDailyLoss:     100.0,
+		MaxBudgetPerTrade: map[string]float64{
+			"USDT": 500.0,
+		},
 	}
-	defaultPairRisk = PairRisk{AllocatedBudget: 100.0}
+	defaultPairRisk = PairRisk{InstrumentSymbol: "BTC/USDT", AllocatedBudget: 100.0}
 )
 
 func TestEvaluateEntry(t *testing.T) {
@@ -27,7 +29,6 @@ func TestEvaluateEntry(t *testing.T) {
 		name             string
 		config           config.RiskConfig
 		currentPositions int
-		currentDailyLoss float64
 		price            float64
 		availableBudget  float64
 		risk             PairRisk
@@ -39,7 +40,6 @@ func TestEvaluateEntry(t *testing.T) {
 			name:             "Allow trade: within limits",
 			config:           defaultRiskConfig,
 			currentPositions: 3,
-			currentDailyLoss: 50.0,
 			price:            50.0,
 			availableBudget:  1000.0,
 			risk:             defaultPairRisk,
@@ -50,7 +50,6 @@ func TestEvaluateEntry(t *testing.T) {
 			name:             "Reject trade: max positions reached",
 			config:           defaultRiskConfig,
 			currentPositions: 5,
-			currentDailyLoss: 50.0,
 			price:            50.0,
 			availableBudget:  1000.0,
 			risk:             defaultPairRisk,
@@ -58,21 +57,9 @@ func TestEvaluateEntry(t *testing.T) {
 			wantReason:       "max open positions reached",
 		},
 		{
-			name:             "Reject trade: max daily loss reached",
-			config:           defaultRiskConfig,
-			currentPositions: 3,
-			currentDailyLoss: 100.0,
-			price:            50.0,
-			availableBudget:  1000.0,
-			risk:             defaultPairRisk,
-			wantAllowed:      false,
-			wantReason:       "max daily loss reached",
-		},
-		{
 			name:             "Allow trade: unlimited positions (0 config)",
-			config:           config.RiskConfig{MaxOpenPositions: 0, MaxDailyLoss: 100.0},
+			config:           config.RiskConfig{MaxOpenPositions: 0},
 			currentPositions: 100,
-			currentDailyLoss: 50.0,
 			price:            50.0,
 			availableBudget:  1000.0,
 			risk:             defaultPairRisk,
@@ -83,21 +70,35 @@ func TestEvaluateEntry(t *testing.T) {
 			name:             "Allow trade: cap by MaxAssetUnits",
 			config:           defaultRiskConfig,
 			currentPositions: 3,
-			currentDailyLoss: 50.0,
 			price:            10.0,
 			availableBudget:  1000.0,
 			risk: PairRisk{
-				AllocatedBudget: 100.0,
-				MaxAssetUnits:   5.0,
+				InstrumentSymbol: "BTC/USDT",
+				AllocatedBudget:  100.0,
+				MaxAssetUnits:    5.0,
 			},
 			wantAllowed: true,
 			wantUnits:   4.95, // 5.0 * 0.99
 		},
 		{
+			name: "Allow trade: budget capped by global budget limit",
+			config: config.RiskConfig{
+				MaxOpenPositions: 5,
+				MaxBudgetPerTrade: map[string]float64{
+					"USDT": 40.0,
+				},
+			},
+			currentPositions: 0,
+			price:            10.0,
+			availableBudget:  1000.0,
+			risk:             defaultPairRisk, // budget 100, asset USDT
+			wantAllowed:      true,
+			wantUnits:        3.96, // (40 / 10) * 0.99
+		},
+		{
 			name:             "Allow trade: budget capped by available balance",
 			config:           defaultRiskConfig,
 			currentPositions: 0,
-			currentDailyLoss: 0,
 			price:            10.0,
 			availableBudget:  50.0, // Budget is 100, but only 50 available
 			risk:             defaultPairRisk,
@@ -108,24 +109,24 @@ func TestEvaluateEntry(t *testing.T) {
 			name:             "Reject trade: invalid allocated budget (< Min)",
 			config:           defaultRiskConfig,
 			currentPositions: 0,
-			currentDailyLoss: 0,
 			price:            50.0,
 			availableBudget:  1000.0,
 			risk: PairRisk{
-				AllocatedBudget: 5.0,
+				InstrumentSymbol: "BTC/USDT",
+				AllocatedBudget:  5.0,
 			},
 			wantAllowed: false,
-			wantReason:  "invalid allocated budget configuration",
+			wantReason:  "invalid (capped) allocated budget configuration",
 		},
 		{
 			name:             "Reject trade: invalid price (<= 0)",
 			config:           defaultRiskConfig,
 			currentPositions: 0,
-			currentDailyLoss: 0,
 			price:            0.0,
 			availableBudget:  1000.0,
 			risk: PairRisk{
-				AllocatedBudget: 100.0,
+				InstrumentSymbol: "BTC/USDT",
+				AllocatedBudget:  100.0,
 			},
 			wantAllowed: false,
 			wantReason:  "invalid price",
@@ -134,7 +135,6 @@ func TestEvaluateEntry(t *testing.T) {
 			name:             "Reject trade: available budget < Min",
 			config:           defaultRiskConfig,
 			currentPositions: 0,
-			currentDailyLoss: 0,
 			price:            50.0,
 			availableBudget:  5.0,
 			risk:             defaultPairRisk,
@@ -147,7 +147,7 @@ func TestEvaluateEntry(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewManager(logger, tt.config)
 			eval := m.EvaluateEntry(
-				tt.currentPositions, tt.currentDailyLoss, tt.price, tt.availableBudget, tt.risk,
+				tt.currentPositions, tt.price, tt.availableBudget, tt.risk,
 			)
 
 			assert.Equal(t, tt.wantAllowed, eval.Allowed)

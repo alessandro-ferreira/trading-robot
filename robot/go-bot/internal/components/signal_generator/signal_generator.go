@@ -37,8 +37,9 @@ func NewSignalGenerator(
 	}
 
 	pairRisk := risk.PairRisk{
-		AllocatedBudget: riskData.AllocatedBudget,
-		MaxAssetUnits:   riskData.MaxAssetUnits.Float64,
+		InstrumentSymbol: riskData.InstrumentSymbol,
+		AllocatedBudget:  riskData.AllocatedBudget,
+		MaxAssetUnits:    riskData.MaxAssetUnits.Float64,
 	}
 
 	return &SignalGenerator{

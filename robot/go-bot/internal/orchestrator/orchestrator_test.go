@@ -187,8 +187,8 @@ func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, 
 			RefreshStratInterval: 1 * time.Minute,
 		},
 		Risk: config.RiskConfig{
-			MaxOpenPositions: 3,
-			MaxDailyLoss:     100.0,
+			MaxOpenPositions:  3,
+			MaxBudgetPerTrade: map[string]float64{"USDT": 1000.0},
 		},
 	}
 

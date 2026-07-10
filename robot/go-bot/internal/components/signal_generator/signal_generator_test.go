@@ -116,6 +116,7 @@ func TestSignalGenerator_Metadata(t *testing.T) {
 	assert.Equal(t, testSymbol, sg.InstrumentSymbol())
 	assert.Equal(t, testExchange, sg.Exchange())
 	assert.Equal(t, name, sg.Name())
+	assert.Equal(t, testRisk.InstrumentSymbol, sg.Risk().InstrumentSymbol)
 	assert.Equal(t, testRisk.AllocatedBudget, sg.Risk().AllocatedBudget)
 	assert.Equal(t, testRisk.MaxAssetUnits.Float64, sg.Risk().MaxAssetUnits)
 	assert.Equal(t, strategy.StrategyDummy, sg.StrategyConfig().Type)

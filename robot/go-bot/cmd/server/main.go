@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"log/slog"
 	"net"
@@ -33,6 +34,28 @@ func main() {
 		context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT,
 	)
 	defer stop()
+
+	// --- Security Check ---
+	if os.Geteuid() == 0 {
+		log.Fatal("❌ Running as root is not allowed for security reasons")
+	}
+
+	// Use a lock file to prevent multiple instances from running simultaneously.
+	lockFile, err := os.OpenFile(config.LockFilePath, os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		log.Fatalf("❌ Could not create lock file: %v", err)
+	}
+	defer func() {
+		lockFile.Close()
+		os.Remove(config.LockFilePath)
+	}()
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		log.Fatal("❌ Another instance is already running (failed to acquire file lock)")
+	}
+	_, _ = lockFile.Seek(0, 0)
+	_ = lockFile.Truncate(0)
+	fmt.Fprintf(lockFile, "%d", os.Getpid())
 
 	// --- Configuration & Logger ---
 	// Define a command-line flag for the config file path.

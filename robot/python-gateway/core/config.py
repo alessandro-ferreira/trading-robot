@@ -3,6 +3,8 @@ import tomllib
 from dataclasses import dataclass, field
 from typing import List, Union, Optional
 
+LOCK_FILE_PATH = "/tmp/python-gateway.lock"
+
 
 @dataclass
 class ServerConfig:

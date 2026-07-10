@@ -34,7 +34,7 @@ func initTestSignalGenerator(t *testing.T, o *Orchestrator, target strategy.Stra
 		Type:             repository.StrategyMomentumProfit,
 		Momentum:         momentum,
 	}
-	sig, err := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{AllocatedBudget: 100}, pair, "test")
+	sig, err := signal_generator.NewSignalGenerator(o.logger, repository.RiskPair{InstrumentSymbol: "BTC/USDT", AllocatedBudget: 100}, pair, "test")
 	require.NoError(t, err)
 
 	now := time.Now().Unix()

@@ -110,7 +110,6 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	instrumentSymbol := sig.InstrumentSymbol()
 
 	log := o.logger.With("exchange", exchange, "symbol", instrumentSymbol)
-	log.Info("Processing signal")
 
 	var signal strategy.StrategySignal
 
@@ -151,7 +150,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 		return
 	}
 
-	log.Info("Signal generated", "signal", signal.String())
+	log.Info("Processing signal", "signal", signal.String())
 
 	// Handle the signal with corresponding logic
 	switch signal {
@@ -293,7 +292,7 @@ func (o *Orchestrator) signalBuy(
 	if b, err := o.repo.Balances.GetBalance(ctx, o.db, ex, budgetAsset); err == nil {
 		availableBudget = b.Total
 	}
-	eval := o.risk.EvaluateEntry(openCount, 0, price, availableBudget, sig.Risk())
+	eval := o.risk.EvaluateEntry(openCount, price, availableBudget, sig.Risk())
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (pre-check)", "reason", eval.Reason)
 		_ = sig.RetrySignal(strategy.SignalBuy)
@@ -334,7 +333,7 @@ func (o *Orchestrator) signalBuy(
 		availableBudget = b.Total
 	}
 	openCount = o.portfolio.GetActivePositionsCount()
-	eval = o.risk.EvaluateEntry(openCount, 0, price, availableBudget, sig.Risk())
+	eval = o.risk.EvaluateEntry(openCount, price, availableBudget, sig.Risk())
 
 	if !eval.Allowed {
 		log.Warn("buy rejected by risk manager (final-check)", "reason", eval.Reason)
@@ -441,7 +440,7 @@ func (o *Orchestrator) signalWaitingBuyFill(
 	}
 
 	if price > pos.HighestPrice {
-		log.Info("updating highest price for trailing stop", "old", pos.HighestPrice, "new", price)
+		log.Debug("updating highest price for trailing stop", "old", pos.HighestPrice, "new", price)
 		pos.HighestPrice = price
 		err = o.portfolio.UpdatePosition(ctx, ex, sym, pos)
 		if err != nil {
@@ -515,7 +514,7 @@ func (o *Orchestrator) signalTrackingSellExit(
 		}
 
 		if price > pos.HighestPrice {
-			log.Info("updating highest price for trailing stop", "old", pos.HighestPrice, "new", price)
+			log.Debug("updating highest price for trailing stop", "old", pos.HighestPrice, "new", price)
 			pos.HighestPrice = price
 		}
 

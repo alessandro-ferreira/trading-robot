@@ -33,7 +33,7 @@ retry_delay = "1s"
 
 [risk]
 max_open_positions = 3
-max_daily_loss = 100.0
+max_budget_per_trade = { USDT = 100.0, BRL = 500.0 }
 
 [[exchange]]
 name = "binance"
