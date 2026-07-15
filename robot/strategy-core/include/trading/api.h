@@ -7,7 +7,8 @@ extern "C" {
 #include "trading/types.h"
 
 // Creates and initializes a Strategy instance from the given configuration.
-// Returns NULL on invalid/unrecognized config type or invalid parameters.
+// Returns NULL on invalid/unrecognized config type or invalid parameters (e.g. windows not greater than lookbacks,
+// non-positive percentages, etc.).
 StrategyHandle Strategy_Create(StrategyConfig config);
 // Updates the hyperparameters of the strategy without clearing history.
 // Returns STRATEGY_FAILURE if the new config is invalid (e.g. invalid type or parameters) or if the handle is NULL.

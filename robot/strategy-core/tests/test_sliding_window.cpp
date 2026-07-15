@@ -43,19 +43,19 @@ TEST(SlidingWindowTest, GetPriceSecondsAgoHandlesGap) {
     // Simulates a missed update: no entry at t=3600.
     SlidingWindowPriceState state(7200);
     state.UpdatePrice({0, 100.0});
-    state.UpdatePrice({3550, 101.0});  // Add a point that is not stale
+    state.UpdatePrice({3450, 101.0});  // Add a point that is not stale
     state.UpdatePrice({7200, 102.0});  // gap: no update at t=3600
 
     // 3600s ago from t=7200 => look for t<=3600.
-    // Last entry is {3550, 101.0}.
-    // Gap is 3600 - 3550 = 50, which is <= 60s. This is a valid match.
+    // Last entry is {3450, 101.0}.
+    // Gap is 3600 - 3450 = 150, which is <= 300s (lookback staleness). This is a valid match.
     EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(3600), 101.0);
 
     // Now test a case where the gap is too large.
-    // 7000s ago from t=7200 => look for t<=200.
+    // 6800s ago from t=7200 => look for t<=400.
     // Last entry is {0, 100.0}.
-    // Gap is 200 - 0 = 200, which is > 60s. This is stale and should be rejected.
-    EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(7000), 0.0);
+    // Gap is 400 - 0 = 400, which is > 300s. This is stale and should be rejected.
+    EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(6800), 0.0);
 }
 
 TEST(SlidingWindowTest, OldEntriesEvictedAsWindowAdvances) {
@@ -105,11 +105,11 @@ TEST(SlidingWindowTest, InitToleratesPriceJumpWithLargeGap) {
 TEST(SlidingWindowTest, ReadyStateRevertsOnGap) {
     SlidingWindowPriceState state(100);
     state.UpdatePrice({100, 10.0});
-    state.UpdatePrice({200, 10.0});  // Ready (span 100 >= 100)
+    state.UpdatePrice({500, 10.0});  // Ready
     EXPECT_TRUE(state.IsReady());
 
-    state.UpdatePrice({500, 10.0});  // Gap. Old entries evicted.
-    // 500 - 100 = 400 cutoff. 100 and 200 evicted. Only 500 remains.
+    state.UpdatePrice({901, 10.0});  // Gap. Old entries evicted.
+    // 901 - 500 - 300 (Cutoff tolerance) = 101 > 100. Not ready anymore.
     EXPECT_FALSE(state.IsReady());
 }
 

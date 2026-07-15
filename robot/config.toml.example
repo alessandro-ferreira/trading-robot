@@ -3,7 +3,7 @@
 # Server settings
 [server]
 orchestrator_interval = "5s"        # Time interval for processing the signal of each pair.
-refresh_strat_interval = "5m"       # Time interval for refreshing valid strategies and recover from panic.
+refresh_strat_interval = "1m"       # Time interval for refreshing valid strategies and recover from panic.
 default_exchange_timeout = "10s"    # Default timeout for exchange operations.
 shutdown_timeout = "10s"            # Time to wait for graceful shutdown before force-quitting.
 

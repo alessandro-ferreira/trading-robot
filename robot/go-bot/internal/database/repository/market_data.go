@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-const TICKS_LIMIT = 10000
+const TICKS_LIMIT = 86400
 
 // MarketDataTick represents a historical price point for warming up strategies.
 type MarketDataTick struct {

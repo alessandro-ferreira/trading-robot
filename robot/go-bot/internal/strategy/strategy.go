@@ -114,6 +114,11 @@ func (s *Strategy) GetConfig() StrategyConfig {
 	return s.cfg
 }
 
+// EqualsConfig checks if the current strategy configuration is identical to the provided one.
+func (s *Strategy) EqualsConfig(other StrategyConfig) bool {
+	return equalsConfig(s.cfg, other)
+}
+
 // UpdateConfig updates the internal strategy parameters without wiping history.
 func (s *Strategy) UpdateConfig(cfg StrategyConfig) error {
 	cCfg := toCConfig(cfg)
@@ -237,4 +242,29 @@ func toCConfig(cfg StrategyConfig) C.StrategyConfig {
 		cCfg.momentum_windows[i].threshold = C.double(cfg.MomentumWindows[i].Threshold)
 	}
 	return cCfg
+}
+
+// equalsConfig checks if two StrategyConfig instances are identical.
+func equalsConfig(s, other StrategyConfig) bool {
+	if s.Type != other.Type ||
+		s.WindowSeconds != other.WindowSeconds ||
+		s.MomentumRequireAll != other.MomentumRequireAll ||
+		s.StopLossPct != other.StopLossPct ||
+		s.ProfitTargetPct != other.ProfitTargetPct ||
+		s.ActivationPct != other.ActivationPct ||
+		s.TrailingStopPct != other.TrailingStopPct {
+		return false
+	}
+
+	if len(s.MomentumWindows) != len(other.MomentumWindows) {
+		return false
+	}
+
+	for i := range s.MomentumWindows {
+		if s.MomentumWindows[i] != other.MomentumWindows[i] {
+			return false
+		}
+	}
+
+	return true
 }

@@ -41,7 +41,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.TickerResponse:
         """Handles the GetTicker RPC."""
-        logging.info(f"GetTicker: {request.exchange} {request.symbol}")
+        logging.debug(f"GetTicker: {request.exchange} {request.symbol}")
         exchange = utils.get_exchange(self.factory, request, context)
         ticker, price = None, None
         try:
@@ -53,7 +53,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         logging.info(
             f"GetTicker Success: {request.exchange} symbol={request.symbol} price={price}"
         )
-        logging.info(f"raw_ticker: {ticker}")
+        logging.debug(f"raw_ticker: {ticker}")
         return exchange_pb2.TickerResponse(symbol=ticker.symbol, price=price)
 
     def GetBalance(

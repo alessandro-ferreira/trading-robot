@@ -61,18 +61,30 @@ func (s *SignalGenerator) UpdateConfigFromPair(strategyData repository.StrategyP
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	stratCfg, err := mapConfig(s.logger, strategyData)
+	// Map config without standard logging for periodic updates to avoid spam.
+	stratCfg, err := mapConfig(nil, strategyData)
 	if err != nil {
 		return err
 	}
 
 	// Update the C++ strategy engine hyperparameters without clearing history.
-	if err := s.strategy.UpdateConfig(stratCfg); err != nil {
-		return fmt.Errorf("failed to update strategy engine: %w", err)
+	if !s.strategy.EqualsConfig(stratCfg) {
+		s.logger.Info("Detected configuration change, updating strategy engine")
+		_, _ = mapConfig(s.logger, strategyData)
+
+		if err := s.strategy.UpdateConfig(stratCfg); err != nil {
+			return fmt.Errorf("failed to update strategy engine: %w", err)
+		}
 	}
 
-	// Update the termination flag based on the latest database status.
-	s.pendingTerminate = (strategyData.Status == repository.StrategyPendingDisabled)
+	// Update the termination flag if changed.
+	newPendingTerminate := (strategyData.Status == repository.StrategyPendingDisabled)
+	if s.pendingTerminate != newPendingTerminate {
+		s.logger.Info(
+			"Updating pending termination flag", "from", s.pendingTerminate, "to", newPendingTerminate,
+		)
+		s.pendingTerminate = newPendingTerminate
+	}
 
 	return nil
 }
@@ -197,9 +209,13 @@ func mapConfig(
 	// Map application config to strategy config
 	stratCfg := strategy.StrategyConfig{}
 
-	logger.Info(
-		"Mapping strategy configuration", "type", strategyData.Type, "symbol", strategyData.InstrumentSymbol,
-	)
+	if logger != nil {
+		logger.Info(
+			"Mapping strategy configuration",
+			"type", strategyData.Type,
+			"symbol", strategyData.InstrumentSymbol,
+		)
+	}
 
 	switch strategyData.Type {
 	case repository.StrategyMomentumTrailing, repository.StrategyMomentumProfit:
@@ -235,30 +251,36 @@ func mapConfig(
 			stratCfg.ActivationPct = strategyData.Momentum.ActivationPct.Float64
 			stratCfg.TrailingStopPct = strategyData.Momentum.TrailingStopPct.Float64
 
-			logger.Info("Configured MomentumTrailing strategy",
-				"window_seconds", stratCfg.WindowSeconds,
-				"windows", windowDump,
-				"require_all", stratCfg.MomentumRequireAll,
-				"stop_loss_pct", stratCfg.StopLossPct,
-				"activation_pct", stratCfg.ActivationPct,
-				"trailing_stop_pct", stratCfg.TrailingStopPct,
-			)
+			if logger != nil {
+				logger.Info("Configured MomentumTrailing strategy",
+					"window_seconds", stratCfg.WindowSeconds,
+					"windows", windowDump,
+					"require_all", stratCfg.MomentumRequireAll,
+					"stop_loss_pct", stratCfg.StopLossPct,
+					"activation_pct", stratCfg.ActivationPct,
+					"trailing_stop_pct", stratCfg.TrailingStopPct,
+				)
+			}
 		} else {
 			stratCfg.Type = strategy.StrategyMomentumProfit
 			stratCfg.ProfitTargetPct = strategyData.Momentum.ProfitTargetPct.Float64
 
-			logger.Info("Configured MomentumProfit strategy",
-				"window_seconds", stratCfg.WindowSeconds,
-				"windows", windowDump,
-				"require_all", stratCfg.MomentumRequireAll,
-				"stop_loss_pct", stratCfg.StopLossPct,
-				"profit_target_pct", stratCfg.ProfitTargetPct,
-			)
+			if logger != nil {
+				logger.Info("Configured MomentumProfit strategy",
+					"window_seconds", stratCfg.WindowSeconds,
+					"windows", windowDump,
+					"require_all", stratCfg.MomentumRequireAll,
+					"stop_loss_pct", stratCfg.StopLossPct,
+					"profit_target_pct", stratCfg.ProfitTargetPct,
+				)
+			}
 		}
 
 	case repository.StrategyDummy:
 		stratCfg.Type = strategy.StrategyDummy
-		logger.Info("Configured Dummy strategy")
+		if logger != nil {
+			logger.Info("Configured Dummy strategy")
+		}
 
 	default:
 		return strategy.StrategyConfig{}, fmt.Errorf("unsupported strategy type: %s", strategyData.Type)

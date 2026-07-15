@@ -76,7 +76,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	// The strategy reloader runs on a deterministic interval (e.g., 5 minutes)
+	// The strategy reloader runs on a deterministic interval (e.g., 1 minute)
 	// to pick up new pairs enabled via the Management API/ML Engine.
 	refreshTicker := time.NewTicker(o.cfg.Server.RefreshStratInterval)
 	defer refreshTicker.Stop()

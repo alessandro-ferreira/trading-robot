@@ -178,6 +178,34 @@ func TestStrategy_UpdateConfig(t *testing.T) {
 	})
 }
 
+func TestStrategy_EqualsConfig(t *testing.T) {
+	cfg1 := StrategyConfig{
+		Type:          StrategyMomentumProfit,
+		WindowSeconds: 100,
+		MomentumWindows: []MomentumWindow{
+			{LookbackSeconds: 50, Threshold: 0.01},
+		},
+		StopLossPct:     0.1,
+		ProfitTargetPct: 0.05,
+	}
+	cfg2 := cfg1
+	cfg3 := cfg1
+	cfg3.StopLossPct = 0.2
+	cfg4 := cfg1
+	cfg4.MomentumWindows = []MomentumWindow{
+		{LookbackSeconds: 50, Threshold: 0.02},
+	}
+
+	s, err := NewStrategy(cfg1)
+	require.NoError(t, err)
+	defer s.Close()
+
+	assert.True(t, s.EqualsConfig(cfg1))
+	assert.True(t, s.EqualsConfig(cfg2))
+	assert.False(t, s.EqualsConfig(cfg3))
+	assert.False(t, s.EqualsConfig(cfg4))
+}
+
 func TestStrategy_BuyFlow(t *testing.T) {
 	cfg := StrategyConfig{
 		Type:               StrategyMomentumProfit,

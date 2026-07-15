@@ -412,7 +412,7 @@ func TestOrchestrator_Integration_ExternalDisturbance(t *testing.T) {
 
 	err = repo.Strategies.UpsertEnabledStrategy(
 		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", repository.StrategyMomentum{
-			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
+			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.10 * 0.01}},
 			StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
 		},
 	)

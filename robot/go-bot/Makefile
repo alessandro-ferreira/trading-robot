@@ -56,6 +56,7 @@ help:
 # Run the Go Trading Bot
 run: strategy-core
 	@echo "==> Starting Go Trading Bot..."
+# use go run -a to force recompilation of all packages, ensuring the cgo C++ library is up-to-date
 	@go run $(MAIN_PACKAGE) --config $(CONFIG_FILE)
 
 # Strategy Core

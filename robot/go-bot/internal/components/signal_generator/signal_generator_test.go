@@ -135,6 +135,45 @@ func TestSignalGenerator_UpdateConfigFromPair(t *testing.T) {
 	require.NoError(t, err)
 	defer sg.Close()
 
+	// Calling UpdateConfigFromPair with the exact same data should succeed
+	err = sg.UpdateConfigFromPair(strategyCfg)
+	assert.NoError(t, err)
+
+	// Update with a small change (status only)
+	strategyCfg.Status = repository.StrategyPendingDisabled
+	err = sg.UpdateConfigFromPair(strategyCfg)
+	assert.NoError(t, err)
+	assert.True(t, sg.IsPendingTerminate())
+
+	// Update with a config change (Momentum params) to cover !EqualsConfig branch
+	strategyCfg.Type = repository.StrategyMomentumProfit
+	strategyCfg.Momentum = repository.StrategyMomentum{
+		WindowSeconds: 120,
+		Windows: []repository.MomentumWindow{
+			{LookbackSeconds: 60, Threshold: 0.01},
+		},
+		StopLossPct:     0.05,
+		ProfitTargetPct: sql.NullFloat64{Float64: 0.1, Valid: true},
+	}
+	err = sg.UpdateConfigFromPair(strategyCfg)
+	assert.NoError(t, err)
+	assert.Equal(t, strategy.StrategyMomentumProfit, sg.StrategyConfig().Type)
+	assert.Equal(t, 120, sg.StrategyConfig().WindowSeconds)
+}
+
+func TestSignalGenerator_UpdateConfigCheckTerminate(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	strategyCfg := repository.StrategyPair{
+		ExchangeName:     testExchange,
+		InstrumentSymbol: testSymbol,
+		Type:             repository.StrategyDummy,
+		Status:           repository.StrategyEnabled,
+	}
+
+	sg, err := NewSignalGenerator(logger, testRisk, strategyCfg, "test")
+	require.NoError(t, err)
+	defer sg.Close()
+
 	assert.False(t, sg.IsPendingTerminate())
 
 	// Update to PendingDisabled
