@@ -32,6 +32,7 @@ func setupHealthMonitor(
 	healthMonitor := health.NewMonitor(slog.Default(), exchangeNames)
 
 	checkMethod := func(ctx context.Context, exchange string) error {
+		slog.Info("Health Check: Checking exchange connectivity", "exchange", exchange)
 		job := func(ctx context.Context) error {
 			_, err := execService.GetBalance(ctx, exchange, cfg.Health.Asset)
 			return err

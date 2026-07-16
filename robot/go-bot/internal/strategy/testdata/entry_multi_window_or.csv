@@ -3,4 +3,4 @@ timestamp,price,expected_signal,description
 60,100,3,Fill
 120,100,3,Fill
 180,100,3,Window ready
-210,101.5,1,"60s met (1.5%), BUY"
+210,100.15,1,"60s met (0.15%), BUY"

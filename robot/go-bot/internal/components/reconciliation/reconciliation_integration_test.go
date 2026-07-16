@@ -300,10 +300,10 @@ func TestReconciler_Integration_AdoptGhostBalance(t *testing.T) {
 	// Enable a strategy and create a matching wallet balance
 	err := repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", repository.StrategyMomentum{
 		WindowSeconds:   5,
-		Windows:         []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.001}},
+		Windows:         []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.01 * 0.01}},
 		RequireAll:      true,
-		StopLossPct:     0.1,
-		ProfitTargetPct: sql.NullFloat64{Float64: 0.05, Valid: true},
+		StopLossPct:     1 * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: 0.5 * 0.01, Valid: true},
 	})
 	require.NoError(t, err)
 

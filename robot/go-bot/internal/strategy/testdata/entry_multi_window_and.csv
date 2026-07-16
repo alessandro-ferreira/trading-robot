@@ -3,6 +3,6 @@ timestamp,price,expected_signal,description
 60,100,3,Fill
 120,100,3,Fill
 180,100,3,Window ready
-210,101.5,3,"60s met (1.5%) but not others"
-240,102.5,3,"120s met (2.5%) but not 180s"
-300,103.6,1,"All met, BUY"
+210,100.15,3,"60s met (0.15%) but not others"
+240,100.25,3,"120s met (0.25%) but not 180s"
+300,100.36,1,"All met, BUY"

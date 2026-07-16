@@ -132,11 +132,11 @@ class DummyExchange(Exchange):
             and o["type"] in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT)
         ]
 
-        drift = 1.001
+        drift = 1 + (0.01 * 0.01)
         for o in stop_orders:
             o["_age"] += 1
             if o["_age"] >= self.AGING_LIMIT:
-                drift = 0.98
+                drift = 1 - (0.5 * 0.01)
 
         self._prices[symbol] = price * drift
         current_price = self._prices[symbol]

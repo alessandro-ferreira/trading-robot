@@ -1,5 +1,5 @@
 timestamp,price,expected_signal,description
-30,102.0,4,"Hold, gain < activation"
-60,98.0,4,"Hold, drop < stop loss"
-90,94.0,4,"Hold, drop < stop loss"
-120,90.0,2,"Sell, below or equal to 10% stop loss"
+30,100.2,4,"Hold, gain < activation"
+60,99.8,4,"Hold, drop < stop loss"
+90,99.4,4,"Hold, drop < stop loss"
+120,99.0,2,"Sell, below or equal to 1% stop loss"

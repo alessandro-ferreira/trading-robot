@@ -1,4 +1,4 @@
 timestamp,price,expected_signal,description
-30,98.0,4,"Hold, above stop loss"
-60,96.0,4,"Hold, still above stop loss"
-90,95.0,2,"Sell, below or equal to 5% stop loss"
+30,99.8,4,"Hold, above stop loss"
+60,99.6,4,"Hold, still above stop loss"
+90,99.5,2,"Sell, below or equal to 0.5% stop loss"

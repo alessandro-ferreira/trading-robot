@@ -74,11 +74,11 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumTrailing,
 				WindowSeconds: 5,
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 3, Threshold: 0.05},
+					{LookbackSeconds: 3, Threshold: 0.5 * 0.01},
 				},
-				StopLossPct:     0.10,
-				ActivationPct:   0.08,
-				TrailingStopPct: 0.05,
+				StopLossPct:     1 * 0.01,
+				ActivationPct:   0.8 * 0.01,
+				TrailingStopPct: 0.5 * 0.01,
 			},
 		},
 		{
@@ -88,12 +88,12 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumProfit, // Using Profit strategy for this entry test
 				WindowSeconds: 120,
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 60, Threshold: 0.02}, // 2% over 60s
+					{LookbackSeconds: 60, Threshold: 0.2 * 0.01}, // 0.2% over 60s
 				},
 				MomentumRequireAll: true,
 				// Dummy values for exit rules, not relevant for this entry test
-				StopLossPct:     0.10,
-				ProfitTargetPct: 0.10,
+				StopLossPct:     1 * 0.01,
+				ProfitTargetPct: 1 * 0.01,
 			},
 		},
 		{
@@ -103,13 +103,13 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumProfit,
 				WindowSeconds: 200,
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 60, Threshold: 0.01},
-					{LookbackSeconds: 120, Threshold: 0.02},
-					{LookbackSeconds: 180, Threshold: 0.03},
+					{LookbackSeconds: 60, Threshold: 0.1 * 0.01},
+					{LookbackSeconds: 120, Threshold: 0.2 * 0.01},
+					{LookbackSeconds: 180, Threshold: 0.3 * 0.01},
 				},
 				MomentumRequireAll: true,
-				StopLossPct:        0.10,
-				ProfitTargetPct:    0.10,
+				StopLossPct:        1 * 0.01,
+				ProfitTargetPct:    1 * 0.01,
 			},
 		},
 		{
@@ -119,12 +119,12 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumProfit,
 				WindowSeconds: 200,
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 60, Threshold: 0.01},
-					{LookbackSeconds: 120, Threshold: 0.05},
+					{LookbackSeconds: 60, Threshold: 0.1 * 0.01},
+					{LookbackSeconds: 120, Threshold: 0.5 * 0.01},
 				},
 				MomentumRequireAll: false,
-				StopLossPct:        0.10,
-				ProfitTargetPct:    0.10,
+				StopLossPct:        1 * 0.01,
+				ProfitTargetPct:    1 * 0.01,
 			},
 		},
 		{
@@ -134,10 +134,10 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumProfit,
 				WindowSeconds: 65, // Window must be long enough for the lookback
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 60, Threshold: 0.025},
+					{LookbackSeconds: 60, Threshold: 0.25 * 0.01},
 				},
-				StopLossPct:     0.05,
-				ProfitTargetPct: 0.10,
+				StopLossPct:     0.5 * 0.01,
+				ProfitTargetPct: 1 * 0.01,
 			},
 			init: &initConfig{inPosition: true, entryPrice: 100.0},
 		},
@@ -147,9 +147,9 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 			config: StrategyConfig{
 				Type:            StrategyMomentumProfit,
 				WindowSeconds:   65,
-				MomentumWindows: []MomentumWindow{{LookbackSeconds: 60, Threshold: 0.025}},
-				StopLossPct:     0.10,
-				ProfitTargetPct: 0.05,
+				MomentumWindows: []MomentumWindow{{LookbackSeconds: 60, Threshold: 0.25 * 0.01}},
+				StopLossPct:     1 * 0.01,
+				ProfitTargetPct: 0.5 * 0.01,
 			},
 			init: &initConfig{inPosition: true, entryPrice: 100.0},
 		},
@@ -159,10 +159,10 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 			config: StrategyConfig{
 				Type:            StrategyMomentumTrailing,
 				WindowSeconds:   65,
-				MomentumWindows: []MomentumWindow{{LookbackSeconds: 60, Threshold: 0.025}},
-				StopLossPct:     0.10,
-				ActivationPct:   0.05,
-				TrailingStopPct: 0.02,
+				MomentumWindows: []MomentumWindow{{LookbackSeconds: 60, Threshold: 0.25 * 0.01}},
+				StopLossPct:     1 * 0.01,
+				ActivationPct:   0.5 * 0.01,
+				TrailingStopPct: 0.2 * 0.01,
 			},
 			init: &initConfig{inPosition: true, entryPrice: 100.0, highestPrice: 100.0},
 		},
@@ -172,10 +172,10 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 			config: StrategyConfig{
 				Type:            StrategyMomentumTrailing,
 				WindowSeconds:   65,
-				MomentumWindows: []MomentumWindow{{LookbackSeconds: 60, Threshold: 0.025}},
-				StopLossPct:     0.10,
-				ActivationPct:   0.05,
-				TrailingStopPct: 0.02,
+				MomentumWindows: []MomentumWindow{{LookbackSeconds: 60, Threshold: 0.25 * 0.01}},
+				StopLossPct:     1 * 0.01,
+				ActivationPct:   0.5 * 0.01,
+				TrailingStopPct: 0.2 * 0.01,
 			},
 			init: &initConfig{inPosition: true, entryPrice: 100.0, highestPrice: 100.0},
 		},
@@ -186,10 +186,10 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumProfit,
 				WindowSeconds: 120,
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 60, Threshold: 0.025},
+					{LookbackSeconds: 60, Threshold: 0.25 * 0.01},
 				},
-				StopLossPct:     0.05,
-				ProfitTargetPct: 0.05,
+				StopLossPct:     0.5 * 0.01,
+				ProfitTargetPct: 0.5 * 0.01,
 			},
 		},
 		{
@@ -199,11 +199,11 @@ func TestStrategy_Integration_DataDriven(t *testing.T) {
 				Type:          StrategyMomentumTrailing,
 				WindowSeconds: 120,
 				MomentumWindows: []MomentumWindow{
-					{LookbackSeconds: 60, Threshold: 0.025},
+					{LookbackSeconds: 60, Threshold: 0.25 * 0.01},
 				},
-				StopLossPct:     0.05,
-				ActivationPct:   0.05,
-				TrailingStopPct: 0.03,
+				StopLossPct:     0.5 * 0.01,
+				ActivationPct:   0.5 * 0.01,
+				TrailingStopPct: 0.3 * 0.01,
 			},
 		},
 	}

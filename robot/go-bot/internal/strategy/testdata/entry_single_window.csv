@@ -3,6 +3,6 @@ timestamp,price,expected_signal,description
 30,100.5,3,Filling window
 60,101.0,3,Filling window
 90,100.8,3,Filling window
-120,101.2,3,"Window ready but momentum not met"
-150,101.5,3,"Still no signal"
-180,103.3,1,"Momentum threshold met, BUY signal"
+120,100.12,3,"Window ready but momentum not met"
+150,100.15,3,"Still no signal"
+180,100.33,1,"Momentum threshold met, BUY signal"

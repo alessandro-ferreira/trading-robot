@@ -2,10 +2,10 @@ timestamp,price,expected_signal,description
 0,100,3,Start
 60,100,3,Fill
 120,100,3,Window ready
-180,103,1,Entry on 3% momentum
-210,105,4,Hold
-240,108.2,2,Exit on 5% take profit (from 103)
-270,105,3,Cooldown
-330,109,1,Re-entry on momentum
-345,106.0,4,"Intermediate drop"
-360,103.5,2,"Exit on 5% stop loss (from 109)"
+180,100.3,1,Entry on 0.3% momentum
+210,100.5,4,Hold
+240,100.82,2,Exit on 0.5% take profit (from 100.3)
+270,100.5,3,Cooldown
+330,100.9,1,Re-entry on momentum
+345,100.60,4,"Intermediate drop"
+360,100.35,2,"Exit on 0.5% stop loss (from 100.9)"

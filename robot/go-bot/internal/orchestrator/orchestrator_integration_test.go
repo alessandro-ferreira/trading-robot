@@ -166,11 +166,11 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	momentum := repository.StrategyMomentum{
 		WindowSeconds: 10,
 		Windows: []repository.MomentumWindow{
-			{LookbackSeconds: 1, Threshold: 0.05 * 0.01},
+			{LookbackSeconds: 1, Threshold: 0.005 * 0.01},
 		},
 		RequireAll:      true,
-		StopLossPct:     20 * 0.01,
-		ProfitTargetPct: sql.NullFloat64{Float64: 0.4 * 0.01, Valid: true},
+		StopLossPct:     2 * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: 0.04 * 0.01, Valid: true},
 	}
 
 	err = repo.Strategies.UpsertEnabledStrategy(
@@ -323,9 +323,9 @@ func TestOrchestrator_Integration_MultiPairScaling(t *testing.T) {
 		}
 
 		err = repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, p.symbol, repository.StrategyMomentumTrailing, "scaling-"+p.symbol, repository.StrategyMomentum{
-			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.0001}},
-			RequireAll: true, StopLossPct: 5 * 0.01,
-			ActivationPct:   sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
+			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.001 * 0.01}},
+			RequireAll: true, StopLossPct: 0.5 * 0.01,
+			ActivationPct:   sql.NullFloat64{Float64: 1 * 0.01, Valid: true},
 			TrailingStopPct: sql.NullFloat64{Float64: 0.5 * 0.01, Valid: true},
 		})
 		require.NoError(t, err)
@@ -367,11 +367,11 @@ func TestOrchestrator_Integration_DefensiveExit(t *testing.T) {
 	momentum := repository.StrategyMomentum{
 		WindowSeconds: 10,
 		Windows: []repository.MomentumWindow{
-			{LookbackSeconds: 1, Threshold: 0.05 * 0.01},
+			{LookbackSeconds: 1, Threshold: 0.005 * 0.01},
 		},
 		RequireAll:      true,
-		StopLossPct:     2 * 0.01,
-		ProfitTargetPct: sql.NullFloat64{Float64: 50 * 0.01, Valid: true}, // High target
+		StopLossPct:     0.2 * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: 5 * 0.01, Valid: true}, // High target
 	}
 	err = repo.Strategies.UpsertEnabledStrategy(
 		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", momentum,
@@ -412,8 +412,8 @@ func TestOrchestrator_Integration_ExternalDisturbance(t *testing.T) {
 
 	err = repo.Strategies.UpsertEnabledStrategy(
 		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", repository.StrategyMomentum{
-			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.10 * 0.01}},
-			StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
+			WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.01 * 0.01}},
+			StopLossPct: 0.2 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 1 * 0.01, Valid: true},
 		},
 	)
 	require.NoError(t, err)
@@ -476,8 +476,8 @@ func TestOrchestrator_Integration_OrderlyTermination(t *testing.T) {
 	require.NoError(t, err)
 
 	momentum := repository.StrategyMomentum{
-		WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
-		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 0.4 * 0.01, Valid: true},
+		WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.005 * 0.01}},
+		StopLossPct: 0.2 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 0.04 * 0.01, Valid: true},
 	}
 	err = repo.Strategies.UpsertEnabledStrategy(
 		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", momentum,
@@ -573,8 +573,8 @@ func TestOrchestrator_Integration_StateHydration(t *testing.T) {
 
 	// Seed strategy
 	err = repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "hydra", repository.StrategyMomentum{
-		WindowSeconds: 20, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
-		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
+		WindowSeconds: 20, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.005 * 0.01}},
+		StopLossPct: 0.2 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 0.1 * 0.01, Valid: true},
 	})
 	require.NoError(t, err)
 
@@ -644,8 +644,8 @@ func TestOrchestrator_Integration_PanicRecovery(t *testing.T) {
 
 	// Setup Strategy
 	err := repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "panic-test", repository.StrategyMomentum{
-		WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.05 * 0.01}},
-		StopLossPct: 20 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 10 * 0.01, Valid: true},
+		WindowSeconds: 10, Windows: []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.005 * 0.01}},
+		StopLossPct: 0.2 * 0.01, ProfitTargetPct: sql.NullFloat64{Float64: 1 * 0.01, Valid: true},
 	})
 	require.NoError(t, err)
 

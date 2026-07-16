@@ -86,7 +86,7 @@ TEST(SlidingWindowTest, GetPriceSecondsAgoReturnsZeroIfLookbackExceedsHistory) {
 TEST(SlidingWindowTest, InitWithSmallHistory) {
     SlidingWindowPriceState state(100);
     // History size 2: Ensure both are loaded, not just the last one.
-    vector<PricePoint> history = {{100, 10.0}, {150, 10.5}};
+    vector<PricePoint> history = {{100, 10.0}, {150, 10.1}};
     state.Init(history);
 
     // If the first point was dropped, looking back to t=100 would fail.
@@ -127,11 +127,11 @@ TEST(SlidingWindowTest, InitFailsWithNonPositivePrice) {
 
 TEST(SlidingWindowTest, InitSkipsUnrealisticPriceJumps) {
     SlidingWindowPriceState state(100);
-    // MAX_TICK_PRICE_CHANGE is 0.05 (5%). 10.0 -> 11.0 is a 10% jump.
-    // The point {101, 11.0} should be skipped.
-    vector<PricePoint> history = {{100, 10.0}, {101, 11.0}, {102, 10.2}};
+    // MAX_TICK_PRICE_CHANGE is 0.015 (0.15%). 10.0 -> 10.2 is a 0.2% jump.
+    // The point {101, 10.2} should be skipped.
+    vector<PricePoint> history = {{100, 10.0}, {101, 10.2}, {102, 10.1}};
     EXPECT_TRUE(state.Init(history));
-    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 10.2);
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 10.1);
     // Verify the jumpy point was skipped and the lookback still works against the first point.
     EXPECT_DOUBLE_EQ(state.GetPriceSecondsAgo(2), 10.0);
 }
@@ -148,14 +148,14 @@ TEST(SlidingWindowTest, RejectsUnrealisticPriceJumps) {
     state.UpdatePrice({100, 100.0});
     EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 100.0);
 
-    // Attempt to update with a >10% price jump (100 -> 111). Should be rejected.
-    EXPECT_FALSE(state.UpdatePrice({101, 111.0}));
+    // Attempt to update with a >1.5% price jump (100 -> 102). Should be rejected.
+    EXPECT_FALSE(state.UpdatePrice({101, 102.0}));
     // Verify that the state was not updated.
     EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 100.0);
 
-    // Attempt to update with a valid <10% price jump (100 -> 105). Should be accepted.
-    EXPECT_TRUE(state.UpdatePrice({102, 105.0}));
-    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 105.0);
+    // Attempt to update with a valid <1.5% price jump (100 -> 101). Should be accepted.
+    EXPECT_TRUE(state.UpdatePrice({102, 101.0}));
+    EXPECT_DOUBLE_EQ(state.GetCurrentPrice(), 101.0);
 }
 
 TEST(SlidingWindowTest, ToleratesUnrealisticPriceJumpWithLargeGap) {

@@ -26,11 +26,11 @@ func TestStrategy_Creation(t *testing.T) {
 			Type:          StrategyMomentumTrailing,
 			WindowSeconds: 100,
 			MomentumWindows: []MomentumWindow{
-				{LookbackSeconds: 50, Threshold: 0.01},
+				{LookbackSeconds: 50, Threshold: 0.1 * 0.01},
 			},
-			StopLossPct:     0.1,
-			ActivationPct:   0.05,
-			TrailingStopPct: 0.02,
+			StopLossPct:     1 * 0.01,
+			ActivationPct:   0.5 * 0.01,
+			TrailingStopPct: 0.2 * 0.01,
 		}
 		s, err := NewStrategy(cfg)
 		assert.NoError(t, err)
@@ -54,15 +54,15 @@ func TestStrategy_Creation(t *testing.T) {
 	t.Run("too many momentum windows truncated", func(t *testing.T) {
 		windows := make([]MomentumWindow, 15)
 		for i := 0; i < 15; i++ {
-			windows[i] = MomentumWindow{LookbackSeconds: 10 + i, Threshold: 0.01}
+			windows[i] = MomentumWindow{LookbackSeconds: 10 + i, Threshold: 0.1 * 0.01}
 		}
 
 		cfg := StrategyConfig{
 			Type:            StrategyMomentumProfit,
 			WindowSeconds:   1000,
 			MomentumWindows: windows,
-			StopLossPct:     0.1,
-			ProfitTargetPct: 0.1,
+			StopLossPct:     1 * 0.01,
+			ProfitTargetPct: 1 * 0.01,
 		}
 
 		s, err := NewStrategy(cfg)
@@ -89,10 +89,10 @@ func TestStrategy_Initialization(t *testing.T) {
 		Type:          StrategyMomentumProfit,
 		WindowSeconds: 100,
 		MomentumWindows: []MomentumWindow{
-			{LookbackSeconds: 50, Threshold: 0.01},
+			{LookbackSeconds: 50, Threshold: 0.1 * 0.01},
 		},
-		StopLossPct:     0.1,
-		ProfitTargetPct: 0.05,
+		StopLossPct:     1 * 0.01,
+		ProfitTargetPct: 0.5 * 0.01,
 	}
 
 	t.Run("init profit with unsorted history", func(t *testing.T) {
@@ -100,7 +100,7 @@ func TestStrategy_Initialization(t *testing.T) {
 		defer s.Close()
 
 		unsortedTicks := []PricePoint{
-			{Timestamp: 200, Price: 101.0},
+			{Timestamp: 200, Price: 100.1},
 			{Timestamp: 100, Price: 100.0},
 		}
 		err := s.InitProfit(unsortedTicks, false, 0)
@@ -114,7 +114,7 @@ func TestStrategy_Initialization(t *testing.T) {
 
 		sortedTicks := []PricePoint{
 			{Timestamp: 100, Price: 100.0},
-			{Timestamp: 200, Price: 101.0},
+			{Timestamp: 200, Price: 100.1},
 		}
 		err := s.InitProfit(sortedTicks, false, 0)
 		assert.NoError(t, err)
@@ -123,18 +123,18 @@ func TestStrategy_Initialization(t *testing.T) {
 	t.Run("init trailing with metadata rehydration", func(t *testing.T) {
 		cfgTrailing := cfg
 		cfgTrailing.Type = StrategyMomentumTrailing
-		cfgTrailing.ActivationPct = 0.05
-		cfgTrailing.TrailingStopPct = 0.02
+		cfgTrailing.ActivationPct = 0.5 * 0.01
+		cfgTrailing.TrailingStopPct = 0.2 * 0.01
 
 		s, _ := NewStrategy(cfgTrailing)
 		defer s.Close()
 
 		// Verify providing nil history preserves existing state/metadata logic
-		err := s.InitTrailing(nil, true, 100.0, 105.0)
+		err := s.InitTrailing(nil, true, 100.0, 100.5)
 		assert.NoError(t, err)
 
 		// Feed a live price to ensure rules have valid data to evaluate.
-		_ = s.UpdatePrice(105.0, 100)
+		_ = s.UpdatePrice(100.5, 100)
 
 		// Triggers tracking since we are in position
 		assert.Equal(t, SignalTrackingSellExit, s.GetSignal())
@@ -146,11 +146,11 @@ func TestStrategy_UpdateConfig(t *testing.T) {
 		Type:          StrategyMomentumTrailing,
 		WindowSeconds: 100,
 		MomentumWindows: []MomentumWindow{
-			{LookbackSeconds: 50, Threshold: 0.01},
+			{LookbackSeconds: 50, Threshold: 0.1 * 0.01},
 		},
-		StopLossPct:     0.1,
-		ActivationPct:   0.05,
-		TrailingStopPct: 0.02,
+		StopLossPct:     1 * 0.01,
+		ActivationPct:   0.5 * 0.01,
+		TrailingStopPct: 0.2 * 0.01,
 	}
 	s, err := NewStrategy(cfg)
 	require.NoError(t, err)
@@ -158,10 +158,10 @@ func TestStrategy_UpdateConfig(t *testing.T) {
 
 	// Update to a valid new configuration (tightening the stop loss)
 	newCfg := cfg
-	newCfg.StopLossPct = 0.05
+	newCfg.StopLossPct = 0.5 * 0.01
 	err = s.UpdateConfig(newCfg)
 	assert.NoError(t, err)
-	assert.Equal(t, 0.05, s.GetConfig().StopLossPct)
+	assert.Equal(t, 0.5*0.01, s.GetConfig().StopLossPct)
 
 	t.Run("update with invalid parameters rejected", func(t *testing.T) {
 		invalidCfg := cfg
@@ -183,17 +183,17 @@ func TestStrategy_EqualsConfig(t *testing.T) {
 		Type:          StrategyMomentumProfit,
 		WindowSeconds: 100,
 		MomentumWindows: []MomentumWindow{
-			{LookbackSeconds: 50, Threshold: 0.01},
+			{LookbackSeconds: 50, Threshold: 0.1 * 0.01},
 		},
-		StopLossPct:     0.1,
-		ProfitTargetPct: 0.05,
+		StopLossPct:     1 * 0.01,
+		ProfitTargetPct: 0.5 * 0.01,
 	}
 	cfg2 := cfg1
 	cfg3 := cfg1
-	cfg3.StopLossPct = 0.2
+	cfg3.StopLossPct = 2 * 0.01
 	cfg4 := cfg1
 	cfg4.MomentumWindows = []MomentumWindow{
-		{LookbackSeconds: 50, Threshold: 0.02},
+		{LookbackSeconds: 50, Threshold: 0.2 * 0.01},
 	}
 
 	s, err := NewStrategy(cfg1)
@@ -210,26 +210,26 @@ func TestStrategy_BuyFlow(t *testing.T) {
 	cfg := StrategyConfig{
 		Type:               StrategyMomentumProfit,
 		WindowSeconds:      100,
-		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.01}},
-		StopLossPct:        0.1,
-		ProfitTargetPct:    0.1,
+		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.1 * 0.01}},
+		StopLossPct:        1 * 0.01,
+		ProfitTargetPct:    1 * 0.01,
 		MomentumRequireAll: true,
 	}
 	s, err := NewStrategy(cfg)
 	require.NoError(t, err)
 	defer s.Close()
 
-	// Warm up and trigger Buy (2% gain)
+	// Warm up and trigger Buy (0.2% gain)
 	_ = s.UpdatePrice(100.0, 0)
 	_ = s.UpdatePrice(100.0, 50)
-	err = s.UpdatePrice(102.0, 100)
+	err = s.UpdatePrice(100.2, 100)
 	assert.NoError(t, err)
 
 	assert.Equal(t, SignalBuy, s.GetSignal(), "Signal should be BUY after momentum trigger")
 	assert.Equal(t, SignalWaitingBuyFill, s.GetSignal(), "Signal should lock until confirmed")
 
 	// Confirm fill: Moves to ACTIVE state
-	s.SetInPosition(true, 102.0, 102.0)
+	s.SetInPosition(true, 100.2, 100.2)
 	assert.Equal(t, SignalTrackingSellExit, s.GetSignal(), "Subsequent signal should be TRACKING")
 }
 
@@ -237,9 +237,9 @@ func TestStrategy_SellFlow(t *testing.T) {
 	cfg := StrategyConfig{
 		Type:               StrategyMomentumProfit,
 		WindowSeconds:      100,
-		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.01}},
-		StopLossPct:        0.01,
-		ProfitTargetPct:    0.1,
+		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.1 * 0.01}},
+		StopLossPct:        0.1 * 0.01,
+		ProfitTargetPct:    1 * 0.01,
 		MomentumRequireAll: true,
 	}
 	s, err := NewStrategy(cfg)
@@ -250,8 +250,8 @@ func TestStrategy_SellFlow(t *testing.T) {
 	err = s.InitProfit(nil, true, 100.0)
 	require.NoError(t, err)
 
-	// Trigger Sell (2% drop exceeds 1% stop loss)
-	_ = s.UpdatePrice(98.0, 101)
+	// Trigger Sell (0.2% drop exceeds 0.1% stop loss)
+	_ = s.UpdatePrice(99.8, 101)
 	assert.Equal(t, SignalSell, s.GetSignal(), "Signal should be SELL after SL trigger")
 	assert.Equal(t, SignalWaitingSellFill, s.GetSignal(), "Signal should lock until confirmed")
 
@@ -264,9 +264,9 @@ func TestStrategy_RetrySignal(t *testing.T) {
 	cfg := StrategyConfig{
 		Type:               StrategyMomentumProfit,
 		WindowSeconds:      100,
-		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.01}},
-		StopLossPct:        0.01,
-		ProfitTargetPct:    0.1,
+		MomentumWindows:    []MomentumWindow{{LookbackSeconds: 50, Threshold: 0.1 * 0.01}},
+		StopLossPct:        0.1 * 0.01,
+		ProfitTargetPct:    1 * 0.01,
 		MomentumRequireAll: true,
 	}
 	s, err := NewStrategy(cfg)
@@ -276,7 +276,7 @@ func TestStrategy_RetrySignal(t *testing.T) {
 	t.Run("retry buy signal returns to idle", func(t *testing.T) {
 		_ = s.UpdatePrice(100.0, 0)
 		_ = s.UpdatePrice(100.0, 50)
-		_ = s.UpdatePrice(102.0, 100) // Trigger buy
+		_ = s.UpdatePrice(100.2, 100) // Trigger buy
 		assert.Equal(t, SignalBuy, s.GetSignal())
 
 		require.NoError(t, s.RetrySignal(SignalBuy))
@@ -287,7 +287,7 @@ func TestStrategy_RetrySignal(t *testing.T) {
 
 	t.Run("retry sell signal returns to active", func(t *testing.T) {
 		_ = s.InitProfit(nil, true, 100.0)
-		_ = s.UpdatePrice(98.0, 200) // Trigger SL
+		_ = s.UpdatePrice(99.8, 200) // Trigger SL
 		assert.Equal(t, SignalSell, s.GetSignal())
 
 		require.NoError(t, s.RetrySignal(SignalSell))
@@ -301,8 +301,8 @@ func TestStrategy_UpdatePrice_Validation(t *testing.T) {
 	cfg := StrategyConfig{
 		Type:            StrategyDummy,
 		WindowSeconds:   100,
-		StopLossPct:     0.1,
-		ProfitTargetPct: 0.1,
+		StopLossPct:     1 * 0.01,
+		ProfitTargetPct: 1 * 0.01,
 	}
 	s, err := NewStrategy(cfg)
 	require.NoError(t, err)
@@ -310,14 +310,14 @@ func TestStrategy_UpdatePrice_Validation(t *testing.T) {
 
 	t.Run("stale timestamp rejected", func(t *testing.T) {
 		_ = s.UpdatePrice(100.0, 1000)
-		err := s.UpdatePrice(101.0, 999)
+		err := s.UpdatePrice(100.1, 999)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "tick rejected")
 	})
 
 	t.Run("unrealistic price jump rejected", func(t *testing.T) {
 		_ = s.UpdatePrice(100.0, 1100)
-		err := s.UpdatePrice(200.0, 1101) // 100% jump
+		err := s.UpdatePrice(110.0, 1101) // 10% jump
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "tick rejected")
 	})

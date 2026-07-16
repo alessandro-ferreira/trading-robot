@@ -106,10 +106,10 @@ func TestManagementServer_Integration_StrategyLifecycle(t *testing.T) {
 			MomentumParams: &pb.MomentumParams{
 				Label:           "integration-test",
 				WindowSeconds:   60,
-				StopLossPct:     0.02,
-				ProfitTargetPct: floatPointer(0.05),
+				StopLossPct:     0.2 * 0.01,
+				ProfitTargetPct: floatPointer(0.5 * 0.01),
 				Windows: []*pb.MomentumWindow{
-					{LookbackSeconds: 30, Threshold: 0.01},
+					{LookbackSeconds: 30, Threshold: 0.1 * 0.01},
 				},
 			},
 		}
@@ -126,7 +126,7 @@ func TestManagementServer_Integration_StrategyLifecycle(t *testing.T) {
 			if p.ExchangeName == exchange && p.InstrumentSymbol == symbol {
 				assert.Equal(t, repository.StrategyMomentumProfit, p.Type)
 				assert.Equal(t, 60, p.Momentum.WindowSeconds)
-				assert.Equal(t, 0.05, p.Momentum.ProfitTargetPct.Float64)
+				assert.Equal(t, 0.005, p.Momentum.ProfitTargetPct.Float64)
 				found = true
 			}
 		}

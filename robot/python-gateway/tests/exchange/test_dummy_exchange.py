@@ -18,13 +18,13 @@ class TestDummyExchange(unittest.TestCase):
         """Verify ticker fetching and simulated price drift."""
         ticker = self.exchange.fetch_ticker("BTC/USDT")
         self.assertEqual(ticker.symbol, "BTC/USDT")
-        # dummy.py now applies 0.1% drift BEFORE returning the price
-        self.assertEqual(ticker.last, 42500.50 * 1.001)
+        # dummy.py now applies 0.01% drift BEFORE returning the price
+        self.assertEqual(ticker.last, 42500.50 * 1.0001)
 
         # Test drift on subsequent call
         ticker2 = self.exchange.fetch_ticker("BTC/USDT")
         self.assertGreater(ticker2.last, ticker.last)
-        self.assertAlmostEqual(ticker2.last, ticker.last * 1.001)
+        self.assertAlmostEqual(ticker2.last, ticker.last * 1.0001)
 
         self.assertIn("exchange", ticker.info)
         self.assertEqual(ticker.info["exchange"], "dummy")
@@ -206,9 +206,9 @@ class TestDummyExchange(unittest.TestCase):
 
         self.assertEqual(len(self.exchange.fetch_open_orders()), 0)
         ticker = self.exchange.fetch_ticker("BTC/USDT")
-        # dummy.py now applies 0.1% drift BEFORE returning the price
+        # dummy.py now applies 0.01% drift BEFORE returning the price
         self.assertEqual(
-            ticker.last, 42500.50 * 1.001
+            ticker.last, 42500.50 * 1.0001
         )  # Verify original price restored
 
 
