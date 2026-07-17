@@ -1,9 +1,10 @@
 import http.client
 import os
+import requests
 import unittest
+
 from unittest.mock import MagicMock, patch
 
-import requests
 from core import config
 from exchange.exchanges.base import (
     ExchangeError,

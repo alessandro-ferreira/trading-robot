@@ -122,3 +122,6 @@ def load(path: str) -> Config:
     except tomllib.TOMLDecodeError as e:
         logging.error(f"Failed to decode TOML file: {e}")
         raise
+    except Exception as e:
+        logging.error(f"Unexpected error while loading configuration: {e}")
+        raise

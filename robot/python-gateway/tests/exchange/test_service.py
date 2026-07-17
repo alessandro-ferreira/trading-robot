@@ -1,22 +1,23 @@
+import ccxt
+import grpc
 import os
 import unittest
-from unittest.mock import MagicMock
-import grpc
-import ccxt
 
+from unittest.mock import MagicMock
+
+from core import config
 from exchange.service import ExchangeService
 from exchange.factory import (
     ExchangeNotConfigured,
     ExchangeConfigurationError,
 )
-from v1 import exchange_pb2
 from exchange.exchanges.base import Ticker
 from exchange.exchanges.base import (
     ExchangeNetworkError,
     InsufficientFundsError,
     BadRequestError,
 )
-from core import config
+from v1 import exchange_pb2
 
 TEST_DATA_DIR = "tests/core/testdata"
 

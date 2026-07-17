@@ -1,9 +1,10 @@
-import logging
-import sys
 import json
+import logging
 import os
+import sys
 
 from datetime import datetime
+
 from core.config import LogConfig
 
 # Determine the project root directory (one level up from core/)
@@ -57,6 +58,43 @@ class TextFormatter(logging.Formatter):
         return super().format(record)
 
 
+class DailyFileHandler(logging.FileHandler):
+    """
+    A thread-safe FileHandler that automatically rotates log files daily.
+
+    Rotation is performed inside emit(), which is already protected by
+    logging.Handler's internal lock.
+    """
+
+    def __init__(self, base_path, mode="a", encoding="utf-8", delay=False):
+        self.base_path = base_path
+        self.current_date = datetime.now().strftime("%Y-%m-%d")
+        super().__init__(
+            self._get_log_path(self.current_date),
+            mode=mode,
+            encoding=encoding,
+            delay=delay,
+        )
+
+    def _get_log_path(self, date_str):
+        base, ext = os.path.splitext(self.base_path)
+        return f"{base}-{date_str}{ext}"
+
+    def emit(self, record):
+        new_date = datetime.now().strftime("%Y-%m-%d")
+
+        if new_date != self.current_date:
+            if self.stream:
+                self.stream.flush()
+                self.stream.close()
+
+            self.current_date = new_date
+            self.baseFilename = os.path.abspath(self._get_log_path(self.current_date))
+            self.stream = self._open()
+
+        super().emit(record)
+
+
 def setup(cfg: LogConfig, stream=None):
     """
     Sets up the root logger. This function can be called multiple times
@@ -74,20 +112,19 @@ def setup(cfg: LogConfig, stream=None):
         stream = sys.stdout
 
     handler = logging.StreamHandler(stream)
+
     # If a log file path is specified, add a FileHandler to log to that file.
     if cfg.path:
-        log_path = cfg.path
-        if cfg.rotate:
-            base, ext = os.path.splitext(log_path)
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            log_path = f"{base}-{date_str}{ext}"
         try:
-            handler = logging.FileHandler(log_path)
+            if cfg.rotate:
+                handler = DailyFileHandler(cfg.path)
+            else:
+                handler = logging.FileHandler(cfg.path)
         except Exception as e:
-            print(f"Failed to setup file logger at {log_path}: {e}", file=sys.stderr)
+            print(f"Failed to setup file logger at {cfg.path}: {e}", file=sys.stderr)
+
     handler.addFilter(RequestIDFilter())
 
-    formatter: logging.Formatter
     if cfg.format.lower() == "json":
         formatter = JSONFormatter(source=cfg.source)
     else:  # Default to text

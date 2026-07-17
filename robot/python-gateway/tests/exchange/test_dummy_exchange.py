@@ -1,5 +1,7 @@
 import unittest
+
 from core.config import ExchangeConfig
+
 from exchange.exchanges.base import OrderType, ExchangeError
 from exchange.exchanges.dummy import DummyExchange
 

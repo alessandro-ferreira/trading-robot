@@ -10,9 +10,9 @@ from concurrent import futures
 import grpc
 from grpc_reflection.v1alpha import reflection
 
-from v1 import exchange_pb2, exchange_pb2_grpc
 from core import config, logger
 from exchange import ExchangeFactory, ExchangeService
+from v1 import exchange_pb2, exchange_pb2_grpc
 
 
 def serve():

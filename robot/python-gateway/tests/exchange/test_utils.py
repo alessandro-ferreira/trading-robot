@@ -1,9 +1,11 @@
-import unittest
-from unittest.mock import MagicMock, patch
-import grpc
 import ccxt
+import grpc
+import unittest
+
+from unittest.mock import MagicMock, patch
+
+
 from exchange import utils
-from v1 import exchange_pb2
 from exchange.exchanges.base import (
     ExchangeNetworkError,
     AuthenticationError,
@@ -14,6 +16,7 @@ from exchange.factory import (
     ExchangeNotConfigured,
     ExchangeConfigurationError,
 )
+from v1 import exchange_pb2
 
 
 class TestUtils(unittest.TestCase):
@@ -21,12 +24,14 @@ class TestUtils(unittest.TestCase):
         self.context = MagicMock()
 
     def test_get_exchange_success(self):
+        """Vefify exchange retrieval from the factory works correctly."""
         factory = MagicMock()
         request = MagicMock(exchange="binance")
         utils.get_exchange(factory, request, self.context)
         factory.get.assert_called_with("binance")
 
     def test_get_exchange_error_handling(self):
+        """Verift error handling when exchange retrieval fails."""
         factory = MagicMock()
         test_cases = [
             (ExchangeNotConfigured("Not configured"), grpc.StatusCode.NOT_FOUND),
@@ -46,6 +51,7 @@ class TestUtils(unittest.TestCase):
                 self.context.abort.assert_called_with(expected_code, str(error))
 
     def test_retry_network_call_success(self):
+        """Verify successful retry of a network call after an initial failure."""
         mock_func = MagicMock()
         mock_func.side_effect = [ccxt.NetworkError("Fail"), "Success"]
         with patch("time.sleep"):
@@ -54,6 +60,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(mock_func.call_count, 2)
 
     def test_handle_exchange_error_mapping(self):
+        """Verify handling of various exchange errors and their mapping to gRPC status codes."""
         test_cases = [
             (
                 ccxt.NetworkError("Timeout"),
@@ -111,6 +118,7 @@ class TestUtils(unittest.TestCase):
                 self.context.abort.assert_called_with(expected_code, expected_msg)
 
     def test_map_order_properties(self):
+        """Verify that order properties are correctly mapped from the exchange response."""
         test_cases = [
             # Market Order
             ({"id": "1", "type": "market", "price": 0.0}, "market", 0.0),
@@ -142,6 +150,7 @@ class TestUtils(unittest.TestCase):
                 self.assertEqual(res.price, expected_price)
 
     def test_map_order_creation_fallback(self):
+        """Verify fallback mapping for order creation when type/price info is missing."""
         # Simulation of a creation response missing type/price info
         order = {"id": "ord-1", "status": "open"}
         request = exchange_pb2.CreateStopOrderRequest(
@@ -152,6 +161,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(res.price, 30000.0)
 
     def test_map_order_identifiers(self):
+        """Verify that order identifiers are correctly mapped to the response."""
         # Standard order
         res = utils.map_order({"id": "123", "clientOrderId": "cid-1"})
         self.assertEqual(res.id, "123")

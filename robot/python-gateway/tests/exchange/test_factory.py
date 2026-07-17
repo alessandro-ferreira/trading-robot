@@ -1,14 +1,15 @@
 import unittest
+
 from unittest.mock import patch, MagicMock
 
+from core import config
+from core.config import ExchangeConfig
+from exchange.exchanges.ccxt import CCXTExchange
 from exchange.factory import (
     ExchangeFactory,
     ExchangeNotConfigured,
     ExchangeConfigurationError,
 )
-from exchange.exchanges.ccxt import CCXTExchange
-from core import config
-from core.config import ExchangeConfig
 
 
 class TestExchangeFactory(unittest.TestCase):

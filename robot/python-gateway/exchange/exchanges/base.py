@@ -1,9 +1,9 @@
+import ccxt
 import logging
+
 from abc import ABC
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-
-import ccxt
 
 from core.config import ExchangeConfig
 

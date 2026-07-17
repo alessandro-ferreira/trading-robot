@@ -1,6 +1,8 @@
-import unittest
-from unittest.mock import MagicMock, patch
 import ccxt
+import unittest
+
+from unittest.mock import MagicMock, patch
+
 from core import config
 from exchange.exchanges.ccxt import CCXTExchange
 from exchange.exchanges.base import ExchangeError

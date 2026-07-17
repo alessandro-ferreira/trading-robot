@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
 import http.client
 import logging
-import time
-from typing import Any, Dict, List, Optional
-
 import requests
+import time
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from .base import (
     Exchange,

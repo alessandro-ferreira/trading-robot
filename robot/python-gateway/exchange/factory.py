@@ -1,4 +1,5 @@
 import logging
+
 from typing import Dict, List
 
 from core.config import ExchangeConfig

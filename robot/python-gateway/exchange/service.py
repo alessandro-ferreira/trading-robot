@@ -1,14 +1,14 @@
+import grpc
 import logging
+
 from typing import Any
 
-import grpc
-
+from . import utils
+from .exchanges import SUPPORTED_ASSETS
+from core.config import Config
+from exchange.factory import ExchangeFactory
 from v1 import exchange_pb2
 from v1 import exchange_pb2_grpc
-from exchange.factory import ExchangeFactory
-from core.config import Config
-from .exchanges import SUPPORTED_ASSETS
-from . import utils
 
 
 class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):

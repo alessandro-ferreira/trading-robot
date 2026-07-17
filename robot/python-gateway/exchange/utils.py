@@ -1,11 +1,11 @@
+import ccxt
+import grpc
 import logging
 import time
+import traceback
+
 from typing import Any
 
-import grpc
-import ccxt
-
-from v1 import exchange_pb2
 from exchange.factory import (
     ExchangeConfigurationError,
     ExchangeFactory,
@@ -18,6 +18,10 @@ from .exchanges.base import (
     InsufficientFundsError,
     BadRequestError,
 )
+from v1 import exchange_pb2
+
+# Maximum number of stack trace entries (or frames) from the active exception.
+TRACEBACK_LIMIT = 3
 
 
 def get_exchange(
@@ -30,10 +34,10 @@ def get_exchange(
     try:
         return factory.get(ex_name)
     except ExchangeNotConfigured as e:
-        logging.exception(f"Exchange not configured: {e}")
+        logging.error(f"Exchange not configured: {e}")
         context.abort(grpc.StatusCode.NOT_FOUND, str(e))
     except ExchangeConfigurationError as e:
-        logging.exception(f"Exchange configuration error: {e}")
+        logging.error(f"Exchange configuration error: {e}")
         context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
 
 
@@ -57,7 +61,9 @@ def retry_network_call(func, *args, **kwargs):
 def handle_exchange_error(context: grpc.ServicerContext, e: Exception, action: str):
     """Maps CCXT and requests exceptions to gRPC status codes."""
     if isinstance(e, (ccxt.NetworkError, ExchangeNetworkError)):
-        logging.exception(f"Network error during {action}")
+        logging.error(
+            f"Network error during {action}: {traceback.format_exc(limit=TRACEBACK_LIMIT)}"
+        )
         context.abort(grpc.StatusCode.UNAVAILABLE, f"Exchange network error: {e}")
     elif isinstance(e, (ccxt.AuthenticationError, AuthenticationError)):
         logging.error(f"Authentication error during {action}: {e}")
@@ -69,7 +75,9 @@ def handle_exchange_error(context: grpc.ServicerContext, e: Exception, action: s
         logging.error(f"Invalid parameters during {action}: {e}")
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"Invalid parameters: {e}")
     else:
-        logging.exception(f"Internal error during {action}: {e}")
+        logging.error(
+            f"Internal error during {action}: {traceback.format_exc(limit=TRACEBACK_LIMIT)}"
+        )
         context.abort(grpc.StatusCode.INTERNAL, f"Internal gateway error: {e}")
 
 

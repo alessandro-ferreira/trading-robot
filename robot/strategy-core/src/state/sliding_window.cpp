@@ -92,7 +92,6 @@ bool SlidingWindowPriceState::UpdatePrice(const PricePoint& tick) {
     current_timestamp_ = tick.timestamp;
     entries_.push_back(tick);
 
-    // Define the cutoff with a tollerance of 60 seconds.
     long long cutoff = current_timestamp_ - window_seconds_ - CUTOFF_TOLERANCE_SECONDS;
 
     // Evict entries that are too old to be needed for any lookback.

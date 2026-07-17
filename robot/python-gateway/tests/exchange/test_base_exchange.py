@@ -1,4 +1,5 @@
 import unittest
+
 from exchange.exchanges.base import (
     Exchange,
     ExchangeConfig,
