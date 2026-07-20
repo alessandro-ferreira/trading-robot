@@ -36,6 +36,7 @@ htmlcov/
 # C++ build artifacts
 robot/strategy-core/build/
 ml-engine/build/
+simulator/build
 
 # C++ coverage files
 *.gcno

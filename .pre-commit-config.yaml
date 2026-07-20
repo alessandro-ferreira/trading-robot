@@ -4,13 +4,13 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
-        files: ^robot/|^ml-engine/
+        files: ^robot/|^ml-engine|^simulator/
       - id: end-of-file-fixer
-        files: ^robot/|^ml-engine/
+        files: ^robot/|^ml-engine|^simulator/
       - id: check-yaml
-        files: ^robot/|^ml-engine/
+        files: ^robot/|^ml-engine|^simulator/
       - id: check-added-large-files
-        files: ^robot/|^ml-engine/
+        files: ^robot/|^ml-engine|^simulator/
 
   # Python Gateway
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -68,13 +68,13 @@ repos:
         entry: bash -c 'cd robot/go-bot && golangci-lint run'
         pass_filenames: false
 
-  # C++ Strategy Core / ML Engine
+  # C++ Strategy Core / ML Engine / Simulator
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v17.0.6
     hooks:
       - id: clang-format
         types_or: [c++, c]
-        files: ^robot/strategy-core/|^ml-engine/
+        files: ^robot/strategy-core/|^ml-engine/|^simulator/
         args: ['--style={BasedOnStyle: Google, ColumnLimit: 120, IndentWidth: 4}']
 
   # Local Tests
