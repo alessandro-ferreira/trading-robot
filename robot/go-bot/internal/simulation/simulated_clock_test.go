@@ -1,6 +1,4 @@
-//go:build unit
-
-package execution
+package simulation
 
 import (
 	"testing"
@@ -8,14 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestSystemClock(t *testing.T) {
-	clock := NewSystemClock()
-	now := clock.Now()
-
-	// Should be close to current time
-	require.WithinDuration(t, time.Now(), now, 1*time.Second)
-}
 
 func TestSimulatedClock(t *testing.T) {
 	// Create a minimal SimulatedClient for testing

@@ -24,6 +24,7 @@ import (
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
+	"trading/robot/go-bot/internal/utils"
 )
 
 // setupOrchestratorIntegrationTest initializes all dependencies for an Orchestrator integration test.
@@ -71,7 +72,7 @@ func setupOrchestratorIntegrationTest(
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // slog.Default()
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(logger, db, repoContainer)
-	clock := execution.NewSystemClock()
+	clock := utils.NewSystemClock()
 	execSvc := execution.NewService(logger, db, client, repoContainer, clock)
 	reconciler := reconcil.NewReconciler(logger, db, repoContainer, execSvc, pf)
 

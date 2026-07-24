@@ -5,28 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"strings"
 	"time"
 
 	"trading/robot/go-bot/internal/components/signal_generator"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
+	"trading/robot/go-bot/internal/utils"
 
 	"github.com/jackc/pgx/v5"
 )
-
-const epsilon = 1e-9
-
-// isZeroEps checks if a value is effectively zero within an epsilon margin.
-func isZeroEps(val float64) bool {
-	return math.Abs(val) <= epsilon
-}
-
-// isEqualEps checks if two values are effectively equal within an epsilon margin.
-func isEqualEps(a, b float64) bool {
-	return math.Abs(a-b) <= epsilon
-}
 
 // ----------------------------------------------------------------------------
 // Init Methods
@@ -222,7 +210,7 @@ func (o *Orchestrator) signalSearchingBuyEntry(
 		}
 
 		// If the database position quantity matches the exchange total balance, we sync the strategy metadata.
-		if isEqualEps(balance.Total, pos.Quantity) {
+		if utils.IsEqualEps(balance.Total, pos.Quantity) {
 			log.Warn(
 				"syncing strategy to active state due to existing position",
 				"position", pos.Quantity,
@@ -330,7 +318,7 @@ func (o *Orchestrator) signalBuy(
 		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
-	if !isZeroEps(balance.Total) {
+	if !utils.IsZeroEps(balance.Total) {
 		log.Warn(
 			"buy skipped: existent balance, proceeding to avoid duplication", "balance", balance.Total,
 		)
@@ -573,7 +561,7 @@ func (o *Orchestrator) signalSell(
 		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
-	if isZeroEps(balance.Total) {
+	if utils.IsZeroEps(balance.Total) {
 		log.Info("exchange balance is zero, closing local position and setting strategy to idle")
 		_ = o.portfolio.DeletePosition(ctx, ex, sym)
 		sig.SetInPosition(false, 0, 0)
@@ -674,7 +662,7 @@ func (o *Orchestrator) signalWaitingSellFill(
 	if err != nil {
 		return
 	}
-	if isZeroEps(balance.Total) {
+	if utils.IsZeroEps(balance.Total) {
 		log.Info("exchange balance is zero, closing local position and setting strategy to idle")
 		_ = o.portfolio.DeletePosition(ctx, ex, sym)
 		sig.SetInPosition(false, 0, 0)

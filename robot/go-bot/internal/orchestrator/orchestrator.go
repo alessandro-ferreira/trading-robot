@@ -15,6 +15,8 @@ import (
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/simulation"
+	"trading/robot/go-bot/internal/utils"
 )
 
 // Orchestrator coordinates the trading loop across multiple markets.
@@ -27,7 +29,7 @@ type Orchestrator struct {
 	portfolio portfolio.Portfolio
 	recon     reconcil.Reconciler
 	exec      execution.Service
-	clock     execution.Clock
+	clock     utils.Clock
 	mu        sync.Mutex
 	signals   map[string]*signal_generator.SignalGenerator
 }
@@ -41,7 +43,7 @@ func New(
 	pf portfolio.Portfolio,
 	recon reconcil.Reconciler,
 	exec execution.Service,
-	clock execution.Clock,
+	clock utils.Clock,
 ) (*Orchestrator, error) {
 	// Initialize internal logic components
 	riskMgr := risk.NewManager(logger, cfg.Risk)
@@ -138,7 +140,7 @@ func (o *Orchestrator) refreshStrategies(ctx context.Context, wg *sync.WaitGroup
 // loadValidStrategies fetches the current intended state from the database.
 func (o *Orchestrator) loadValidStrategies(ctx context.Context) ([]repository.StrategyPair, error) {
 	if o.cfg.Simulation.Enabled {
-		return execution.GetSimulationStrategies(o.cfg.Simulation.Symbol)
+		return simulation.GetSimulationStrategies(o.cfg.Simulation.Symbol)
 	}
 
 	statuses := []string{

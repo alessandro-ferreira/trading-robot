@@ -45,7 +45,9 @@ robot/
 │   │       └── repository          # Data access layer (Repository Pattern)
 │   │   ├── logger/                 # Structured logging setup
 │   │   ├── orchestrator/           # Trading loop orchestrator
-│   │   └── strategy/               # Trading strategy logic
+│   │   ├── simulation/             # Backtesting and simulation components
+│   │   ├── strategy/               # Trading strategy logic
+│   │   └── utils/                  # Shared utility functions
 │   └── migrations                  # Database migrations
 │
 ├── python-gateway/                 # The Python Exchange Gateway service

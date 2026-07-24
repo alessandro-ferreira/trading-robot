@@ -16,6 +16,7 @@ import (
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/utils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +68,7 @@ func setupReconcilerIntegrationTest(
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // slog.Default()
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(logger, db, repoContainer)
-	clock := execution.NewSystemClock()
+	clock := utils.NewSystemClock()
 	execSvc := execution.NewService(logger, db, client, repoContainer, clock)
 
 	// Ensure a clean state for positions to avoid interference from previous tests.

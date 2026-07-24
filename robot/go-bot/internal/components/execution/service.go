@@ -12,6 +12,7 @@ import (
 	pb "trading/robot/go-bot/gen/go/v1"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/utils"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -49,7 +50,7 @@ type service struct {
 	db     *database.DB
 	client Client
 	repo   *repository.Container
-	clock  Clock
+	clock  utils.Clock
 }
 
 // NewService creates a new execution Service.
@@ -58,7 +59,7 @@ func NewService(
 	db *database.DB,
 	client Client,
 	repo *repository.Container,
-	clock Clock,
+	clock utils.Clock,
 ) Service {
 	return &service{
 		logger: logger,

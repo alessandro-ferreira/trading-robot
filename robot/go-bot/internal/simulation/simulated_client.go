@@ -1,4 +1,4 @@
-package execution
+package simulation
 
 import (
 	"context"
@@ -91,6 +91,9 @@ func NewSimulatedClient(
 	outputPath string,
 	initialUSDT float64,
 ) (*SimulatedClient, error) {
+	if beginPeriod == "" || endPeriod == "" {
+		return nil, fmt.Errorf("begin and end periods are mandatory for simulation")
+	}
 	if inputPath == "" {
 		return nil, fmt.Errorf("input path (CSV price file) is required for simulation")
 	}
@@ -358,7 +361,7 @@ func (sc *SimulatedClient) Close() error {
 	} else {
 		file, err = os.Create(sc.outputPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create output file %s: %w", sc.outputPath, err)
 		}
 		defer file.Close()
 	}
@@ -496,30 +499,24 @@ func (sc *SimulatedClient) loadPriceHistory(inputFile, begin, end string) error 
 	}
 	defer file.Close()
 
-	// Parse begin and end periods (optional)
-	var beginUnix, endUnix int64
-	if begin != "" {
-		t, err := time.Parse("2006-01", begin)
-		if err == nil {
-			beginUnix = t.Unix()
-		}
+	// Parse begin and end periods (mandatory)
+	tBegin, err := time.Parse("2006-01", begin)
+	if err != nil {
+		return fmt.Errorf("invalid begin period format (expected YYYY-MM): %w", err)
 	}
-	if end != "" {
-		t, err := time.Parse("2006-01", end)
-		if err == nil {
-			// Include the whole end month
-			endUnix = t.AddDate(0, 1, 0).Unix() - 1
-		}
+	beginUnix := tBegin.Unix()
+
+	tEnd, err := time.Parse("2006-01", end)
+	if err != nil {
+		return fmt.Errorf("invalid end period format (expected YYYY-MM): %w", err)
 	}
+	// Include the whole end month
+	endUnix := tEnd.AddDate(0, 1, 0).Unix() - 1
 
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
 		return fmt.Errorf("failed to read CSV file: %w", err)
-	}
-
-	if len(records) < 2 {
-		return fmt.Errorf("CSV file has insufficient data")
 	}
 
 	var previousTimestamp int64
@@ -538,12 +535,13 @@ func (sc *SimulatedClient) loadPriceHistory(inputFile, begin, end string) error 
 			continue
 		}
 
-		// Filter by period if provided
-		if beginUnix > 0 && unixTS < beginUnix {
+		// Filter by period
+		if unixTS < beginUnix {
 			continue
 		}
-		if endUnix > 0 && unixTS > endUnix {
-			continue
+		if unixTS > endUnix {
+			// Since the file must be sorted, we can stop here
+			break
 		}
 
 		price, err := strconv.ParseFloat(record[5], 64)

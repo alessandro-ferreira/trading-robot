@@ -23,6 +23,7 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/logger"
 	"trading/robot/go-bot/internal/orchestrator"
+	"trading/robot/go-bot/internal/utils"
 
 	"google.golang.org/grpc"
 )
@@ -130,7 +131,7 @@ func main() {
 	}()
 
 	// Initialize execution service
-	clock := execution.NewSystemClock()
+	clock := utils.NewSystemClock()
 	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer, clock)
 	slog.Info("Execution service initialized")
 

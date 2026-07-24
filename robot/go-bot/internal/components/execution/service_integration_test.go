@@ -16,6 +16,7 @@ import (
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/utils"
 )
 
 // setupIntegrationTest initializes all dependencies for an integration test.
@@ -64,7 +65,8 @@ func setupIntegrationTest(t *testing.T) (Service, Client, *database.DB, *reposit
 	// Initialize Components
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	repoContainer := repository.New()
-	svc := NewService(logger, db, client, repoContainer, NewSystemClock())
+	clock := utils.NewSystemClock()
+	svc := NewService(logger, db, client, repoContainer, clock)
 
 	// Teardown function
 	cleanup := func() {

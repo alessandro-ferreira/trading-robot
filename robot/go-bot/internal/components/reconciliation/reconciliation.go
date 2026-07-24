@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"trading/robot/go-bot/internal/components/portfolio"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/utils"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -30,18 +30,6 @@ const promotionMaxAge = 1 * time.Hour
 // maxFeeMargin defines the maximum expected discrepancy (2%) between a gross trade
 // quantity and the net wallet balance to account for exchange trading fees.
 const maxFeeMargin = 0.05
-
-const epsilon = 1e-9
-
-// isZeroEps checks if a value is effectively zero within an epsilon margin.
-func isZeroEps(val float64) bool {
-	return math.Abs(val) <= epsilon
-}
-
-// isEqualEps checks if two values are effectively equal within an epsilon margin.
-func isEqualEps(a, b float64) bool {
-	return math.Abs(a-b) <= epsilon
-}
 
 type Reconciler interface {
 	SyncOrders(ctx context.Context, exchange, instrumentSymbol string) error
@@ -146,7 +134,7 @@ func (r *reconciler) SyncOrders(
 	for _, dbo := range dbOrders {
 		asset, _ := splitSymbol(dbo.InstrumentSymbol)
 		// If no balance left, fetch the individual status from the exchange to update the order in our database.
-		if isZeroEps(walletBalances[asset]) {
+		if utils.IsZeroEps(walletBalances[asset]) {
 			_, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID)
 			if err != nil {
 				log.Error(
@@ -201,7 +189,7 @@ func (r *reconciler) SyncPositions(
 			positionQty += p.Quantity
 		}
 
-		if isZeroEps(walletQty) {
+		if utils.IsZeroEps(walletQty) {
 			// If the wallet balance is zero, all associated trading positions must be closed.
 			for _, p := range positions {
 				log.Warn(
@@ -216,7 +204,7 @@ func (r *reconciler) SyncPositions(
 				}
 			}
 
-		} else if !isEqualEps(positionQty, walletQty) {
+		} else if !utils.IsEqualEps(positionQty, walletQty) {
 			// If the total quantity drifted, we can only auto-correct if there is exactly one position for this base asset.
 			// We snap to the exchange truth. This naturally reconciles deductions for trading fees or minor 'dust' remains.
 			if len(positions) != 1 {
@@ -280,7 +268,7 @@ func (r *reconciler) SyncPositions(
 		_, existsPosition := positionsByAsset[asset]
 
 		// If we have a wallet balance but no open order or position in the DB, we adopt it as a unlinked position.
-		if !isZeroEps(walletQty) && !existsPosition {
+		if !utils.IsZeroEps(walletQty) && !existsPosition {
 			log.Info(
 				"Reconciliation: Adopting ghost balance as unlinked position",
 				"symbol", iSymbol, "qty", walletQty,

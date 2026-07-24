@@ -11,9 +11,10 @@ This service is the core of the trading robot, containing the primary business l
   - [1. Prerequisites](#1-prerequisites)
   - [2. Installation](#2-installation)
   - [3. Generate gRPC Code](#3-generate-grpc-code)
-  - [4. Run the Service](#4-run-the-service)
-  - [5. Testing](#5-testing)
-  - [6. Code Quality](#6-code-quality)
+  - [4. Database Setup](#4-database-setup)
+  - [5. Run the Service](#5-run-the-service)
+  - [6. Testing](#6-testing)
+  - [7. Code Quality](#7-code-quality)
 
 ## Folder Structure
 
@@ -40,7 +41,9 @@ This service is the core of the trading robot, containing the primary business l
 │   │       └── repository        # Data access layer (Repository Pattern)
 │   │   ├── logger/               # Structured logging setup
 │   │   ├── orchestrator/         # Trading loop orchestrator
-│   │   └── strategy/             # Trading strategy logic
+│   │   ├── simulation/           # Backtesting and simulation components
+│   │   ├── strategy/             # Trading strategy logic
+│   │   └── utils/                # Shared utility functions
 │   └── migrations                # Database migrations
 ```
 
@@ -142,7 +145,7 @@ The backtesting engine provides a sequential simulation environment for validati
 make backtest
 ```
 
-### 6. Code Quality
+### 7. Code Quality
 
 This project uses `pre-commit` with `golangci-lint` and `go-fmt` to enforce coding standards. The configuration is located at the repository root.
 

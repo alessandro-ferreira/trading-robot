@@ -12,6 +12,7 @@ import (
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/orchestrator"
+	"trading/robot/go-bot/internal/simulation"
 )
 
 // runBacktest initializes and runs the backtesting simulation.
@@ -40,7 +41,7 @@ func runBacktest(ctx context.Context, cfg *config.Config) {
 	repoContainer := repository.New()
 
 	// The simulated client loads CSV price data and progresses sequentially through timestamps.
-	simulatedClient, err := execution.NewSimulatedClient(
+	simulatedClient, err := simulation.NewSimulatedClient(
 		cfg.Simulation.Symbol,
 		cfg.Simulation.Begin,
 		cfg.Simulation.End,
@@ -56,14 +57,14 @@ func runBacktest(ctx context.Context, cfg *config.Config) {
 	logger.Info("Simulated client initialized", "symbol", cfg.Simulation.Symbol)
 
 	// The clock progresses through the CSV timestamps as the simulated client steps forward.
-	clock := execution.NewSimulatedClock(simulatedClient)
+	clock := simulation.NewSimulatedClock(simulatedClient)
 
 	execService := execution.NewService(logger, db, simulatedClient, repoContainer, clock)
 
 	logger.Info("Execution service initialized for backtest")
 
 	// Update the balance in database before starting the orchestrator.
-	_, err = execService.GetBalance(ctx, execution.ExchangeName, execution.BudgetAsset)
+	_, err = execService.GetBalance(ctx, simulation.ExchangeName, simulation.BudgetAsset)
 	if err != nil {
 		logger.Error("Failed to get balance from simulated client", "error", err)
 		os.Exit(1)
