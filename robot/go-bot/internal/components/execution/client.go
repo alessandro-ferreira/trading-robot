@@ -11,8 +11,8 @@ import (
 	"trading/robot/go-bot/internal/config"
 )
 
-// GatewayClient defines the interface for communicating with the Python exchange gateway.
-type GatewayClient interface {
+// Client defines the interface for communicating with an exchange gateway.
+type Client interface {
 	Ping(ctx context.Context) (string, error)
 	GetTicker(ctx context.Context, exchange, symbol string) (*pb.TickerResponse, error)
 	GetBalance(ctx context.Context, exchange, currency string) (*pb.BalanceResponse, error)
@@ -28,13 +28,13 @@ type GatewayClient interface {
 	Close() error
 }
 
-type gatewayClient struct {
+type grpcClient struct {
 	conn   *grpc.ClientConn
 	client pb.ExchangeServiceClient
 }
 
-// NewGatewayClient creates and connects a new gRPC client to the Python gateway.
-func NewGatewayClient(cfg *config.GRPCConfig) (GatewayClient, error) {
+// NewClient creates and connects a new gRPC client to the Python gateway.
+func NewClient(cfg *config.GRPCConfig) (Client, error) {
 	// For this project, we use insecure credentials for local communication.
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -45,7 +45,7 @@ func NewGatewayClient(cfg *config.GRPCConfig) (GatewayClient, error) {
 		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
-	gwClient := &gatewayClient{
+	client := &grpcClient{
 		conn:   conn,
 		client: pb.NewExchangeServiceClient(conn),
 	}
@@ -55,17 +55,17 @@ func NewGatewayClient(cfg *config.GRPCConfig) (GatewayClient, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.ConnectionTimeout)
 	defer cancel()
 
-	_, err = gwClient.Ping(ctx)
+	_, err = client.Ping(ctx)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("initial health check to python-gateway failed: %w", err)
 	}
 
-	return gwClient, nil
+	return client, nil
 }
 
 // Ping sends a Ping request to the gateway to check for liveness.
-func (c *gatewayClient) Ping(ctx context.Context) (string, error) {
+func (c *grpcClient) Ping(ctx context.Context) (string, error) {
 	resp, err := c.client.Ping(ctx, &pb.PingRequest{})
 	if err != nil {
 		return "", fmt.Errorf("ping request to gateway failed: %w", err)
@@ -74,7 +74,7 @@ func (c *gatewayClient) Ping(ctx context.Context) (string, error) {
 }
 
 // GetTicker fetches the current price for a given symbol.
-func (c *gatewayClient) GetTicker(
+func (c *grpcClient) GetTicker(
 	ctx context.Context, exchange, symbol string,
 ) (*pb.TickerResponse, error) {
 	resp, err := c.client.GetTicker(ctx, &pb.GetTickerRequest{Exchange: exchange, Symbol: symbol})
@@ -85,7 +85,7 @@ func (c *gatewayClient) GetTicker(
 }
 
 // GetBalance fetches the account balance.
-func (c *gatewayClient) GetBalance(
+func (c *grpcClient) GetBalance(
 	ctx context.Context, exchange, currency string,
 ) (*pb.BalanceResponse, error) {
 	req := &pb.GetBalanceRequest{Exchange: exchange}
@@ -100,7 +100,7 @@ func (c *gatewayClient) GetBalance(
 }
 
 // CreateOrder places a new order on the exchange.
-func (c *gatewayClient) CreateOrder(
+func (c *grpcClient) CreateOrder(
 	ctx context.Context, req *pb.CreateOrderRequest,
 ) (*pb.OrderResponse, error) {
 	resp, err := c.client.CreateOrder(ctx, req)
@@ -111,7 +111,7 @@ func (c *gatewayClient) CreateOrder(
 }
 
 // CreateStopOrder places a stop-loss or stop-limit order on the exchange.
-func (c *gatewayClient) CreateStopOrder(
+func (c *grpcClient) CreateStopOrder(
 	ctx context.Context, req *pb.CreateStopOrderRequest,
 ) (*pb.OrderResponse, error) {
 	resp, err := c.client.CreateStopOrder(ctx, req)
@@ -122,7 +122,7 @@ func (c *gatewayClient) CreateStopOrder(
 }
 
 // CancelOrder cancels an existing order.
-func (c *gatewayClient) CancelOrder(
+func (c *grpcClient) CancelOrder(
 	ctx context.Context, exchange, symbol, id string,
 ) (*pb.CancelOrderResponse, error) {
 	resp, err := c.client.CancelOrder(
@@ -136,7 +136,7 @@ func (c *gatewayClient) CancelOrder(
 }
 
 // GetOrder fetches details of a specific order.
-func (c *gatewayClient) GetOrder(
+func (c *grpcClient) GetOrder(
 	ctx context.Context, exchange, symbol, id string,
 ) (*pb.OrderResponse, error) {
 	resp, err := c.client.GetOrder(ctx, &pb.GetOrderRequest{Exchange: exchange, Id: id, Symbol: symbol})
@@ -147,7 +147,7 @@ func (c *gatewayClient) GetOrder(
 }
 
 // GetOpenOrders fetches all open orders for a symbol.
-func (c *gatewayClient) GetOpenOrders(
+func (c *grpcClient) GetOpenOrders(
 	ctx context.Context, exchange, symbol string, limit int,
 ) (*pb.OrdersResponse, error) {
 	req := &pb.GetOpenOrdersRequest{Exchange: exchange}
@@ -166,7 +166,7 @@ func (c *gatewayClient) GetOpenOrders(
 }
 
 // GetRecentTrades fetches historical executions.
-func (c *gatewayClient) GetRecentTrades(
+func (c *grpcClient) GetRecentTrades(
 	ctx context.Context, exchange, symbol string, since int64, limit int,
 ) (*pb.OrdersResponse, error) {
 	req := &pb.GetRecentTradesRequest{Exchange: exchange}
@@ -188,7 +188,7 @@ func (c *gatewayClient) GetRecentTrades(
 }
 
 // ResetState resets the state of the exchange (used for testing).
-func (c *gatewayClient) ResetState(ctx context.Context) (*pb.ResetStateResponse, error) {
+func (c *grpcClient) ResetState(ctx context.Context) (*pb.ResetStateResponse, error) {
 	resp, err := c.client.ResetState(ctx, &pb.ResetStateRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to reset state: %w", err)
@@ -197,6 +197,6 @@ func (c *gatewayClient) ResetState(ctx context.Context) (*pb.ResetStateResponse,
 }
 
 // Close gracefully closes the connection to the gateway.
-func (c *gatewayClient) Close() error {
+func (c *grpcClient) Close() error {
 	return c.conn.Close()
 }

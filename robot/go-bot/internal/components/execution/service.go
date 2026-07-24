@@ -47,22 +47,25 @@ type Service interface {
 type service struct {
 	logger *slog.Logger
 	db     *database.DB
-	client GatewayClient
+	client Client
 	repo   *repository.Container
+	clock  Clock
 }
 
 // NewService creates a new execution Service.
 func NewService(
 	logger *slog.Logger,
 	db *database.DB,
-	client GatewayClient,
+	client Client,
 	repo *repository.Container,
+	clock Clock,
 ) Service {
 	return &service{
 		logger: logger,
 		db:     db,
 		client: client,
 		repo:   repo,
+		clock:  clock,
 	}
 }
 
@@ -87,7 +90,7 @@ func (s *service) GetTicker(
 		ExchangeName: exchange,
 		Symbol:       instrumentSymbol,
 		Price:        resp.Price,
-		TickUnixAt:   time.Now().Unix(),
+		TickUnixAt:   s.clock.Now().Unix(),
 	}
 
 	if err := s.repo.MarketData.InsertTick(ctx, s.db, tick); err != nil {
@@ -203,7 +206,7 @@ func (s *service) CreateOrder(
 		Remaining:        resp.Remaining,
 		Cost:             resp.Cost,
 		Status:           resp.Status,
-		Price:            sql.NullFloat64{Float64: price, Valid: price > 0},
+		Price:            sql.NullFloat64{Float64: resp.Price, Valid: resp.Price > 0},
 		AveragePrice:     sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
 		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{
@@ -269,7 +272,7 @@ func (s *service) CreateStopOrder(
 		Remaining:        resp.Remaining,
 		Cost:             resp.Cost,
 		Status:           resp.Status,
-		Price:            sql.NullFloat64{Float64: stopPrice, Valid: stopPrice > 0},
+		Price:            sql.NullFloat64{Float64: resp.Price, Valid: resp.Price > 0},
 		AveragePrice:     sql.NullFloat64{Float64: resp.Average, Valid: resp.Average > 0},
 		Fee:              sql.NullFloat64{Float64: resp.Fee, Valid: resp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{

@@ -12,13 +12,14 @@ const LockFilePath = "/tmp/go-bot.lock"
 
 // Config holds the application's configuration.
 type Config struct {
-	Server    ServerConfig      `toml:"server"`
-	Log       LogConfig         `toml:"go_log"`
-	Database  DatabaseConfig    `toml:"database"`
-	GRPC      GRPCConfig        `toml:"grpc"`
-	Health    HealthCheckConfig `toml:"health_check"`
-	Exchanges []ExchangeConfig  `toml:"exchange"`
-	Risk      RiskConfig        `toml:"risk"`
+	Server     ServerConfig      `toml:"server"`
+	Log        LogConfig         `toml:"go_log"`
+	Database   DatabaseConfig    `toml:"database"`
+	GRPC       GRPCConfig        `toml:"grpc"`
+	Health     HealthCheckConfig `toml:"health_check"`
+	Exchanges  []ExchangeConfig  `toml:"exchange"`
+	Risk       RiskConfig        `toml:"risk"`
+	Simulation SimulationConfig  `toml:"simulation"`
 }
 
 // ServerConfig holds server-related settings.
@@ -82,11 +83,23 @@ type RiskConfig struct {
 	MaxBudgetPerTrade map[string]float64 `toml:"max_budget_per_trade"`
 }
 
+// SimulationConfig holds backtesting and simulation parameters.
+type SimulationConfig struct {
+	Enabled     bool    `toml:"enabled"`
+	Symbol      string  `toml:"symbol"`
+	Begin       string  `toml:"begin"`
+	End         string  `toml:"end"`
+	Input       string  `toml:"input"`
+	Output      string  `toml:"output"`
+	InitialUSDT float64 `toml:"initial_usdt"`
+}
+
 // newWithDefaults creates a Config struct with sensible default values.
 func newWithDefaults() *Config {
 	return &Config{
 		Server: ServerConfig{
-			OrchestratorInterval:   10 * time.Second,
+			OrchestratorInterval:   15 * time.Second,
+			RefreshStratInterval:   1 * time.Minute,
 			DefaultExchangeTimeout: 10 * time.Second,
 			ShutdownTimeout:        10 * time.Second,
 		},
@@ -100,6 +113,9 @@ func newWithDefaults() *Config {
 		},
 		GRPC: GRPCConfig{
 			ConnectionTimeout: 5 * time.Second,
+		},
+		Simulation: SimulationConfig{
+			Enabled: false,
 		},
 	}
 }

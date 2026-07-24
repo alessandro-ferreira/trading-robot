@@ -46,8 +46,9 @@ coverage.info
 coverage_runner
 
 # --- Configuration ---
-# Ignore the actual config file with secrets
+# Ignore configuration files that may contain sensitive information or environment-specific settings
 robot/config.toml
+robot/config.backtest.toml
 
 # Environment variables file
 robot/go-bot/.env

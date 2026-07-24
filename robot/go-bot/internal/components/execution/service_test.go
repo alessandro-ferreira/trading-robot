@@ -100,7 +100,7 @@ func TestService_GetTicker(t *testing.T) {
 
 			container := &repository.Container{MarketData: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			// Act
 			resp, err := svc.GetTicker(context.Background(), "binance", "BTC/USDT")
@@ -243,7 +243,7 @@ func TestService_GetBalance(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(&logBuffer, nil))
 
 			container := &repository.Container{Balances: mockRepo}
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			// Act
 			resp, err := svc.GetBalance(context.Background(), "binance", tc.assetSymbol)
@@ -364,7 +364,7 @@ func TestService_CreateOrder(t *testing.T) {
 
 			container := &repository.Container{Orders: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			resp, err := svc.CreateOrder(context.Background(), "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeLimit, 1.5, 50000.0)
 
@@ -401,6 +401,7 @@ func TestService_CreateStopOrder(t *testing.T) {
 					Id:     "stop-123",
 					Symbol: "BTC/USDT",
 					Status: repository.OrderStatusOpen,
+					Price:  50000.0,
 					Fee:    0,
 				}
 			},
@@ -421,6 +422,7 @@ func TestService_CreateStopOrder(t *testing.T) {
 				mockSrv.createStopOrderResponse = &pb.OrderResponse{
 					Id:     "stop-limit-123",
 					Symbol: "BTC/USDT",
+					Price:  50000.0,
 					Status: repository.OrderStatusOpen,
 				}
 			},
@@ -470,7 +472,7 @@ func TestService_CreateStopOrder(t *testing.T) {
 
 			container := &repository.Container{Orders: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			resp, err := svc.CreateStopOrder(context.Background(), "binance", "BTC/USDT", repository.OrderSideSell, 0.1, 50000.0, tc.limitPrice)
 
@@ -583,7 +585,7 @@ func TestService_CancelOrder(t *testing.T) {
 
 			container := &repository.Container{Orders: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			err := svc.CancelOrder(context.Background(), "binance", "BTC/USDT", "order-123")
 
@@ -684,7 +686,7 @@ func TestService_GetOrder(t *testing.T) {
 
 			container := &repository.Container{Orders: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			resp, err := svc.GetOrder(context.Background(), "binance", "BTC/USDT", "order-123")
 
@@ -804,7 +806,7 @@ func TestService_GetOpenOrders(t *testing.T) {
 
 			container := &repository.Container{Orders: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			resp, err := svc.GetOpenOrders(context.Background(), "binance", "BTC/USDT", 10)
 
@@ -912,7 +914,7 @@ func TestService_GetRecentTrades(t *testing.T) {
 
 			container := &repository.Container{Orders: mockRepo}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := NewService(logger, nil, client, container)
+			svc := NewService(logger, nil, client, container, NewSystemClock())
 
 			resp, err := svc.GetRecentTrades(context.Background(), "binance", "BTC/USDT", 0, 10)
 

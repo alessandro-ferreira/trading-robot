@@ -30,7 +30,7 @@ import (
 // It returns the initialized Orchestrator, database connection, execution client, and a cleanup function to release resources after the test.
 func setupOrchestratorIntegrationTest(
 	t *testing.T, orchInterval time.Duration, refreshInterval time.Duration,
-) (*Orchestrator, *database.DB, execution.GatewayClient, func()) {
+) (*Orchestrator, *database.DB, execution.Client, func()) {
 	t.Helper()
 
 	getEnv := func(key, defaultValue string) string {
@@ -61,7 +61,7 @@ func setupOrchestratorIntegrationTest(
 	require.NoError(t, err, "Failed to connect to database")
 	require.NoError(t, db.Ping(ctx), "Failed to ping database")
 
-	client, err := execution.NewGatewayClient(&grpcConfig)
+	client, err := execution.NewClient(&grpcConfig)
 	require.NoError(t, err, "Failed to connect to gateway")
 
 	_, err = client.ResetState(ctx)
@@ -71,7 +71,8 @@ func setupOrchestratorIntegrationTest(
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // slog.Default()
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(logger, db, repoContainer)
-	execSvc := execution.NewService(logger, db, client, repoContainer)
+	clock := execution.NewSystemClock()
+	execSvc := execution.NewService(logger, db, client, repoContainer, clock)
 	reconciler := reconcil.NewReconciler(logger, db, repoContainer, execSvc, pf)
 
 	// Define a test-specific configuration
@@ -101,7 +102,7 @@ func setupOrchestratorIntegrationTest(
 		_ = repoContainer.Positions.DeletePosition(ctx, db, p.ExchangeName, p.InstrumentSymbol)
 	}
 
-	orch, err := New(logger, db, repoContainer, cfg, pf, reconciler, execSvc)
+	orch, err := New(logger, db, repoContainer, cfg, pf, reconciler, execSvc, clock)
 	require.NoError(t, err, "Failed to create Orchestrator")
 
 	cleanup := func() {

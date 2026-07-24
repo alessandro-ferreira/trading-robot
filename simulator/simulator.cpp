@@ -20,7 +20,7 @@ using std::vector;
 // Configuration constants
 // ---------------------------------------------------------------------------
 
-// Default directory containing historical price CSVs.
+// Default directory containing historical price CSVs in the format <SYMBOL>_prices.csv (e.g., BTC_prices.csv).
 const string kDefaultPriceDir = "prices/";
 
 // Maximum number of momentum windows a strategy can define (mirrors
@@ -35,8 +35,8 @@ const long long kMaxLookbackStaleness = 300;
 // Set to 200% to only discard indisputable data corruption while keeping extreme but real events.
 const double kMaxTickPriceChange = 2.0;
 
-// Symbol validation set
-const std::unordered_set<string> kKnownSymbols = {"BTC", "ETH", "BNB", "SOL", "XRP"};
+// 0.2% tax on each buy/sell transaction
+const double kExchangeTaxRate = 0.002;
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -350,7 +350,10 @@ vector<Trade> RunSimulation(const vector<PriceTick>& history, const StrategyConf
 
         string reason;
         if (ExitTriggered(cfg, current_price, entry_price, highest_price, reason)) {
-            double pnl_pct = (current_price - entry_price) / entry_price;
+            double buy_price = entry_price * (1.0 + kExchangeTaxRate);
+            double sell_price = current_price * (1.0 - kExchangeTaxRate);
+
+            double pnl_pct = ((sell_price - buy_price) / buy_price);
             accumulated_pnl *= (1.0 + pnl_pct);
             trades.push_back(
                 {entry_timestamp, entry_price, history[i].timestamp, current_price, pnl_pct, accumulated_pnl, reason}
@@ -364,7 +367,10 @@ vector<Trade> RunSimulation(const vector<PriceTick>& history, const StrategyConf
     // Force-close a still-open position at the last available price so the report
     // reflects unrealized P&L instead of silently dropping the trade.
     if (state == State::kInPosition) {
-        double pnl_pct = (history.back().price - entry_price) / entry_price;
+        double buy_price = entry_price * (1.0 + kExchangeTaxRate);
+        double sell_price = history.back().price * (1.0 - kExchangeTaxRate);
+
+        double pnl_pct = (sell_price - buy_price) / buy_price;
         accumulated_pnl *= (1.0 + pnl_pct);
         trades.push_back({entry_timestamp, entry_price, history.back().timestamp, history.back().price, pnl_pct,
                           accumulated_pnl, "end_of_data"});
@@ -438,6 +444,7 @@ void print_usage(const char* prog) {
          << "  -l, --loss <pct>           Stop loss percentage (e.g., 0.05 for 5%)\n"
          << "  -p, --profit <pct>         Profit target percentage (for profit type)\n"
          << "  -r, --trailing <act:stop>  Activation and trailing stop (for trailing type)\n"
+         << "  -f, --input <file>         Input CSV price file (default: " << kDefaultPriceDir << "<symbol>_prices.csv)\n"
          << "  -o, --output <file>        Output CSV trade log (default: stdout)\n"
          << "  -i, --interval <sec>       Artificial price generation interval in seconds\n"
          << "  -h, --help                 Display this help message\n\n"
@@ -447,7 +454,7 @@ void print_usage(const char* prog) {
 }
 
 int main(int argc, char** argv) {
-    string symbol, begin, end, type_str, momentum_spec, output_file;
+    string symbol, begin, end, type_str, momentum_spec, input_file, output_file;
     StrategyConfig cfg;
     long long artificial_interval = 0;
     bool symbol_set = false, begin_set = false, end_set = false, type_set = false;
@@ -464,6 +471,7 @@ int main(int argc, char** argv) {
         {"loss", required_argument, 0, 'l'},
         {"profit", required_argument, 0, 'p'},
         {"trailing", required_argument, 0, 'r'},
+        {"input", required_argument, 0, 'f'},
         {"output", required_argument, 0, 'o'},
         {"interval", required_argument, 0, 'i'},
         {"help", no_argument, 0, 'h'},
@@ -471,7 +479,7 @@ int main(int argc, char** argv) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "s:b:e:t:w:m:al:p:r:o:i:h", long_options, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "s:b:e:t:w:m:al:p:r:f:o:i:h", long_options, nullptr)) != -1) {
         switch (opt) {
             case 's': symbol = optarg; symbol_set = true; break;
             case 'b': begin = optarg; begin_set = true; break;
@@ -490,6 +498,7 @@ int main(int argc, char** argv) {
                 }
                 break;
             }
+            case 'f': input_file = optarg; break;
             case 'o': output_file = optarg; break;
             case 'i': artificial_interval = std::stoll(optarg); break;
             case 'h': print_usage(argv[0]); return 0;
@@ -533,11 +542,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (kKnownSymbols.find(symbol) == kKnownSymbols.end()) {
-        cerr << "Warning: unknown symbol '" << symbol << "'" << endl;
+    string price_file = input_file.empty() ? kDefaultPriceDir + symbol + "_prices.csv" : input_file;
+    std::ifstream price_file_stream(price_file);
+    if (!price_file_stream.good()) {
+        cerr << "Error: price file does not exist or is not readable: " << price_file << endl;
+        return 1;
     }
 
-    string price_file = kDefaultPriceDir + symbol + "_prices.csv";
     vector<PriceTick> history = LoadPriceHistory(price_file, begin, end, artificial_interval);
     if (history.empty()) {
         cerr << "Error: no data." << endl;

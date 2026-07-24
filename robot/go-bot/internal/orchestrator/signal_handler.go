@@ -42,7 +42,7 @@ func (o *Orchestrator) initSignalHandler(
 	log.Info("Init signal generator")
 
 	// Load historical ticks and risk configuration
-	sinceEpoch := time.Now().Unix() - int64(p.WarmupWindowSeconds)
+	sinceEpoch := o.clock.Now().Unix() - int64(p.WarmupWindowSeconds)
 	ticks, err := o.repo.MarketData.GetMarketDataTicks(
 		ctx, o.db, p.ExchangeName, p.InstrumentSymbol, sinceEpoch,
 	)
@@ -50,9 +50,19 @@ func (o *Orchestrator) initSignalHandler(
 		return nil, fmt.Errorf("fetch warmup data failed %w", err)
 	}
 
-	riskData, err := o.repo.Risks.GetRiskPair(ctx, o.db, p.ExchangeName, p.InstrumentSymbol)
-	if err != nil {
-		return nil, fmt.Errorf("fetch risk config failed %w", err)
+	var riskData repository.RiskPair
+	if !o.cfg.Simulation.Enabled {
+		riskData, err = o.repo.Risks.GetRiskPair(ctx, o.db, p.ExchangeName, p.InstrumentSymbol)
+		if err != nil {
+			return nil, fmt.Errorf("fetch risk config failed %w", err)
+		}
+	} else {
+		// In simulation mode, we use a fraction of the initial USDT budget.
+		riskData = repository.RiskPair{
+			ExchangeName:     p.ExchangeName,
+			InstrumentSymbol: p.InstrumentSymbol,
+			AllocatedBudget:  o.cfg.Simulation.InitialUSDT / 10,
+		}
 	}
 
 	// Create signal generator instance with warmup data
@@ -144,7 +154,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	price := ticker.Price
 
 	// Update strategy with latest price and get next signal
-	signal, err = sig.GetSignal(price, time.Now().Unix())
+	signal, err = sig.GetSignal(price, o.clock.Now().Unix())
 	if err != nil {
 		log.Error("strategy update price and get signal failed", "err", err)
 		return

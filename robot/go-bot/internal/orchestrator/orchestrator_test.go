@@ -162,17 +162,24 @@ func (m *MockExecutionService) GetRecentTrades(ctx context.Context, ex, sym stri
 	return args.Get(0).([]repository.OrderData), args.Error(1)
 }
 
+type MockClock struct{ mock.Mock }
+
+func (m *MockClock) Now() time.Time {
+	return time.Now()
+}
+
 // --- Helpers ---
 
 func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, *MockPortfolio, *MockReconciler, *MockExecutionService) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	mStrats := new(MockStrategiesRepo)
 	mPf := new(MockPortfolio)
 	mRecon := new(MockReconciler)
 	mExec := new(MockExecutionService)
+	mClock := new(MockClock)
+	mBal := new(MockBalancesRepo)
 	mMD := new(MockMarketDataRepo)
 	mRisk := new(MockRiskRepo)
-	mBal := new(MockBalancesRepo)
+	mStrats := new(MockStrategiesRepo)
 
 	repo := &repository.Container{
 		Strategies: mStrats,
@@ -192,7 +199,7 @@ func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, 
 		},
 	}
 
-	orch, err := New(logger, nil, repo, cfg, mPf, mRecon, mExec)
+	orch, err := New(logger, nil, repo, cfg, mPf, mRecon, mExec, mClock)
 	require.NoError(t, err)
 
 	return orch, repo, mPf, mRecon, mExec
@@ -235,7 +242,7 @@ func TestNewOrchestrator_InvalidConfig(t *testing.T) {
 				RefreshStratInterval: 1 * time.Minute,
 			},
 		}
-		orch, err := New(logger, nil, repo, cfg, nil, nil, nil)
+		orch, err := New(logger, nil, repo, cfg, nil, nil, nil, nil)
 		assert.Error(t, err)
 		assert.Nil(t, orch)
 	})
@@ -247,7 +254,7 @@ func TestNewOrchestrator_InvalidConfig(t *testing.T) {
 				RefreshStratInterval: 0,
 			},
 		}
-		orch, err := New(logger, nil, repo, cfg, nil, nil, nil)
+		orch, err := New(logger, nil, repo, cfg, nil, nil, nil, nil)
 		assert.Error(t, err)
 		assert.Nil(t, orch)
 	})

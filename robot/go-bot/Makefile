@@ -3,6 +3,7 @@
 
 MAIN_PACKAGE := ./cmd/server
 CONFIG_FILE := ../config.toml
+BACKTEST_CONFIG_FILE := ../config.backtest.toml
 STRATEGY_CORE_DIR := ../strategy-core
 
 # Use the modern 'docker compose' command. The -f flag points to the root docker-compose.yml
@@ -25,7 +26,7 @@ PROTO_FILES := $(PROTO_DIR)/v1/exchange.proto $(PROTO_DIR)/v1/management.proto
 
 .PHONY: help run proto install-tools pre-commit
 .PHONY: strategy-core clean-strategy
-.PHONY: coverage test test-integration test-all
+.PHONY: coverage test test-integration test-all backtest
 .PHONY: install-migrate migrate-up migrate-down migrate-create migrate-force migrate-version
 .PHONY: db-drop-all debug-db
 
@@ -44,6 +45,7 @@ help:
 	@echo "  test             Run all unit tests (excluding integration tests)."
 	@echo "  test-integration Run integration tests (requires running DB and Gateway)."
 	@echo "  test-all         Run all unit and integration tests, managing the test environment."
+	@echo "  backtest         Run a backtest using the Go Trading Bot with the backtest configuration."
 	@echo "  install-migrate  Install the golang-migrate CLI tool."
 	@echo "  migrate-up       Apply all database migrations."
 	@echo "  migrate-down     Revert the last database migration."
@@ -115,6 +117,10 @@ test-all: strategy-core
 	@$(MAKE) test
 	@echo "==> Running integration tests..."
 	@$(MAKE) test-integration
+
+backtest: strategy-core
+	@echo "==> Running backtest..."
+	@go run $(MAIN_PACKAGE) --config $(BACKTEST_CONFIG_FILE)
 
 # Database Migrations
 install-migrate:

@@ -77,3 +77,13 @@ sandbox_mode = true
 ccxt = true
 # Enable health check support
 health_check = true
+
+# Backtesting and Simulation Configuration
+[simulation]
+enabled = false                         # Set to true to enable backtest mode instead of production
+symbol = "BTC"                          # Crypto symbol
+begin = "2026-01"                       # Start period (YYYY-MM)
+end = "2026-06"                         # End period (YYYY-MM)
+input = "../../simulator/prices/BTC_prices.csv"     # Input CSV price file
+output = "/tmp/backtest_trades_BTC.csv"             # Output CSV trade log
+initial_usdt = 10000.0                  # Starting capital in USDT for the backtest

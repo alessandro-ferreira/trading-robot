@@ -27,6 +27,7 @@ type Orchestrator struct {
 	portfolio portfolio.Portfolio
 	recon     reconcil.Reconciler
 	exec      execution.Service
+	clock     execution.Clock
 	mu        sync.Mutex
 	signals   map[string]*signal_generator.SignalGenerator
 }
@@ -40,6 +41,7 @@ func New(
 	pf portfolio.Portfolio,
 	recon reconcil.Reconciler,
 	exec execution.Service,
+	clock execution.Clock,
 ) (*Orchestrator, error) {
 	// Initialize internal logic components
 	riskMgr := risk.NewManager(logger, cfg.Risk)
@@ -60,6 +62,7 @@ func New(
 		risk:      riskMgr,
 		recon:     recon,
 		exec:      exec,
+		clock:     clock,
 		signals:   signals,
 	}, nil
 }
@@ -134,6 +137,10 @@ func (o *Orchestrator) refreshStrategies(ctx context.Context, wg *sync.WaitGroup
 
 // loadValidStrategies fetches the current intended state from the database.
 func (o *Orchestrator) loadValidStrategies(ctx context.Context) ([]repository.StrategyPair, error) {
+	if o.cfg.Simulation.Enabled {
+		return execution.GetSimulationStrategies(o.cfg.Simulation.Symbol)
+	}
+
 	statuses := []string{
 		repository.StrategyEnabled,
 		repository.StrategyPendingDisabled,

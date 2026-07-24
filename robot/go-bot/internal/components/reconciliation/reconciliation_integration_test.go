@@ -57,7 +57,7 @@ func setupReconcilerIntegrationTest(
 	require.NoError(t, err, "failed to connect to database")
 	require.NoError(t, db.Ping(ctx), "failed to ping database")
 
-	client, err := execution.NewGatewayClient(&grpcConfig)
+	client, err := execution.NewClient(&grpcConfig)
 	require.NoError(t, err, "failed to connect to gateway")
 
 	_, err = client.ResetState(ctx)
@@ -67,7 +67,8 @@ func setupReconcilerIntegrationTest(
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // slog.Default()
 	repoContainer := repository.New()
 	pf := portfolio.NewPortfolio(logger, db, repoContainer)
-	execSvc := execution.NewService(logger, db, client, repoContainer)
+	clock := execution.NewSystemClock()
+	execSvc := execution.NewService(logger, db, client, repoContainer, clock)
 
 	// Ensure a clean state for positions to avoid interference from previous tests.
 	activePos, _ := repoContainer.Positions.GetActivePositions(ctx, db, "", "")

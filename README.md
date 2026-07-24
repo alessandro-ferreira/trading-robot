@@ -15,6 +15,7 @@ The repository is structured around a central trading system supported by specia
 
 ### Auxiliary Tools
 - `ml-engine`: A C++ service for machine learning inference, optimizing trading models and communicating strategic insights to the robot via the Management gRPC API.
+- `simulator`: A standalone C++ backtesting tool that re-implements the production momentum strategy for historical validation and profit estimation using configurable parameters.
 
 ## Documentation
 
@@ -26,6 +27,7 @@ Each project contains its own documentation and setup instructions.
 - `robot/python-gateway/README.md`
 - `robot/strategy-core/README.md`
 - `ml-engine/README.md`
+- `simulator/README.md`
 
 ## Code Quality
 

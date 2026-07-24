@@ -83,6 +83,14 @@ func main() {
 		slog.String("management_server", cfg.GRPC.ManagementAddress),
 	)
 
+	// --- Backtest Mode ---
+	// If simulation is enabled, run backtest and exit.
+	if cfg.Simulation.Enabled {
+		slog.Info("Simulation mode enabled, running backtest")
+		runBacktest(ctx, cfg)
+		return
+	}
+
 	// --- Infrastructure Initialization ---
 	db, err := database.NewDBPool(ctx, cfg.Database)
 	if err != nil {
@@ -96,7 +104,7 @@ func main() {
 	repoContainer := repository.New()
 
 	// Initialize gRPC client for the Python gateway
-	gatewayClient, err := execution.NewGatewayClient(&cfg.GRPC)
+	gatewayClient, err := execution.NewClient(&cfg.GRPC)
 	if err != nil {
 		slog.Error("Failed to connect to python-gateway", "error", err)
 		os.Exit(1)
@@ -122,7 +130,8 @@ func main() {
 	}()
 
 	// Initialize execution service
-	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer)
+	clock := execution.NewSystemClock()
+	execService := execution.NewService(slog.Default(), db, gatewayClient, repoContainer, clock)
 	slog.Info("Execution service initialized")
 
 	pf := portfolio.NewPortfolio(slog.Default(), db, repoContainer)
@@ -139,7 +148,9 @@ func main() {
 	bgManager.Start(ctx)
 
 	// --- Orchestration ---
-	orch, err := orchestrator.New(slog.Default(), db, repoContainer, cfg, pf, recon, execService)
+	orch, err := orchestrator.New(
+		slog.Default(), db, repoContainer, cfg, pf, recon, execService, clock,
+	)
 	if err != nil {
 		slog.Error("Failed to initialize Orchestrator", "error", err)
 		os.Exit(1)

@@ -13,7 +13,8 @@ import (
 
 func TestNewWithDefaults(t *testing.T) {
 	cfg := newWithDefaults()
-	assert.Equal(t, 10*time.Second, cfg.Server.OrchestratorInterval)
+	assert.Equal(t, 15*time.Second, cfg.Server.OrchestratorInterval)
+	assert.Equal(t, 1*time.Minute, cfg.Server.RefreshStratInterval)
 	assert.Equal(t, 10*time.Second, cfg.Server.DefaultExchangeTimeout)
 	assert.Equal(t, 10*time.Second, cfg.Server.ShutdownTimeout)
 	assert.Equal(t, "info", cfg.Log.Level)
@@ -23,6 +24,7 @@ func TestNewWithDefaults(t *testing.T) {
 	assert.False(t, cfg.Log.Source)
 	assert.Equal(t, "disable", cfg.Database.SSLMode)
 	assert.Equal(t, 5*time.Second, cfg.GRPC.ConnectionTimeout)
+	assert.False(t, cfg.Simulation.Enabled)
 }
 
 func TestLoad(t *testing.T) {
@@ -75,6 +77,15 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, 3, cfg.Risk.MaxOpenPositions)
 		assert.Equal(t, 100.0, cfg.Risk.MaxBudgetPerTrade["USDT"])
 		assert.Equal(t, 500.0, cfg.Risk.MaxBudgetPerTrade["BRL"])
+
+		// Verify Simulation Config
+		assert.False(t, cfg.Simulation.Enabled)
+		assert.Equal(t, "BTC", cfg.Simulation.Symbol)
+		assert.Equal(t, "2023-01", cfg.Simulation.Begin)
+		assert.Equal(t, "2023-01", cfg.Simulation.End)
+		assert.Equal(t, "testdata/input_prices.csv", cfg.Simulation.Input)
+		assert.Equal(t, "testdata/output_trades.csv", cfg.Simulation.Output)
+		assert.Equal(t, 1000.0, cfg.Simulation.InitialUSDT)
 	})
 
 	t.Run("file not found", func(t *testing.T) {

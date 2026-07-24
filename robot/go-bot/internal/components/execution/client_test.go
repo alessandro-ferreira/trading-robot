@@ -116,7 +116,7 @@ func (s *mockExchangeServer) ResetState(ctx context.Context, req *pb.ResetStateR
 }
 
 // setupTest creates a mock gRPC server and returns a client connected to it via an in-memory buffer.
-func setupTest(t *testing.T, mockSrv *mockExchangeServer) (GatewayClient, func()) {
+func setupTest(t *testing.T, mockSrv *mockExchangeServer) (Client, func()) {
 	t.Helper()
 
 	lis := bufconn.Listen(1024 * 1024)
@@ -135,7 +135,7 @@ func setupTest(t *testing.T, mockSrv *mockExchangeServer) (GatewayClient, func()
 	}), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
-	client := &gatewayClient{
+	client := &grpcClient{
 		conn:   conn,
 		client: pb.NewExchangeServiceClient(conn),
 	}
@@ -149,7 +149,7 @@ func setupTest(t *testing.T, mockSrv *mockExchangeServer) (GatewayClient, func()
 	return client, cleanup
 }
 
-func TestNewGatewayClient_Success(t *testing.T) {
+func TestNewClient_Success(t *testing.T) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	addr := lis.Addr().String()
@@ -169,7 +169,7 @@ func TestNewGatewayClient_Success(t *testing.T) {
 		PythonGatewayAddress: addr,
 		ConnectionTimeout:    time.Second,
 	}
-	client, err := NewGatewayClient(cfg)
+	client, err := NewClient(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
@@ -178,19 +178,19 @@ func TestNewGatewayClient_Success(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestNewGatewayClient_ConnectionFailure(t *testing.T) {
-	// This is a small integration test to ensure NewGatewayClient fails fast.
+func TestNewClient_ConnectionFailure(t *testing.T) {
+	// This is a small integration test to ensure NewClient fails fast.
 	// It attempts to connect to a port that is presumed to be closed.
 	cfg := &config.GRPCConfig{
 		PythonGatewayAddress: "localhost:9999",
 		ConnectionTimeout:    10 * time.Millisecond,
 	} // Invalid port
-	_, err := NewGatewayClient(cfg)
-	require.Error(t, err, "NewGatewayClient should fail when the gateway is unreachable")
+	_, err := NewClient(cfg)
+	require.Error(t, err, "NewClient should fail when the gateway is unreachable")
 	assert.Contains(t, err.Error(), "initial health check to python-gateway failed")
 }
 
-func TestGatewayClient_Ping(t *testing.T) {
+func TestClient_Ping(t *testing.T) {
 	testCases := []struct {
 		name            string
 		setupMock       func(*mockExchangeServer)
@@ -239,7 +239,7 @@ func TestGatewayClient_Ping(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_GetTicker(t *testing.T) {
+func TestClient_GetTicker(t *testing.T) {
 	testCases := []struct {
 		name          string
 		setupMock     func(*mockExchangeServer)
@@ -289,7 +289,7 @@ func TestGatewayClient_GetTicker(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_GetBalance(t *testing.T) {
+func TestClient_GetBalance(t *testing.T) {
 	testCases := []struct {
 		name          string
 		setupMock     func(*mockExchangeServer)
@@ -343,7 +343,7 @@ func TestGatewayClient_GetBalance(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_CreateOrder(t *testing.T) {
+func TestClient_CreateOrder(t *testing.T) {
 	testCases := []struct {
 		name           string
 		setupMock      func(*mockExchangeServer)
@@ -407,7 +407,7 @@ func TestGatewayClient_CreateOrder(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_CreateStopOrder(t *testing.T) {
+func TestClient_CreateStopOrder(t *testing.T) {
 	testCases := []struct {
 		name           string
 		setupMock      func(*mockExchangeServer)
@@ -468,7 +468,7 @@ func TestGatewayClient_CreateStopOrder(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_CancelOrder(t *testing.T) {
+func TestClient_CancelOrder(t *testing.T) {
 	testCases := []struct {
 		name           string
 		setupMock      func(*mockExchangeServer)
@@ -515,7 +515,7 @@ func TestGatewayClient_CancelOrder(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_GetOrder(t *testing.T) {
+func TestClient_GetOrder(t *testing.T) {
 	testCases := []struct {
 		name           string
 		setupMock      func(*mockExchangeServer)
@@ -571,7 +571,7 @@ func TestGatewayClient_GetOrder(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_GetOpenOrders(t *testing.T) {
+func TestClient_GetOpenOrders(t *testing.T) {
 	testCases := []struct {
 		name        string
 		setupMock   func(*mockExchangeServer)
@@ -620,7 +620,7 @@ func TestGatewayClient_GetOpenOrders(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_GetRecentTrades(t *testing.T) {
+func TestClient_GetRecentTrades(t *testing.T) {
 	testCases := []struct {
 		name        string
 		setupMock   func(*mockExchangeServer)
@@ -669,7 +669,7 @@ func TestGatewayClient_GetRecentTrades(t *testing.T) {
 	}
 }
 
-func TestGatewayClient_ResetState(t *testing.T) {
+func TestClient_ResetState(t *testing.T) {
 	testCases := []struct {
 		name        string
 		setupMock   func(*mockExchangeServer)

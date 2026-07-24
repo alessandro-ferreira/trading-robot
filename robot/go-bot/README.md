@@ -133,6 +133,15 @@ The `test-all` target automates the entire process: it starts the test database,
 make test-all
 ```
 
+#### Backtesting
+
+The backtesting engine provides a sequential simulation environment for validating the trading strategy against historical price data read from a CSV input file specified in `config.backtest.toml`. It replays historical market data through the trading system and generates a trade log containing the simulated trades and their results.
+
+```bash
+# From the go-bot/ directory
+make backtest
+```
+
 ### 6. Code Quality
 
 This project uses `pre-commit` with `golangci-lint` and `go-fmt` to enforce coding standards. The configuration is located at the repository root.

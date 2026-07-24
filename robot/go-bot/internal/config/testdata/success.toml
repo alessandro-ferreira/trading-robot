@@ -44,3 +44,12 @@ health_check = true
 name = "coinbase"
 sandbox_mode = false
 health_check = false
+
+[simulation]
+enabled = false
+symbol = "BTC"
+begin = "2023-01"
+end = "2023-01"
+input = "testdata/input_prices.csv"
+output = "testdata/output_trades.csv"
+initial_usdt = 1000.0

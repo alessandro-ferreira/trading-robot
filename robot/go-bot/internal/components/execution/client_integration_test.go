@@ -23,7 +23,7 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-func TestGatewayClient_Integration(t *testing.T) {
+func TestClient_Integration(t *testing.T) {
 	// These should match your docker-compose setup
 	addr := getEnv("PYTHON_GATEWAY_ADDR", "localhost:15051")
 
@@ -35,7 +35,7 @@ func TestGatewayClient_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client, err := NewGatewayClient(&cfg)
+	client, err := NewClient(&cfg)
 	require.NoError(t, err, "Failed to connect to python-gateway")
 	defer client.Close()
 

@@ -20,7 +20,7 @@ import (
 
 // setupIntegrationTest initializes all dependencies for an integration test.
 // It returns the initialized Service and a cleanup function to release resources after the test.
-func setupIntegrationTest(t *testing.T) (Service, GatewayClient, *database.DB, *repository.Container, func()) {
+func setupIntegrationTest(t *testing.T) (Service, Client, *database.DB, *repository.Container, func()) {
 	// Use t.Helper() to indicate this is a test helper function.
 	t.Helper()
 
@@ -55,7 +55,7 @@ func setupIntegrationTest(t *testing.T) (Service, GatewayClient, *database.DB, *
 	require.NoError(t, err, "failed to connect to database")
 	require.NoError(t, db.Ping(ctx), "failed to ping database")
 
-	client, err := NewGatewayClient(&grpcConfig)
+	client, err := NewClient(&grpcConfig)
 	require.NoError(t, err, "failed to connect to gateway")
 
 	_, err = client.ResetState(ctx)
@@ -64,7 +64,7 @@ func setupIntegrationTest(t *testing.T) (Service, GatewayClient, *database.DB, *
 	// Initialize Components
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	repoContainer := repository.New()
-	svc := NewService(logger, db, client, repoContainer)
+	svc := NewService(logger, db, client, repoContainer, NewSystemClock())
 
 	// Teardown function
 	cleanup := func() {
