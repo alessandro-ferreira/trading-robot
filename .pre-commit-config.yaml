@@ -74,7 +74,8 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c++, c]
-        files: ^robot/strategy-core/|^ml-engine/
+        files: ^robot/strategy-core/|^ml-engine/|^simulator/
+        exclude: ^simulator/main\.cpp$
         args: ['--style={BasedOnStyle: Google, ColumnLimit: 120, IndentWidth: 4}']
 
   # Local Tests
@@ -96,8 +97,8 @@ repos:
         types: [go]
         files: ^robot/go-bot/
         pass_filenames: false
-      - id: cpp-tests
-        name: cpp-tests
+      - id: strategy-core-tests
+        name: strategy-core-tests
         # Using make ensures consistency with the Makefile
         entry: bash -c 'cd robot/strategy-core && make test'
         language: system
@@ -111,6 +112,14 @@ repos:
         language: system
         types: [c++]
         files: ^ml-engine/
+        pass_filenames: false
+      - id: simulator-tests
+        name: simulator-tests
+        # Using make ensures consistency with the Makefile
+        entry: bash -c 'cd simulator && make test'
+        language: system
+        types: [c++]
+        files: ^simulator/
         pass_filenames: false
 
   # Commit Message Checker
