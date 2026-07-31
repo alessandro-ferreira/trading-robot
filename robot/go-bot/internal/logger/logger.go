@@ -13,8 +13,8 @@ import (
 	"trading/robot/go-bot/internal/config"
 )
 
-// DailyRotatingWriter implements io.Writer and handles daily log rotation.
-type DailyRotatingWriter struct {
+// DailyWriter implements io.Writer and handles daily log rotation.
+type DailyWriter struct {
 	mu       sync.Mutex
 	basePath string
 	rotate   bool
@@ -22,32 +22,34 @@ type DailyRotatingWriter struct {
 	lastDate string
 }
 
-func NewDailyRotatingWriter(basePath string, rotate bool) *DailyRotatingWriter {
-	return &DailyRotatingWriter{
+func NewDailyWriter(basePath string, rotate bool) *DailyWriter {
+	return &DailyWriter{
 		basePath: basePath,
 		rotate:   rotate,
 	}
 }
 
-func (w *DailyRotatingWriter) Write(p []byte) (n int, err error) {
+func (w *DailyWriter) Write(p []byte) (n int, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	date := time.Now().Format("2006-01-02")
 
-	if w.current != nil && (w.lastDate != date && w.rotate) {
-		w.current.Close()
-		w.current = nil
+	logPath := w.basePath
+	if w.rotate {
+		ext := filepath.Ext(w.basePath)
+		base := strings.TrimSuffix(w.basePath, ext)
+		logPath = fmt.Sprintf("%s-%s%s", base, date, ext)
+	}
+
+	if w.current != nil {
+		if (w.lastDate != date && w.rotate) || !fileExists(logPath) {
+			w.current.Close()
+			w.current = nil
+		}
 	}
 
 	if w.current == nil {
-		logPath := w.basePath
-		if w.rotate {
-			ext := filepath.Ext(w.basePath)
-			base := strings.TrimSuffix(w.basePath, ext)
-			logPath = fmt.Sprintf("%s-%s%s", base, date, ext)
-		}
-
 		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			// If we fail to open the log file, write to stdout to avoid failing silently
@@ -61,12 +63,17 @@ func (w *DailyRotatingWriter) Write(p []byte) (n int, err error) {
 	return w.current.Write(p)
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // Setup configures the global structured logger.
 func Setup(cfg config.LogConfig) {
 	var w io.Writer = os.Stdout
 
 	if cfg.Path != "" {
-		w = NewDailyRotatingWriter(cfg.Path, cfg.Rotate)
+		w = NewDailyWriter(cfg.Path, cfg.Rotate)
 	}
 
 	logger := New(w, cfg)

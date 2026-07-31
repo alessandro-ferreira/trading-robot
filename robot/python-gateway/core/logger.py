@@ -82,14 +82,16 @@ class DailyFileHandler(logging.FileHandler):
 
     def emit(self, record):
         new_date = datetime.now().strftime("%Y-%m-%d")
+        new_log_path = self._get_log_path(new_date)
 
-        if new_date != self.current_date:
+        if new_date != self.current_date or not os.path.exists(self.baseFilename):
             if self.stream:
                 self.stream.flush()
                 self.stream.close()
+                self.stream = None
 
             self.current_date = new_date
-            self.baseFilename = os.path.abspath(self._get_log_path(self.current_date))
+            self.baseFilename = os.path.abspath(new_log_path)
             self.stream = self._open()
 
         super().emit(record)

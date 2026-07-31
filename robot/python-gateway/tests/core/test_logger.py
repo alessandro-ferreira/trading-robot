@@ -136,6 +136,26 @@ class LoggerTest(unittest.TestCase):
 
                 handler.close()
 
+    def test_daily_file_recreates_deleted_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            handler = logger.DailyFileHandler(os.path.join(tmp_dir, "test.log"))
+
+            handler.emit(
+                logging.LogRecord(
+                    "test", logging.INFO, "test.py", 10, "before", None, None
+                )
+            )
+            os.remove(handler.baseFilename)
+            handler.emit(
+                logging.LogRecord(
+                    "test", logging.INFO, "test.py", 11, "after", None, None
+                )
+            )
+
+            with open(handler.baseFilename) as log_file:
+                self.assertIn("after", log_file.read())
+            handler.close()
+
     @patch("sys.stderr", new_callable=io.StringIO)
     def test_setup_file_error(self, mock_stderr):
         """Tests the exception handling in setup when DailyFileHandler fails."""

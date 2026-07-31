@@ -73,13 +73,13 @@ func TestSetup_Rotate(t *testing.T) {
 	assert.Contains(t, string(content), "msg=\"rotate log message\"")
 }
 
-func TestDailyRotatingWriter_Rotation(t *testing.T) {
+func TestDailyWriter_Rotation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "test_dw_rotate_*")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	basePath := filepath.Join(tmpDir, "test.log")
-	writer := NewDailyRotatingWriter(basePath, true)
+	writer := NewDailyWriter(basePath, true)
 
 	// Mock lastDate to yesterday
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -109,10 +109,27 @@ func TestDailyRotatingWriter_Rotation(t *testing.T) {
 	assert.Equal(t, date, writer.lastDate)
 }
 
-func TestDailyRotatingWriter_ErrorStdout(t *testing.T) {
+func TestDailyWriter_RecreatesDeletedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "test.log")
+	writer := NewDailyWriter(logPath, false)
+
+	_, err := writer.Write([]byte("before deletion\n"))
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(logPath))
+
+	_, err = writer.Write([]byte("after deletion\n"))
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "after deletion")
+}
+
+func TestDailyWriter_ErrorStdout(t *testing.T) {
 	// Root or some protected path that should fail
 	badPath := "/root_no_access/test.log"
-	writer := NewDailyRotatingWriter(badPath, false)
+	writer := NewDailyWriter(badPath, false)
 
 	msg := []byte("error message should go to stdout\n")
 	// This should not return error but fall back to stdout
