@@ -7,6 +7,28 @@
 
 namespace {
 
+TEST(SimulatorTest, ParseFloat) {
+    double value = 0.0;
+    EXPECT_TRUE(ParseFloat("0.05", value));
+    EXPECT_DOUBLE_EQ(value, 0.05);
+
+    EXPECT_FALSE(ParseFloat("", value));
+    EXPECT_FALSE(ParseFloat("abc", value));
+    EXPECT_FALSE(ParseFloat("0.05x", value));
+    EXPECT_FALSE(ParseFloat("inf", value));
+}
+
+TEST(SimulatorTest, ParseLongLong) {
+    long long value = 0;
+    EXPECT_TRUE(ParseLongLong("1234567890", value));
+    EXPECT_EQ(value, 1234567890);
+
+    EXPECT_FALSE(ParseLongLong("", value));
+    EXPECT_FALSE(ParseLongLong("abc", value));
+    EXPECT_FALSE(ParseLongLong("123x", value));
+    EXPECT_FALSE(ParseLongLong("123.45", value));
+}
+
 TEST(SimulatorTest, ParseMomentumWindows) {
     std::vector<MomentumWindow> windows;
     EXPECT_TRUE(ParseMomentumWindows("1000:0.01,2000:0.02", windows));
@@ -16,9 +38,10 @@ TEST(SimulatorTest, ParseMomentumWindows) {
     EXPECT_EQ(windows[1].lookback_seconds, 2000);
     EXPECT_DOUBLE_EQ(windows[1].threshold, 0.02);
 
-    windows.clear();
     EXPECT_FALSE(ParseMomentumWindows("invalid", windows));
     EXPECT_FALSE(ParseMomentumWindows("1000:", windows));
+    EXPECT_FALSE(ParseMomentumWindows("abc:0.01", windows));
+    EXPECT_FALSE(ParseMomentumWindows("1000:0.01:0.02", windows));
 }
 
 TEST(SimulatorTest, ValidateConfig) {

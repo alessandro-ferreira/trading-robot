@@ -75,7 +75,6 @@ repos:
       - id: clang-format
         types_or: [c++, c]
         files: ^robot/strategy-core/|^ml-engine/|^simulator/
-        exclude: ^simulator/main\.cpp$
         args: ['--style={BasedOnStyle: Google, ColumnLimit: 120, IndentWidth: 4}']
 
   # Local Tests

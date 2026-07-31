@@ -1,6 +1,7 @@
 #include "simulator.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -17,12 +18,32 @@ using std::vector;
 // Config parsing & validation
 // ---------------------------------------------------------------------------
 
+bool ParseFloat(const string& value, double& result) {
+    try {
+        size_t parsed = 0;
+        result = std::stod(value, &parsed);
+        return parsed == value.size() && std::isfinite(result);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool ParseLongLong(const string& value, long long& result) {
+    try {
+        size_t parsed = 0;
+        result = std::stoll(value, &parsed);
+        return parsed == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
 bool ParseMomentumWindows(const string& spec, vector<MomentumWindow>& windows) {
     std::stringstream ss(spec);
     string token;
     while (std::getline(ss, token, ',')) {
         auto colon = token.find(':');
-        if (colon == string::npos) return false;
+        if (colon == string::npos || colon != token.rfind(':')) return false;
         try {
             windows.push_back({std::stoll(token.substr(0, colon)), std::stod(token.substr(colon + 1))});
         } catch (...) {
@@ -32,8 +53,6 @@ bool ParseMomentumWindows(const string& spec, vector<MomentumWindow>& windows) {
     return !windows.empty();
 }
 
-// Validates the configuration. Returns an empty string if valid, otherwise a
-// human-readable description of the first validation failure encountered.
 string ValidateConfig(const StrategyConfig& cfg) {
     if (cfg.momentum_windows.empty() || cfg.momentum_windows.size() > static_cast<size_t>(kMaxMomentumWindows)) {
         return "momentum windows count must be between 1 and " + std::to_string(kMaxMomentumWindows);

@@ -75,6 +75,12 @@ struct Trade {
 // Function declarations
 // ---------------------------------------------------------------------------
 
+// Parses a finite floating-point value and returns false for malformed input.
+bool ParseFloat(const string& value, double& result);
+
+// Parases a long long integer value and returns false for malformed input.
+bool ParseLongLong(const string& value, long long& result);
+
 // Parses a momentum spec string and returns a vector of MomentumWindow objects.
 bool ParseMomentumWindows(const string& spec, vector<MomentumWindow>& windows);
 

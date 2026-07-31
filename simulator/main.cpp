@@ -1,9 +1,10 @@
 #include <getopt.h>
 
+#include <algorithm>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <fstream>
 
 #include "simulator.hpp"
 
@@ -26,12 +27,13 @@ void print_usage(const char* prog) {
          << "  -l, --loss <pct>           Stop loss percentage (e.g., 0.05 for 5%)\n"
          << "  -p, --profit <pct>         Profit target percentage (for profit type)\n"
          << "  -r, --trailing <act:stop>  Activation and trailing stop (for trailing type)\n"
-         << "  -f, --input <file>         Input CSV price file (default: " << kDefaultPriceDir << "<symbol>_prices.csv)\n"
+         << "  -f, --input <file>         Input CSV price file (default: " << kDefaultPriceDir
+         << "<symbol>_prices.csv)\n"
          << "  -o, --output <file>        Output CSV trade log (default: stdout)\n"
          << "  -i, --interval <sec>       Artificial price generation interval in seconds\n"
          << "  -h, --help                 Display this help message\n\n"
          << "Example: \n"
-         << prog << " -s BTC -b 2021-01 -e 2021-12 -t profit -w 21600 -m 10800:0.01,18000:0.02 -l 0.05 -p 0.10 -i 30\n"
+         << prog << " -s BTC -b 2026-01 -e 2026-06 -t profit -w 21600 -m 10800:0.01,18000:0.02 -l 0.05 -p 0.10 -i 30\n"
          << endl;
 }
 
@@ -41,51 +43,104 @@ int main(int argc, char** argv) {
     long long artificial_interval = 0;
     bool symbol_set = false, begin_set = false, end_set = false, type_set = false;
     bool win_set = false, mom_set = false, loss_set = false;
+    bool profit_set = false, trailing_set = false;
 
-    static struct option long_options[] = {
-        {"symbol", required_argument, 0, 's'},
-        {"begin", required_argument, 0, 'b'},
-        {"end", required_argument, 0, 'e'},
-        {"type", required_argument, 0, 't'},
-        {"window", required_argument, 0, 'w'},
-        {"momentum", required_argument, 0, 'm'},
-        {"all", no_argument, 0, 'a'},
-        {"loss", required_argument, 0, 'l'},
-        {"profit", required_argument, 0, 'p'},
-        {"trailing", required_argument, 0, 'r'},
-        {"input", required_argument, 0, 'f'},
-        {"output", required_argument, 0, 'o'},
-        {"interval", required_argument, 0, 'i'},
-        {"help", no_argument, 0, 'h'},
-        {0, 0, 0, 0}
-    };
+    static struct option long_options[] = {{"symbol", required_argument, 0, 's'},
+                                           {"begin", required_argument, 0, 'b'},
+                                           {"end", required_argument, 0, 'e'},
+                                           {"type", required_argument, 0, 't'},
+                                           {"window", required_argument, 0, 'w'},
+                                           {"momentum", required_argument, 0, 'm'},
+                                           {"all", no_argument, 0, 'a'},
+                                           {"loss", required_argument, 0, 'l'},
+                                           {"profit", required_argument, 0, 'p'},
+                                           {"trailing", required_argument, 0, 'r'},
+                                           {"input", required_argument, 0, 'f'},
+                                           {"output", required_argument, 0, 'o'},
+                                           {"interval", required_argument, 0, 'i'},
+                                           {"help", no_argument, 0, 'h'},
+                                           {0, 0, 0, 0}};
 
-    int opt;
-    while ((opt = getopt_long(argc, argv, "s:b:e:t:w:m:al:p:r:f:o:i:h", long_options, nullptr)) != -1) {
-        switch (opt) {
-            case 's': symbol = optarg; symbol_set = true; break;
-            case 'b': begin = optarg; begin_set = true; break;
-            case 'e': end = optarg; end_set = true; break;
-            case 't': type_str = optarg; type_set = true; break;
-            case 'w': cfg.window_seconds = std::stoll(optarg); win_set = true; break;
-            case 'm': momentum_spec = optarg; mom_set = true; break;
-            case 'a': cfg.require_all = true; break;
-            case 'l': cfg.stop_loss_pct = std::stod(optarg); loss_set = true; break;
-            case 'p': cfg.profit_target_pct = std::stod(optarg); break;
-            case 'r': {
-                string val = optarg; auto c = val.find(':');
-                if (c != string::npos) {
-                    cfg.activation_pct = std::stod(val.substr(0, c));
-                    cfg.trailing_stop_pct = std::stod(val.substr(c + 1));
+    try {
+        int opt;
+        while ((opt = getopt_long(argc, argv, "s:b:e:t:w:m:al:p:r:f:o:i:h", long_options, nullptr)) != -1) {
+            switch (opt) {
+                case 's':
+                    symbol = optarg;
+                    symbol_set = true;
+                    break;
+                case 'b':
+                    begin = optarg;
+                    begin_set = true;
+                    break;
+                case 'e':
+                    end = optarg;
+                    end_set = true;
+                    break;
+                case 't':
+                    type_str = optarg;
+                    type_set = true;
+                    break;
+                case 'w': {
+                    if (!ParseLongLong(optarg, cfg.window_seconds))
+                        throw std::invalid_argument("window must be an integer");
+                    win_set = true;
+                    break;
                 }
-                break;
+                case 'm':
+                    momentum_spec = optarg;
+                    mom_set = true;
+                    break;
+                case 'a':
+                    cfg.require_all = true;
+                    break;
+                case 'l':
+                    if (!ParseFloat(optarg, cfg.stop_loss_pct))
+                        throw std::invalid_argument("stop loss must be a percentage (e.g., 0.05 for 5%)");
+                    loss_set = true;
+                    break;
+                case 'p':
+                    if (!ParseFloat(optarg, cfg.profit_target_pct))
+                        throw std::invalid_argument("profit target must be a percentage (e.g., 0.10 for 10%)");
+                    profit_set = true;
+                    break;
+                case 'r': {
+                    trailing_set = true;
+                    string val = optarg;
+                    if (std::count(val.begin(), val.end(), ':') == 1) {
+                        auto c = val.find(':');
+                        if (!ParseFloat(val.substr(0, c), cfg.activation_pct) ||
+                            !ParseFloat(val.substr(c + 1), cfg.trailing_stop_pct))
+                            throw std::invalid_argument(
+                                "trailing activation and stop must be percentages (e.g., 0.10:0.02)");
+                    } else {
+                        throw std::invalid_argument(
+                            "trailing must be in the format <activation_pct>:<trailing_stop_pct>");
+                    }
+                    break;
+                }
+                case 'f':
+                    input_file = optarg;
+                    break;
+                case 'o':
+                    output_file = optarg;
+                    break;
+                case 'i': {
+                    if (!ParseLongLong(optarg, artificial_interval) || artificial_interval <= 0)
+                        throw std::invalid_argument("interval must be a positive integer");
+                    break;
+                }
+                case 'h':
+                    print_usage(argv[0]);
+                    return 0;
+                default:
+                    print_usage(argv[0]);
+                    return 1;
             }
-            case 'f': input_file = optarg; break;
-            case 'o': output_file = optarg; break;
-            case 'i': artificial_interval = std::stoll(optarg); break;
-            case 'h': print_usage(argv[0]); return 0;
-            default: print_usage(argv[0]); return 1;
         }
+    } catch (const std::exception& error) {
+        cerr << "Error parsing arguments: " << error.what() << endl;
+        return 1;
     }
 
     if (!symbol_set || !begin_set || !end_set || !type_set || !win_set || !mom_set || !loss_set) {
@@ -99,22 +154,25 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (type_str == "profit")
+    if (type_str == "profit") {
+        if (!profit_set) {
+            cerr << "Error: profit target must be specified for profit strategy." << endl;
+            return 1;
+        }
         cfg.strategy_type = StrategyType::kMomentumProfit;
-    else if (type_str == "trailing")
+    } else if (type_str == "trailing") {
+        if (!trailing_set) {
+            cerr << "Error: trailing must be specified for trailing strategy." << endl;
+            return 1;
+        }
         cfg.strategy_type = StrategyType::kMomentumTrailing;
-    else {
-        cerr << "Error: invalid type." << endl;
+    } else {
+        cerr << "Error: invalid type " << type_str << ". Must be 'profit' or 'trailing'." << endl;
         return 1;
     }
 
-    // Logic: Interval must be <= kMaxLookbackStaleness. Default to kMaxLookbackStaleness.
-    if (artificial_interval <= 0 || artificial_interval > kMaxLookbackStaleness) {
-        artificial_interval = kMaxLookbackStaleness;
-    }
-
     if (!ParseMomentumWindows(momentum_spec, cfg.momentum_windows)) {
-        cerr << "Error: invalid momentum spec." << endl;
+        cerr << "Error: invalid momentum windows specification: " << momentum_spec << endl;
         return 1;
     }
 
@@ -122,6 +180,11 @@ int main(int argc, char** argv) {
     if (!validation_error.empty()) {
         cerr << "Error: invalid configuration: " << validation_error << endl;
         return 1;
+    }
+
+    // Interval must be <= kMaxLookbackStaleness. Default to kMaxLookbackStaleness.
+    if (artificial_interval == 0 || artificial_interval > kMaxLookbackStaleness) {
+        artificial_interval = kMaxLookbackStaleness;
     }
 
     vector<PriceTick> history = LoadPriceHistory(input_file, symbol, begin, end, artificial_interval);
