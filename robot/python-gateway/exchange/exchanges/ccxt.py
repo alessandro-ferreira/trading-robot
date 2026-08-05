@@ -1,5 +1,3 @@
-import logging
-
 from typing import Any, Dict, List, Optional
 
 from .base import Exchange, Ticker, ExchangeError, OrderType
@@ -98,43 +96,26 @@ class CCXTExchange(Exchange):
             symbol, request_type, side, amount, limit_price, params
         )
 
-    def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def cancel_order(self, id: str, symbol: str) -> Dict[str, Any]:
         """Cancels an existing order via CCXT."""
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
         return self._ccxt.cancel_order(id, symbol)
 
-    def fetch_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def fetch_order(self, id: str, symbol: str) -> Dict[str, Any]:
         """Fetches order details via CCXT."""
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
         return self._ccxt.fetch_order(id, symbol)
 
-    def fetch_open_orders(
-        self, symbol: Optional[str] = None, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def fetch_orders(self, symbol: str) -> List[Dict[str, Any]]:
+        """Fetches current orders via CCXT."""
+        if not self._ccxt:
+            raise ExchangeError("Underlying exchange not available")
+        return self._ccxt.fetch_orders(symbol)
+
+    def fetch_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
         """Fetches current open orders via CCXT."""
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
-        return self._ccxt.fetch_open_orders(symbol, limit=limit)
-
-    def fetch_my_trades(
-        self,
-        symbol: Optional[str] = None,
-        since: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        """Fetches personal trade history via CCXT."""
-        if not self._ccxt:
-            raise ExchangeError("Underlying exchange not available")
-
-        try:
-            return self._ccxt.fetch_my_trades(symbol, since=since, limit=limit)
-        except Exception as e:
-            # CCXT usually requires a symbol for private trade history on many exchanges.
-            if not symbol:
-                logging.warning(
-                    f"Exchange {self._cfg.name} does not support fetch_my_trades without symbol: {e}"
-                )
-                return []
-            raise
+        return self._ccxt.fetch_open_orders(symbol)

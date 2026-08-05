@@ -32,8 +32,7 @@ class MercadoBitcoinExchange(Exchange):
     PATH_PLACE_ORDER = "/accounts/{}/{}/orders"
     PATH_CANCEL_ORDER = "/accounts/{}/{}/orders/{}"
     PATH_GET_ORDER = "/accounts/{}/{}/orders/{}"
-    PATH_ORDERS_SYMBOL = "/accounts/{}/{}/orders"
-    PATH_ORDERS_ALL = "/accounts/{}/orders"
+    PATH_GET_ORDERS = "/accounts/{}/{}/orders"
 
     TIMEOUT_SECONDS = 10
 
@@ -209,6 +208,53 @@ class MercadoBitcoinExchange(Exchange):
             fee_currency = response.get("instrument").split("-")[1]
 
         return {"fee": total_fee, "fee_currency": fee_currency}
+
+    def _map_order(self, symbol: str, response: Dict[str, Any]) -> Dict[str, Any]:
+        """Maps a Mercado Bitcoin order response to a standardized order format."""
+        # Map status to standard ccxt terms
+        status = self._map_status(response.get("status"))
+        fees = self._calculate_fees(response, symbol)
+
+        timestamp = (
+            int(response.get("created_at")) * 1000
+            if response.get("created_at")
+            else None
+        )
+        dt = (
+            datetime.fromtimestamp(timestamp / 1000, timezone.utc).isoformat()
+            if timestamp
+            else None
+        )
+
+        return {
+            "id": response.get("id"),
+            "clientOrderId": response.get("clientOrderId")
+            or response.get("externalId"),
+            "symbol": symbol,
+            "type": self._map_type(response.get("type")),
+            "side": response.get("side"),
+            "price": float(
+                response.get("stopPrice") or response.get("limitPrice") or 0.0
+            ),
+            "average": float(response.get("avgPrice"))
+            if response.get("avgPrice")
+            else None,
+            "amount": float(response.get("qty") or 0.0),
+            "filled": float(response.get("filledQty") or 0.0),
+            "remaining": (
+                float(response.get("qty") or 0.0)
+                - float(response.get("filledQty") or 0.0)
+            ),
+            "cost": float(response.get("cost"))
+            if response.get("cost") is not None
+            else None,
+            "fee": fees["fee"],
+            "fee_currency": fees["fee_currency"],
+            "status": status,
+            "timestamp": timestamp,
+            "datetime": dt,
+            "info": response,
+        }
 
     def fetch_ticker(self, symbol: str) -> Ticker:
         """
@@ -426,229 +472,47 @@ class MercadoBitcoinExchange(Exchange):
 
         response = self._request("GET", path)
 
-        # Map status to standard ccxt terms
-        status = self._map_status(response.get("status"))
-        fees = self._calculate_fees(response, symbol)
+        return self._map_order(symbol, response)
 
-        timestamp = (
-            int(response.get("created_at")) * 1000
-            if response.get("created_at")
-            else None
-        )
-        dt = (
-            datetime.fromtimestamp(timestamp / 1000, timezone.utc).isoformat()
-            if timestamp
-            else None
-        )
-
-        return {
-            "id": response.get("id"),
-            "clientOrderId": response.get("clientOrderId")
-            or response.get("externalId"),
-            "symbol": symbol,
-            "type": self._map_type(response.get("type")),
-            "side": response.get("side"),
-            "price": float(
-                response.get("stopPrice") or response.get("limitPrice") or 0.0
-            ),
-            "average": float(response.get("avgPrice"))
-            if response.get("avgPrice")
-            else None,
-            "amount": float(response.get("qty") or 0.0),
-            "filled": float(response.get("filledQty") or 0.0),
-            "remaining": (
-                float(response.get("qty") or 0.0)
-                - float(response.get("filledQty") or 0.0)
-            ),
-            "cost": float(response.get("cost"))
-            if response.get("cost") is not None
-            else None,
-            "fee": fees["fee"],
-            "fee_currency": fees["fee_currency"],
-            "status": status,
-            "timestamp": timestamp,
-            "datetime": dt,
-            "info": response,
-        }
-
-    def fetch_open_orders(
-        self, symbol: Optional[str] = None, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def fetch_orders(self, symbol: str) -> List[Dict[str, Any]]:
         """
-        Fetches open orders for the given symbol.
+        Fetches a list of orders for the given symbol.
 
-        :param symbol: The symbol to filter by (optional).
-        :param limit: The maximum number of orders to fetch (optional).
+        :param symbol: The symbol to filter by.
         :return: A list of open orders.
         """
-        account_id = self._get_account_id()
-        params = {"status": "created,working"}
+        return self._fetch_orders(symbol)
 
-        if symbol:
-            pair = self._normalize_symbol(symbol)
-            # Use the market-specific endpoint for higher rate limits (10 req/s).
-            # Note: MB v4 documentation does not list 'size' as a parameter for this path.
-            path = self.PATH_ORDERS_SYMBOL.format(account_id, pair)
-            response = self._request("GET", path, data=params)
-            # Endpoint 1 returns a list directly
-            orders_data = response
-        else:
-            # The account-wide endpoint (3 req/s) supports 'size' for limiting results.
-            if limit:
-                params["size"] = limit
-            # Use the all orders endpoint
-            path = self.PATH_ORDERS_ALL.format(account_id)
-            response = self._request("GET", path, data=params)
-            # Endpoint 2 returns a dict with 'items'
-            orders_data = response.get("items", [])
+    def fetch_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetches a list of open orders for the given symbol.
 
-        result = []
-        for order in orders_data:
-            # Map status
-            status = self._map_status(order.get("status"))
+        :param symbol: The symbol to filter by.
+        :return: A list of open orders.
+        """
+        return self._fetch_orders(symbol, params={"status": "created,working"})
 
-            timestamp = (
-                int(order.get("created_at")) * 1000 if order.get("created_at") else None
-            )
-            dt = (
-                datetime.fromtimestamp(timestamp / 1000, timezone.utc).isoformat()
-                if timestamp
-                else None
-            )
-
-            # Handle field discrepancies
-            order_id = order.get("id")
-            client_order_id = order.get("clientOrderId") or order.get("externalId")
-            # If symbol was not provided, it should be in the order object as 'instrument'
-            order_symbol = (
-                symbol
-                if symbol
-                else (
-                    order.get("instrument", "").replace("-", "/")
-                    if order.get("instrument")
-                    else None
-                )
-            )
-
-            price = float(order.get("stopPrice") or order.get("limitPrice") or 0.0)
-            avg_price = float(order.get("avgPrice")) if order.get("avgPrice") else None
-            amount = float(order.get("qty") or 0.0)
-            filled = float(order.get("filledQty") or 0.0)
-            remaining = amount - filled
-            cost = float(order.get("cost")) if order.get("cost") is not None else None
-            fees = self._calculate_fees(order, order_symbol or "")
-
-            result.append(
-                {
-                    "id": order_id,
-                    "clientOrderId": client_order_id,
-                    "symbol": order_symbol,
-                    "type": self._map_type(order.get("type")),
-                    "side": order.get("side"),
-                    "price": price,
-                    "average": avg_price,
-                    "amount": amount,
-                    "filled": filled,
-                    "remaining": remaining,
-                    "cost": cost,
-                    "fee": fees["fee"],
-                    "fee_currency": fees["fee_currency"],
-                    "status": status,
-                    "timestamp": timestamp,
-                    "datetime": dt,
-                    "info": order,
-                }
-            )
-
-        return result[:limit] if limit else result
-
-    def fetch_my_trades(
-        self,
-        symbol: Optional[str] = None,
-        since: Optional[int] = None,
-        limit: Optional[int] = None,
+    def _fetch_orders(
+        self, symbol: str, params: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Fetches the user's trades (executions) by listing orders with executions.
-        Since there is no dedicated executions endpoint in MB v4, we extract
-        nested executions from the orders list.
+        Fetches orders for the given symbol, optionally also filtered by params.
 
-        :param symbol: The symbol to filter by (optional).
-        :param since: Millisecond timestamp for pagination (optional).
-        :param limit: The maximum number of trades to fetch (optional).
-        :return: A list of trade details mapped to standard format.
+        :param symbol: The symbol to filter by.
+        :param params: Additional parameters for filtering (optional).
+        :return: A list of filtered orders.
         """
         account_id = self._get_account_id()
-        # Filter for orders that have associated executions
-        params = {"has_executions": "true"}
-        if since:
-            # Map CCXT millisecond 'since' to MB v4 'created_at_from' (seconds)
-            params["created_at_from"] = int(since / 1000)
+        params = dict(params or {})
 
-        if symbol:
-            pair = self._normalize_symbol(symbol)
-            # Use market-specific endpoint for better performance.
-            # Server-side 'size' (limit) is not supported on this path per documentation.
-            path = self.PATH_ORDERS_SYMBOL.format(account_id, pair)
-            # List orders from specific market returns an Array directly.
-            orders_data = self._request("GET", path, data=params)
-        else:
-            # Account-wide endpoint supports 'size' for server-side limiting.
-            if limit:
-                params["size"] = limit
-            path = self.PATH_ORDERS_ALL.format(account_id)
-            response = self._request("GET", path, data=params)
-            # List all orders returns a dictionary containing 'items'.
-            orders_data = response.get("items", [])
+        pair = self._normalize_symbol(symbol)
+        # Use the market-specific endpoint for higher rate limits (10 req/s).
+        # Note: MB v4 documentation does not list 'size' as a parameter for this path.
+        path = self.PATH_GET_ORDERS.format(account_id, pair)
+        response = self._request("GET", path, data=params)
 
         result = []
-        for order in orders_data:
-            # In the orders list view (with has_executions=true), executions are
-            # returned as a nested array within each order object.
-            executions = order.get("executions", [])
-            for ex in executions:
-                # MB v4 uses Unix seconds for timestamps.
-                ts_raw = ex.get("executed_at") or ex.get("created_at")
-                timestamp = int(ts_raw) * 1000 if ts_raw else None
-                dt = (
-                    datetime.fromtimestamp(timestamp / 1000, timezone.utc).isoformat()
-                    if timestamp
-                    else None
-                )
+        for order in response:
+            result.append(self._map_order(symbol, order))
 
-                trade_symbol = (
-                    symbol if symbol else ex.get("instrument", "").replace("-", "/")
-                )
-                # For individual executions, MB provides the fee directly.
-                fee_val = float(ex.get("fee") or 0.0)
-                base, quote = (
-                    trade_symbol.split("/") if "/" in trade_symbol else ("", "BRL")
-                )
-                fee_curr = base if ex.get("side") == "buy" else quote
-
-                result.append(
-                    {
-                        "id": str(ex.get("id")),
-                        "order": str(order.get("id")),  # Link back to parent order
-                        "symbol": trade_symbol,
-                        "type": self._map_type(order.get("type")),
-                        "side": ex.get("side"),
-                        "price": float(ex.get("price") or 0.0),
-                        "amount": float(ex.get("qty") or 0.0),
-                        "cost": float(ex.get("cost") or 0.0),
-                        "fee": fee_val,
-                        "fee_currency": fee_curr,
-                        "timestamp": timestamp,
-                        "datetime": dt,
-                        "info": ex,
-                    }
-                )
-
-        # CCXT-style local filtering by 'since' (millisecond timestamp)
-        # to ensure the filter is strictly applied regardless of API behavior.
-        if since:
-            result = [t for t in result if (t.get("timestamp") or 0) >= since]
-
-        # Aggregated executions from different orders must be re-sorted by execution time (descending).
-        result.sort(key=lambda x: x["timestamp"] or 0, reverse=True)
-        return result[:limit] if limit else result
+        return result

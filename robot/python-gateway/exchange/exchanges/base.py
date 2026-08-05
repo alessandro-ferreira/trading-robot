@@ -157,51 +157,44 @@ class Exchange(ABC):
     ) -> Dict[str, Any]:
         """
         Creates a new stop order (market or limit trigger).
+        :param symbol: The symbol to trade (e.g., 'BTC/USDT').
+        :param side: The order side ('buy' or 'sell').
+        :param amount: The amount of base currency to trade.
         :param stop_price: The price that triggers the order.
         :param limit_price: The execution price (optional, makes it a stop-limit).
         """
         raise NotImplementedError("create_stop_order not implemented for this exchange")
 
-    def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def cancel_order(self, id: str, symbol: str) -> Dict[str, Any]:
         """
         Cancels an existing order.
         :param id: The order ID.
-        :param symbol: The symbol of the order (optional but recommended).
+        :param symbol: The symbol of the order.
         :return: A dictionary containing the cancellation details.
         """
         raise NotImplementedError("cancel_order not implemented for this exchange")
 
-    def fetch_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def fetch_order(self, id: str, symbol: str) -> Dict[str, Any]:
         """
         Fetches an existing order's details.
         :param id: The order ID.
-        :param symbol: The symbol of the order (optional but recommended).
+        :param symbol: The symbol of the order.
         :return: A dictionary containing the order details.
         """
         raise NotImplementedError("fetch_order not implemented for this exchange")
 
-    def fetch_open_orders(
-        self, symbol: Optional[str] = None, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def fetch_orders(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        Fetches orders for the given symbol.
+        :param symbol: The symbol to filter by.
+        :return: A list of orders.
+        """
+        raise NotImplementedError("fetch_orders not implemented for this exchange")
+
+    def fetch_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
         """
         Fetches open orders for the given symbol.
-        :param symbol: The symbol to filter by (optional).
-        :param limit: The maximum number of orders to fetch (optional).
+        :param symbol: The symbol to filter by.
         :return: A list of open orders.
         """
         raise NotImplementedError("fetch_open_orders not implemented for this exchange")
-
-    def fetch_my_trades(
-        self,
-        symbol: Optional[str] = None,
-        since: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Fetches the user's trades (executions) for the given symbol.
-        :param symbol: The symbol to filter by (optional).
-        :param since: Millisecond timestamp for pagination (optional).
-        :param limit: The maximum number of trades to fetch (optional).
-        :return: A list of trade details.
-        """
-        raise NotImplementedError("fetch_my_trades not implemented for this exchange")

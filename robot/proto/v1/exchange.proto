@@ -33,11 +33,11 @@ service ExchangeService {
   // GetOrder fetches details of a specific order.
   rpc GetOrder(GetOrderRequest) returns (OrderResponse) {}
 
-  // GetOpenOrders fetches all open orders for a symbol.
-  rpc GetOpenOrders(GetOpenOrdersRequest) returns (OrdersResponse) {}
+  // GetOrders fetches orders for a symbol, sorted from most recent to oldest.
+  rpc GetOrders(GetOrdersRequest) returns (OrdersResponse) {}
 
-  // GetRecentTrades fetches recent execution history for a symbol.
-  rpc GetRecentTrades(GetRecentTradesRequest) returns (OrdersResponse) {}
+  // GetOpenOrders fetches open orders for a symbol, sorted from most recent to oldest.
+  rpc GetOpenOrders(GetOpenOrdersRequest) returns (OpenOrdersResponse) {}
 
   // ResetState resets the state of the exchange.
   // WARN: This method is intended for testing purposes only.
@@ -67,7 +67,6 @@ message TickerResponse {
 // GetBalanceRequest is the message sent to the GetBalance RPC.
 message GetBalanceRequest {
   string exchange = 1;
-  optional string currency = 2; // Optional: if provided, can be used for filtering on some exchanges
 }
 
 // BalanceObject represents the balance components for a specific asset.
@@ -142,23 +141,26 @@ message GetOrderRequest {
   string symbol = 3;
 }
 
+// GetOrdersRequest is the message sent to the GetOrders RPC.
+message GetOrdersRequest {
+  string exchange = 1;
+  string symbol = 2;
+  optional int32 limit = 3;                      // Optional: limit the number of results returned
+}
+
+message OrdersResponse {
+  repeated OrderResponse orders = 1;
+}
+
 // GetOpenOrdersRequest is the message sent to the GetOpenOrders RPC.
 message GetOpenOrdersRequest {
   string exchange = 1;
-  optional string symbol = 2; // Optional: if empty, fetches all open orders for the exchange
+  string symbol = 2;
   optional int32 limit = 3;   // Optional: limit the number of results returned
 }
 
-// GetRecentTradesRequest is the message sent to the GetRecentTrades RPC.
-message GetRecentTradesRequest {
-  string exchange = 1;
-  optional string symbol = 2; // Optional: if empty, fetches all recent trades for the exchange
-  optional int64 since = 3;    // Optional: millisecond timestamp for date-based pagination
-  optional int32 limit = 4;    // Optional: limit the number of results returned
-}
-
 // OpenOrdersResponse is the message returned from the GetOpenOrders RPC.
-message OrdersResponse {
+message OpenOrdersResponse {
   repeated OrderResponse orders = 1;
 }
 

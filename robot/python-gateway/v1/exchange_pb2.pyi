@@ -33,12 +33,10 @@ class TickerResponse(_message.Message):
     def __init__(self, symbol: _Optional[str] = ..., price: _Optional[float] = ...) -> None: ...
 
 class GetBalanceRequest(_message.Message):
-    __slots__ = ("exchange", "currency")
+    __slots__ = ("exchange",)
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
-    CURRENCY_FIELD_NUMBER: _ClassVar[int]
     exchange: str
-    currency: str
-    def __init__(self, exchange: _Optional[str] = ..., currency: _Optional[str] = ...) -> None: ...
+    def __init__(self, exchange: _Optional[str] = ...) -> None: ...
 
 class BalanceObject(_message.Message):
     __slots__ = ("asset", "free", "used", "total")
@@ -152,6 +150,22 @@ class GetOrderRequest(_message.Message):
     symbol: str
     def __init__(self, exchange: _Optional[str] = ..., id: _Optional[str] = ..., symbol: _Optional[str] = ...) -> None: ...
 
+class GetOrdersRequest(_message.Message):
+    __slots__ = ("exchange", "symbol", "limit")
+    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
+    SYMBOL_FIELD_NUMBER: _ClassVar[int]
+    LIMIT_FIELD_NUMBER: _ClassVar[int]
+    exchange: str
+    symbol: str
+    limit: int
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., limit: _Optional[int] = ...) -> None: ...
+
+class OrdersResponse(_message.Message):
+    __slots__ = ("orders",)
+    ORDERS_FIELD_NUMBER: _ClassVar[int]
+    orders: _containers.RepeatedCompositeFieldContainer[OrderResponse]
+    def __init__(self, orders: _Optional[_Iterable[_Union[OrderResponse, _Mapping]]] = ...) -> None: ...
+
 class GetOpenOrdersRequest(_message.Message):
     __slots__ = ("exchange", "symbol", "limit")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
@@ -162,19 +176,7 @@ class GetOpenOrdersRequest(_message.Message):
     limit: int
     def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., limit: _Optional[int] = ...) -> None: ...
 
-class GetRecentTradesRequest(_message.Message):
-    __slots__ = ("exchange", "symbol", "since", "limit")
-    EXCHANGE_FIELD_NUMBER: _ClassVar[int]
-    SYMBOL_FIELD_NUMBER: _ClassVar[int]
-    SINCE_FIELD_NUMBER: _ClassVar[int]
-    LIMIT_FIELD_NUMBER: _ClassVar[int]
-    exchange: str
-    symbol: str
-    since: int
-    limit: int
-    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., since: _Optional[int] = ..., limit: _Optional[int] = ...) -> None: ...
-
-class OrdersResponse(_message.Message):
+class OpenOrdersResponse(_message.Message):
     __slots__ = ("orders",)
     ORDERS_FIELD_NUMBER: _ClassVar[int]
     orders: _containers.RepeatedCompositeFieldContainer[OrderResponse]

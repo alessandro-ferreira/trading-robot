@@ -337,7 +337,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
     @patch("requests.request")
     def test_fetch_order_success(self, mock_request):
-        """Verify individual order fetching and status mapping."""
+        """Verify individual order fetching maps every available field."""
         self.exchange._account_id = "acc_123"
         self.exchange._token = "mock_token"
         self.exchange._token_expiry = 9999999999
@@ -352,8 +352,11 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
             "limitPrice": "100000.0",
             "qty": "0.1",
             "filledQty": "0.05",
+            "avgPrice": "99500.0",
+            "cost": "4975.0",
             "status": "working",
             "created_at": 1672531200,
+            "executions": [{"fee": "0.001"}],
         }
         mock_request.return_value = mock_response
 
@@ -361,10 +364,53 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
         self.assertEqual(order["id"], "ord_123")
         self.assertEqual(order["clientOrderId"], "client_123")
+        self.assertEqual(order["symbol"], "BTC/BRL")
+        self.assertEqual(order["type"], "limit")
+        self.assertEqual(order["side"], "buy")
+        self.assertEqual(order["price"], 100000.0)
+        self.assertEqual(order["average"], 99500.0)
+        self.assertEqual(order["amount"], 0.1)
         self.assertEqual(order["status"], "open")
         self.assertEqual(order["filled"], 0.05)
         self.assertEqual(order["remaining"], 0.05)
+        self.assertEqual(order["cost"], 4975.0)
+        self.assertEqual(order["fee"], 0.001)
+        self.assertEqual(order["fee_currency"], "BTC")
         self.assertEqual(order["timestamp"], 1672531200000)
+        self.assertEqual(order["datetime"], "2023-01-01T00:00:00+00:00")
+        self.assertEqual(order["info"], mock_response.json.return_value)
+
+    @patch("requests.request")
+    def test_fetch_order_with_missing_fields(self, mock_request):
+        """Verify individual order fetching preserves defaults for missing fields."""
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.OK
+        mock_response.json.return_value = {}
+        mock_request.return_value = mock_response
+
+        order = self.exchange.fetch_order("ord_123", "BTC/BRL")
+
+        self.assertIsNone(order["id"])
+        self.assertIsNone(order["clientOrderId"])
+        self.assertEqual(order["symbol"], "BTC/BRL")
+        self.assertEqual(order["type"], "")
+        self.assertIsNone(order["side"])
+        self.assertEqual(order["price"], 0.0)
+        self.assertIsNone(order["average"])
+        self.assertEqual(order["amount"], 0.0)
+        self.assertEqual(order["status"], "")
+        self.assertEqual(order["filled"], 0.0)
+        self.assertEqual(order["remaining"], 0.0)
+        self.assertIsNone(order["cost"])
+        self.assertEqual(order["fee"], 0.0)
+        self.assertEqual(order["fee_currency"], "BRL")
+        self.assertIsNone(order["timestamp"])
+        self.assertIsNone(order["datetime"])
+        self.assertEqual(order["info"], {})
 
     def test_fetch_order_missing_symbol(self):
         """Verify symbol requirement for individual order fetch."""
@@ -389,8 +435,8 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertIn("MercadoBitcoin API Error: 404", str(cm.exception))
 
     @patch("requests.request")
-    def test_fetch_open_orders_symbol_success(self, mock_request):
-        """Verify symbol-specific open orders retrieval."""
+    def test_fetch_orders_symbol_success(self, mock_request):
+        """Verify symbol-specific orders retrieval."""
         self.exchange._account_id = "acc_123"
         self.exchange._token = "mock_token"
         self.exchange._token_expiry = 9999999999
@@ -400,7 +446,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_response.json.return_value = [
             {
                 "id": "ord_1",
-                "status": "created",
+                "status": "closed",
                 "instrument": "BTC-BRL",
                 "qty": "0.1",
                 "filledQty": "0.0",
@@ -409,7 +455,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         ]
         mock_request.return_value = mock_response
 
-        orders = self.exchange.fetch_open_orders("BTC/BRL", limit=5)
+        orders = self.exchange.fetch_orders("BTC/BRL")
 
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["id"], "ord_1")
@@ -418,34 +464,31 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "GET")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders", args[1])
-        self.assertEqual(kwargs["params"]["status"], "created,working")
         # Verify 'size' is NOT passed for symbol-specific path as per MB doc
         self.assertNotIn("size", kwargs.get("params", {}))
 
     @patch("requests.request")
-    def test_fetch_open_orders_all_success(self, mock_request):
-        """Verify account-wide open orders retrieval using the 'items' wrapper."""
+    def test_fetch_orders_all_success(self, mock_request):
+        """Verify orders retrieval for the requested symbol."""
         self.exchange._account_id = "acc_123"
         self.exchange._token = "mock_token"
         self.exchange._token_expiry = 9999999999
 
         mock_response = MagicMock()
         mock_response.status_code = http.client.OK
-        mock_response.json.return_value = {
-            "items": [
-                {
-                    "id": "ord_2",
-                    "status": "working",
-                    "instrument": "ETH-BRL",
-                    "qty": "1.0",
-                    "filledQty": "0.0",
-                    "created_at": 1672531200,
-                }
-            ]
-        }
+        mock_response.json.return_value = [
+            {
+                "id": "ord_2",
+                "status": "working",
+                "instrument": "ETH-BRL",
+                "qty": "1.0",
+                "filledQty": "0.0",
+                "created_at": 1672531200,
+            }
+        ]
         mock_request.return_value = mock_response
 
-        orders = self.exchange.fetch_open_orders(limit=10)
+        orders = self.exchange.fetch_orders("ETH/BRL")
 
         self.assertEqual(len(orders), 1)
         self.assertEqual(orders[0]["id"], "ord_2")
@@ -453,9 +496,57 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "GET")
-        self.assertIn("/accounts/acc_123/orders", args[1])
+        self.assertIn("/accounts/acc_123/ETH-BRL/orders", args[1])
+        self.assertNotIn("size", kwargs.get("params", {}))
+
+    @patch("requests.request")
+    def test_fetch_orders_api_failure(self, mock_request):
+        """Verify error handling for the orders list."""
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.INTERNAL_SERVER_ERROR
+        mock_response.text = "Internal Server Error"
+        mock_request.return_value = mock_response
+
+        with self.assertRaises(ExchangeError) as cm:
+            self.exchange.fetch_orders("BTC/BRL")
+        self.assertIn("MercadoBitcoin API Error: 500", str(cm.exception))
+
+    @patch("requests.request")
+    def test_fetch_open_orders_all_success(self, mock_request):
+        """Verify open orders retrieval for the requested symbol."""
+        self.exchange._account_id = "acc_123"
+        self.exchange._token = "mock_token"
+        self.exchange._token_expiry = 9999999999
+
+        mock_response = MagicMock()
+        mock_response.status_code = http.client.OK
+        mock_response.json.return_value = [
+            {
+                "id": "ord_2",
+                "status": "working",
+                "instrument": "ETH-BRL",
+                "qty": "1.0",
+                "filledQty": "0.0",
+                "created_at": 1672531200,
+            }
+        ]
+        mock_request.return_value = mock_response
+
+        orders = self.exchange.fetch_open_orders("ETH/BRL")
+
+        self.assertEqual(len(orders), 1)
+        self.assertEqual(orders[0]["id"], "ord_2")
+        self.assertEqual(orders[0]["symbol"], "ETH/BRL")
+
+        args, kwargs = mock_request.call_args
+        self.assertEqual(args[0], "GET")
+        self.assertIn("/accounts/acc_123/ETH-BRL/orders", args[1])
         self.assertEqual(kwargs["params"]["status"], "created,working")
-        self.assertEqual(kwargs["params"]["size"], 10)
+        self.assertNotIn("size", kwargs.get("params", {}))
 
     @patch("requests.request")
     def test_fetch_open_orders_api_failure(self, mock_request):
@@ -473,89 +564,8 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
             self.exchange.fetch_open_orders("BTC/BRL")
         self.assertIn("MercadoBitcoin API Error: 500", str(cm.exception))
 
-    @patch("requests.request")
-    def test_fetch_my_trades_success(self, mock_request):
-        """Verify historical execution extraction from nested order data."""
-        self.exchange._account_id = "acc_123"
-        self.exchange._token = "mock_token"
-        self.exchange._token_expiry = 9999999999
-
-        # Mock order with nested executions
-        mock_response = MagicMock()
-        mock_response.status_code = http.client.OK
-        mock_response.json.return_value = [
-            {
-                "id": "parent_ord",
-                "instrument": "BTC-BRL",
-                "executions": [
-                    {
-                        "id": "exec_1",
-                        "side": "buy",
-                        "qty": "0.05",
-                        "price": "190000.0",
-                        "executed_at": 1672531200,
-                    }
-                ],
-            }
-        ]
-        mock_request.return_value = mock_response
-
-        since_ms = 1672531200000
-        trades = self.exchange.fetch_my_trades("BTC/BRL", since=since_ms, limit=5)
-
-        self.assertEqual(len(trades), 1)
-        self.assertEqual(trades[0]["id"], "exec_1")
-
-        args, kwargs = mock_request.call_args
-        self.assertEqual(kwargs["params"]["has_executions"], "true")
-        # Verify 'since' ms is converted to 'created_at_from' seconds
-        self.assertEqual(kwargs["params"]["created_at_from"], 1672531200)
-        # Verify 'size' is NOT passed for symbol-specific path as per MB doc
-        self.assertNotIn("size", kwargs.get("params", {}))
-
-    @patch("requests.request")
-    def test_fetch_my_trades_all_success(self, mock_request):
-        """Verify account-wide trade history retrieval (no symbol provided)."""
-        self.exchange._account_id = "acc_123"
-        self.exchange._token = "mock_token"
-        self.exchange._token_expiry = 9999999999
-
-        # Mock response for account-wide orders with executions
-        mock_response = MagicMock()
-        mock_response.status_code = http.client.OK
-        mock_response.json.return_value = {
-            "items": [
-                {
-                    "id": "order_all",
-                    "executions": [
-                        {
-                            "id": "exec_all",
-                            "instrument": "ETH-BRL",
-                            "side": "sell",
-                            "qty": "1.0",
-                            "price": "10000.0",
-                            "executed_at": 1672531300,
-                        }
-                    ],
-                }
-            ]
-        }
-        mock_request.return_value = mock_response
-
-        trades = self.exchange.fetch_my_trades(symbol=None, limit=10)
-
-        self.assertEqual(len(trades), 1)
-        self.assertEqual(trades[0]["id"], "exec_all")
-        self.assertEqual(trades[0]["symbol"], "ETH/BRL")
-
-        args, kwargs = mock_request.call_args
-        self.assertEqual(args[0], "GET")
-        self.assertIn("/accounts/acc_123/orders", args[1])
-        self.assertEqual(kwargs["params"]["has_executions"], "true")
-        self.assertEqual(kwargs["params"]["size"], 10)
-
 
 # To run this test directly, use:
-#   python -m tests.exchange.test_mercadobitcoin_exchange
+#   python -m tests.exchange.test_mb_exchange
 if __name__ == "__main__":
     unittest.main()

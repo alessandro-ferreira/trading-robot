@@ -1,4 +1,3 @@
-import ccxt
 import unittest
 
 from unittest.mock import MagicMock, patch
@@ -19,6 +18,11 @@ class TestCCXTExchange(unittest.TestCase):
             self.mock_ccxt = MagicMock()
             mock_binance.return_value = self.mock_ccxt
             self.exchange = CCXTExchange(self.cfg)
+        # Create a non supported ccxt instance to raise not available ExchangeError
+        self.cfg = config.ExchangeConfig(
+            name="mercadobitcoin", api_key="", secret="", ccxt=True, sandbox_mode=False
+        )
+        self.non_ccxt_exchange = CCXTExchange(self.cfg)
 
     def test_set_sandbox_mode(self):
         """Tests sandbox mode propagation."""
@@ -26,10 +30,15 @@ class TestCCXTExchange(unittest.TestCase):
         self.mock_ccxt.set_sandbox_mode.assert_called_with(True)
 
     def test_set_sandbox_mode_not_supported(self):
-        """Tests handling of set_sandbox_mode when underlying exchange raises error."""
+        """Tests handling of set_sandbox_mode when exchange raises error."""
         self.mock_ccxt.set_sandbox_mode.side_effect = Exception("Not supported")
         with self.assertRaises(ExchangeError):
             self.exchange.set_sandbox_mode(True)
+
+    def test_set_sandbox_mode_not_available(self):
+        """Tests sandbox mode raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.set_sandbox_mode(True)
 
     def test_fetch_ticker_standard(self):
         """Tests fetch_ticker using the 'last' field."""
@@ -81,12 +90,22 @@ class TestCCXTExchange(unittest.TestCase):
             self.exchange.fetch_ticker("BTC/USDT")
         self.assertIn("No price available", str(cm.exception))
 
+    def test_fetch_ticker_not_available(self):
+        """Tests fetch_ticker raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.fetch_ticker("BTC/USDT")
+
     def test_fetch_balance(self):
         """Tests standard balance fetching."""
         self.mock_ccxt.fetch_balance.return_value = {"total": {"BTC": 1.0}}
         balance = self.exchange.fetch_balance()
         self.assertEqual(balance["total"]["BTC"], 1.0)
         self.mock_ccxt.fetch_balance.assert_called_once()
+
+    def test_fetch_balance_not_available(self):
+        """Tests fetch_balance raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.fetch_balance()
 
     def test_create_order_limit(self):
         """Tests creating a limit order with all parameters."""
@@ -96,6 +115,13 @@ class TestCCXTExchange(unittest.TestCase):
             "BTC/USDT", "limit", "buy", 0.1, 50000.0
         )
         self.assertEqual(order["id"], "123")
+
+    def test_create_order_not_available(self):
+        """Tests create_order raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.create_order(
+                "BTC/USDT", "limit", "buy", 0.1, 50000.0
+            )
 
     def test_create_stop_order_market(self):
         """Tests creating a stop market order via CCXT."""
@@ -129,6 +155,11 @@ class TestCCXTExchange(unittest.TestCase):
         )
         self.assertEqual(order["id"], "stop-limit-123")
 
+    def test_create_stop_order_not_available(self):
+        """Tests create_stop_order raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.create_stop_order("BTC/USDT", "sell", 0.1, 40000.0)
+
     def test_cancel_order(self):
         """Tests canceling an order via CCXT."""
         self.mock_ccxt.cancel_order.return_value = {
@@ -139,6 +170,11 @@ class TestCCXTExchange(unittest.TestCase):
         self.mock_ccxt.cancel_order.assert_called_with("ord-123", "BTC/USDT")
         self.assertEqual(result["id"], "ord-123")
         self.assertEqual(result["status"], "canceled")
+
+    def test_cancel_order_not_available(self):
+        """Tests cancel_order raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.cancel_order("ord-123", "BTC/USDT")
 
     def test_fetch_order(self):
         """Tests fetching an order via CCXT."""
@@ -152,45 +188,32 @@ class TestCCXTExchange(unittest.TestCase):
         self.assertEqual(result["id"], "ord-123")
         self.assertEqual(result["status"], "closed")
 
+    def test_fetch_order_not_available(self):
+        """Tests fetch_order raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.fetch_order("ord-123", "BTC/USDT")
+
+    def test_fetch_orders_filtering(self):
+        """Tests that the required symbol is passed to orders."""
+        self.mock_ccxt.fetch_orders.return_value = []
+        self.exchange.fetch_orders(symbol="ETH/USDT")
+        self.mock_ccxt.fetch_orders.assert_called_with("ETH/USDT")
+
+    def test_fetch_orders_not_available(self):
+        """Tests fetch_orders raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.fetch_orders(symbol="ETH/USDT")
+
     def test_fetch_open_orders_filtering(self):
-        """Tests that limit and symbol are passed correctly to open orders."""
+        """Tests that the required symbol is passed to open orders."""
         self.mock_ccxt.fetch_open_orders.return_value = []
-        self.exchange.fetch_open_orders(symbol="ETH/USDT", limit=50)
-        self.mock_ccxt.fetch_open_orders.assert_called_with("ETH/USDT", limit=50)
+        self.exchange.fetch_open_orders(symbol="ETH/USDT")
+        self.mock_ccxt.fetch_open_orders.assert_called_with("ETH/USDT")
 
-    def test_fetch_my_trades_with_params(self):
-        """Tests trades fetching with since and limit parameters."""
-        self.mock_ccxt.fetch_my_trades.return_value = [{"id": "t1"}]
-        trades = self.exchange.fetch_my_trades("BTC/USDT", since=1600000000, limit=10)
-        self.mock_ccxt.fetch_my_trades.assert_called_with(
-            "BTC/USDT", since=1600000000, limit=10
-        )
-        self.assertEqual(len(trades), 1)
-
-    def test_fetch_my_trades_no_symbol_exception(self):
-        """
-        Tests that if fetch_my_trades fails without a symbol (common on Binance/Coinbase),
-        it returns an empty list and logs a warning instead of crashing.
-        """
-        self.mock_ccxt.fetch_my_trades.side_effect = ccxt.ArgumentsRequired(
-            "Symbol required"
-        )
-
-        # Use a real logger to verify warning if needed, but here we just check output
-        trades = self.exchange.fetch_my_trades(symbol=None)
-
-        self.assertEqual(trades, [])
-        self.mock_ccxt.fetch_my_trades.assert_called_once()
-
-    def test_fetch_my_trades_with_symbol_exception(self):
-        """
-        Tests that if fetch_my_trades fails WHEN a symbol IS provided,
-        it propagates the exception as it indicates a real failure.
-        """
-        self.mock_ccxt.fetch_my_trades.side_effect = ccxt.NetworkError("Timeout")
-
-        with self.assertRaises(ccxt.NetworkError):
-            self.exchange.fetch_my_trades(symbol="BTC/USDT")
+    def test_fetch_open_orders_not_available(self):
+        """Tests fetch_open_orders raises Underlying ccxt exchange not available."""
+        with self.assertRaises(ExchangeError):
+            self.non_ccxt_exchange.fetch_open_orders(symbol="ETH/USDT")
 
 
 # To run this test directly, use:

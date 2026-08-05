@@ -68,6 +68,36 @@ class TestExchangeService(unittest.TestCase):
             "fee": 0.05,
             "fee_currency": "BRL",
         }
+        self.mock_exchange.fetch_orders.return_value = [
+            {
+                "id": "100",
+                "symbol": "BTC/USDT",
+                "side": "sell",
+                "type": "limit",
+                "amount": 1.0,
+                "price": 60000.0,
+                "status": "closed",
+                "filled": 1.0,
+                "remaining": 0.0,
+                "cost": 60000.0,
+                "average": 60000.0,
+                "timestamp": 1678886400000,
+            },
+            {
+                "id": "101",
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "type": "limit",
+                "amount": 0.5,
+                "price": 20000.0,
+                "status": "open",
+                "filled": 0.0,
+                "remaining": 0.5,
+                "cost": 0.0,
+                "average": 0.0,
+                "timestamp": 1678886500000,
+            },
+        ]
         self.mock_exchange.fetch_open_orders.return_value = [
             {
                 "id": "101",
@@ -81,19 +111,14 @@ class TestExchangeService(unittest.TestCase):
                 "remaining": 0.5,
                 "cost": 0.0,
                 "average": 0.0,
-            }
-        ]
-        self.mock_exchange.fetch_my_trades.return_value = [
+                "timestamp": 1678886500000,
+            },
             {
-                "id": "t1",
-                "order": "101",
+                "id": "102",
                 "symbol": "BTC/USDT",
-                "side": "buy",
-                "price": 20000.0,
-                "amount": 0.5,
-                "cost": 10000.0,
-                "timestamp": 1672531200000,
-            }
+                "status": "open",
+                "timestamp": 1678886600000,
+            },
         ]
 
         # Mock factory to return the mock exchange
@@ -115,6 +140,19 @@ class TestExchangeService(unittest.TestCase):
         response = self.service.GetTicker(request, self.context)
         self.assertEqual(response.symbol, "BTC/USDT")
         self.assertGreater(response.price, 0)
+
+    def test_get_ticker_requires_symbol(self):
+        request = exchange_pb2.GetTickerRequest(exchange="binance")
+        self.context.abort.side_effect = Exception("Symbol is required")
+
+        with self.assertRaises(Exception):
+            self.service.GetTicker(request, self.context)
+
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required"
+        )
+        self.mock_exchange.fetch_ticker.assert_not_called()
+        self.context.abort.side_effect = None
 
     def test_get_ticker_exchange_not_configured(self):
         """Verify error handling when an unknown exchange is requested."""
@@ -179,7 +217,7 @@ class TestExchangeService(unittest.TestCase):
 
     def test_get_balance_filter(self):
         """Verify filtering by specific currency."""
-        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance")
         response = self.service.GetBalance(request, self.context)
         self.assertEqual(len(response.balances), 1)
         self.assertEqual(response.balances[0].asset, "USDT")
@@ -215,7 +253,7 @@ class TestExchangeService(unittest.TestCase):
 
     def test_get_balance_ignores_filter(self):
         """Verify that currency filter is ignored and all supported balances are returned."""
-        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="ETH")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance")
         response = self.service.GetBalance(request, self.context)
         self.assertEqual(len(response.balances), 1)
         self.assertEqual(response.balances[0].asset, "USDT")
@@ -224,7 +262,7 @@ class TestExchangeService(unittest.TestCase):
         """Verify balance error handling."""
         self.mock_exchange.fetch_balance.side_effect = Exception("Internal error")
         self.context.abort.side_effect = Exception("Internal error")
-        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance")
         with self.assertRaises(Exception) as cm:
             self.service.GetBalance(request, self.context)
         self.assertIn("Internal error", str(cm.exception))
@@ -237,7 +275,7 @@ class TestExchangeService(unittest.TestCase):
             "Invalid API Key"
         )
         self.context.abort.side_effect = Exception("Aborted")
-        request = exchange_pb2.GetBalanceRequest(exchange="binance", currency="USDT")
+        request = exchange_pb2.GetBalanceRequest(exchange="binance")
         with self.assertRaises(Exception):
             self.service.GetBalance(request, self.context)
         self.context.abort.assert_called_with(
@@ -261,6 +299,36 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(response.status, "open")
         self.assertEqual(response.fee, 0.01)
         self.assertEqual(response.fee_currency, "USDT")
+
+    def test_create_order_requires_fields(self):
+        cases = (
+            ("symbol", "Symbol is required", ""),
+            ("side", "Side is required", ""),
+            ("type", "Type is required", ""),
+            ("amount", "Amount must be positive", 0.0),
+        )
+        for field, message, value in cases:
+            with self.subTest(field=field):
+                request = exchange_pb2.CreateOrderRequest(
+                    exchange="binance",
+                    symbol="BTC/USDT",
+                    side="buy",
+                    type="limit",
+                    amount=1.0,
+                    price=50000.0,
+                )
+                setattr(request, field, value)
+                self.context.abort.reset_mock()
+                self.context.abort.side_effect = Exception(message)
+
+                with self.assertRaises(Exception):
+                    self.service.CreateOrder(request, self.context)
+
+                self.context.abort.assert_called_with(
+                    grpc.StatusCode.INVALID_ARGUMENT, message
+                )
+        self.mock_exchange.create_order.assert_not_called()
+        self.context.abort.side_effect = None
 
     def test_create_order_internal_error(self):
         """Verify create order internal error handling."""
@@ -361,6 +429,35 @@ class TestExchangeService(unittest.TestCase):
             limit_price=None,
         )
 
+    def test_create_stop_order_requires_fields(self):
+        cases = (
+            ("symbol", "Symbol is required", ""),
+            ("side", "Side is required", ""),
+            ("amount", "Amount must be positive", 0.0),
+            ("stop_price", "Stop price must be positive", 0.0),
+        )
+        for field, message, value in cases:
+            with self.subTest(field=field):
+                request = exchange_pb2.CreateStopOrderRequest(
+                    exchange="binance",
+                    symbol="BTC/USDT",
+                    side="sell",
+                    amount=1.0,
+                    stop_price=40000.0,
+                )
+                setattr(request, field, value)
+                self.context.abort.reset_mock()
+                self.context.abort.side_effect = Exception(message)
+
+                with self.assertRaises(Exception):
+                    self.service.CreateStopOrder(request, self.context)
+
+                self.context.abort.assert_called_with(
+                    grpc.StatusCode.INVALID_ARGUMENT, message
+                )
+        self.mock_exchange.create_stop_order.assert_not_called()
+        self.context.abort.side_effect = None
+
     def test_create_stop_order_insufficient_funds(self):
         """Verify mapping of InsufficientFundsError in CreateStopOrder."""
         self.mock_exchange.create_stop_order.side_effect = InsufficientFundsError(
@@ -390,6 +487,26 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(response.id, "12345")
         self.assertEqual(response.status, "canceled")
 
+    def test_cancel_order_requires_id_and_symbol(self):
+        cases = (("id", "Order ID is required"), ("symbol", "Symbol is required"))
+        for field, message in cases:
+            with self.subTest(field=field):
+                request = exchange_pb2.CancelOrderRequest(
+                    exchange="binance", id="12345", symbol="BTC/USDT"
+                )
+                setattr(request, field, "")
+                self.context.abort.reset_mock()
+                self.context.abort.side_effect = Exception(message)
+
+                with self.assertRaises(Exception):
+                    self.service.CancelOrder(request, self.context)
+
+                self.context.abort.assert_called_with(
+                    grpc.StatusCode.INVALID_ARGUMENT, message
+                )
+        self.mock_exchange.cancel_order.assert_not_called()
+        self.context.abort.side_effect = None
+
     def test_cancel_order_internal_error(self):
         """Verify cancel order internal error handling."""
         self.mock_exchange.cancel_order.side_effect = Exception("Internal error")
@@ -415,6 +532,26 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(response.fee, 0.05)
         self.assertEqual(response.fee_currency, "BRL")
 
+    def test_get_order_requires_id_and_symbol(self):
+        cases = (("id", "Order ID is required"), ("symbol", "Symbol is required"))
+        for field, message in cases:
+            with self.subTest(field=field):
+                request = exchange_pb2.GetOrderRequest(
+                    exchange="binance", id="12345", symbol="BTC/USDT"
+                )
+                setattr(request, field, "")
+                self.context.abort.reset_mock()
+                self.context.abort.side_effect = Exception(message)
+
+                with self.assertRaises(Exception):
+                    self.service.GetOrder(request, self.context)
+
+                self.context.abort.assert_called_with(
+                    grpc.StatusCode.INVALID_ARGUMENT, message
+                )
+        self.mock_exchange.fetch_order.assert_not_called()
+        self.context.abort.side_effect = None
+
     def test_get_order_internal_error(self):
         """Verify get order internal error handling."""
         self.mock_exchange.fetch_order.side_effect = Exception("Internal error")
@@ -428,35 +565,59 @@ class TestExchangeService(unittest.TestCase):
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_order.side_effect = None
 
+    def test_get_orders(self):
+        """Verify orders listing and parameter propagation."""
+        request = exchange_pb2.GetOrdersRequest(
+            exchange="binance", symbol="BTC/USDT", limit=2
+        )
+        response = self.service.GetOrders(request, self.context)
+        self.assertEqual(len(response.orders), 2)
+        self.assertEqual(response.orders[0].id, "101")
+        self.assertEqual(response.orders[1].id, "100")
+        self.mock_exchange.fetch_orders.assert_called_with("BTC/USDT", limit=2)
+
+        # Test that limit parameter is correctly applied
+        request = exchange_pb2.GetOrdersRequest(
+            exchange="binance", symbol="BTC/USDT", limit=1
+        )
+        response = self.service.GetOrders(request, self.context)
+        self.assertEqual(len(response.orders), 1)
+        self.assertEqual(response.orders[0].id, "101")
+        self.mock_exchange.fetch_orders.assert_called_with("BTC/USDT", limit=1)
+
+    def test_get_orders_requires_symbol(self):
+        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="", limit=0)
+        self.context.abort.side_effect = Exception("Symbol is required")
+
+        with self.assertRaises(Exception):
+            self.service.GetOrders(request, self.context)
+
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required"
+        )
+        self.mock_exchange.fetch_orders.assert_not_called()
+        self.context.abort.side_effect = None
+
+    def test_get_orders_internal_error(self):
+        """Verify orders error handling."""
+        self.mock_exchange.fetch_orders.side_effect = Exception("Internal error")
+        self.context.abort.side_effect = Exception("Internal error")
+        request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="BTC/USDT")
+        with self.assertRaises(Exception) as cm:
+            self.service.GetOrders(request, self.context)
+        self.assertIn("Internal error", str(cm.exception))
+        self.context.abort.side_effect = None
+        self.mock_exchange.fetch_orders.side_effect = None
+
     def test_get_open_orders(self):
         """Verify open orders listing and parameter propagation."""
-        self.mock_exchange.fetch_open_orders.return_value = [
-            {
-                "id": "101",
-                "symbol": "BTC/USDT",
-                "side": "buy",
-                "type": "limit",
-                "amount": 0.5,
-                "price": 20000.0,
-                "status": "open",
-                "filled": 0.0,
-                "remaining": 0.5,
-                "cost": 0.0,
-                "average": 0.0,
-            },
-            {
-                "id": "102",
-                "symbol": "BTC/USDT",
-                "status": "open",
-            },
-        ]
         request = exchange_pb2.GetOpenOrdersRequest(
             exchange="binance", symbol="BTC/USDT", limit=2
         )
         response = self.service.GetOpenOrders(request, self.context)
         self.assertEqual(len(response.orders), 2)
-        self.assertEqual(response.orders[0].id, "101")
-        self.assertEqual(response.orders[1].id, "102")
+        self.assertEqual(response.orders[0].id, "102")
+        self.assertEqual(response.orders[1].id, "101")
         self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT", limit=2)
 
         # Test that limit parameter is correctly applied
@@ -465,16 +626,23 @@ class TestExchangeService(unittest.TestCase):
         )
         response = self.service.GetOpenOrders(request, self.context)
         self.assertEqual(len(response.orders), 1)
-        self.assertEqual(response.orders[0].id, "101")
+        self.assertEqual(response.orders[0].id, "102")
         self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT", limit=1)
 
-    def test_get_open_orders_no_params(self):
-        """Verify that empty parameters are correctly converted to None."""
+    def test_get_open_orders_requires_symbol(self):
         request = exchange_pb2.GetOpenOrdersRequest(
             exchange="binance", symbol="", limit=0
         )
-        self.service.GetOpenOrders(request, self.context)
-        self.mock_exchange.fetch_open_orders.assert_called_with(None, limit=None)
+        self.context.abort.side_effect = Exception("Symbol is required")
+
+        with self.assertRaises(Exception):
+            self.service.GetOpenOrders(request, self.context)
+
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required"
+        )
+        self.mock_exchange.fetch_open_orders.assert_not_called()
+        self.context.abort.side_effect = None
 
     def test_get_open_orders_internal_error(self):
         """Verify open orders error handling."""
@@ -488,73 +656,6 @@ class TestExchangeService(unittest.TestCase):
         self.assertIn("Internal error", str(cm.exception))
         self.context.abort.side_effect = None
         self.mock_exchange.fetch_open_orders.side_effect = None
-
-    def test_get_recent_trades_internal_error(self):
-        """Verify internal exception mapping in GetRecentTrades."""
-        self.mock_exchange.fetch_my_trades.side_effect = Exception("Database failure")
-        self.context.abort.side_effect = Exception("Aborted")
-        request = exchange_pb2.GetRecentTradesRequest(
-            exchange="binance", symbol="BTC/USDT"
-        )
-        with self.assertRaises(Exception):
-            self.service.GetRecentTrades(request, self.context)
-        self.context.abort.assert_called_with(
-            grpc.StatusCode.INTERNAL, "Internal gateway error: Database failure"
-        )
-
-    def test_get_recent_trades(self):
-        """Verify historical trade history retrieval and parameter propagation."""
-        self.mock_exchange.fetch_my_trades.return_value = [
-            {
-                "id": "t1",
-                "order": "101",
-                "symbol": "BTC/USDT",
-                "side": "buy",
-                "price": 20000.0,
-                "amount": 0.5,
-                "cost": 10000.0,
-                "timestamp": 1672531200000,
-            },
-            {
-                "id": "t2",
-                "symbol": "BTC/USDT",
-                "side": "sell",
-                "amount": 0.2,
-                "price": 21000.0,
-                "timestamp": 1672531300000,
-            },
-        ]
-        request = exchange_pb2.GetRecentTradesRequest(
-            exchange="binance", symbol="BTC/USDT", since=1672531200000, limit=2
-        )
-        response = self.service.GetRecentTrades(request, self.context)
-        self.assertEqual(len(response.orders), 2)
-        self.assertEqual(response.orders[0].id, "101")
-        self.assertEqual(response.orders[1].id, "t2")
-        self.mock_exchange.fetch_my_trades.assert_called_with(
-            "BTC/USDT", since=1672531200000, limit=2
-        )
-
-        # Test that limit parameter is correctly applied
-        request = exchange_pb2.GetRecentTradesRequest(
-            exchange="binance", symbol="BTC/USDT", since=1672531200000, limit=1
-        )
-        response = self.service.GetRecentTrades(request, self.context)
-        self.assertEqual(len(response.orders), 1)
-        self.assertEqual(response.orders[0].id, "101")
-        self.mock_exchange.fetch_my_trades.assert_called_with(
-            "BTC/USDT", since=1672531200000, limit=1
-        )
-
-    def test_get_recent_trades_no_params(self):
-        """Verify that empty trade audit parameters are converted to None."""
-        request = exchange_pb2.GetRecentTradesRequest(
-            exchange="binance", symbol="", since=0, limit=0
-        )
-        self.service.GetRecentTrades(request, self.context)
-        self.mock_exchange.fetch_my_trades.assert_called_with(
-            None, since=None, limit=None
-        )
 
     def test_reset_state(self):
         """Verify state reset for testing purposes."""

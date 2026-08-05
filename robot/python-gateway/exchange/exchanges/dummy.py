@@ -274,7 +274,7 @@ class DummyExchange(Exchange):
         self._orders[order_id] = order
         return order
 
-    def cancel_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def cancel_order(self, id: str, symbol: str) -> Dict[str, Any]:
         """Simulates canceling an order by updating its status."""
         order = self._orders.get(id)
         if order and order["status"] == "open":
@@ -298,7 +298,7 @@ class DummyExchange(Exchange):
         # If order not found or not open, fetch it to return a consistent state
         return self.fetch_order(id, symbol)
 
-    def fetch_order(self, id: str, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def fetch_order(self, id: str, symbol: str) -> Dict[str, Any]:
         """Fetches an order from the in-memory store."""
         order = self._orders.get(id)
 
@@ -318,9 +318,23 @@ class DummyExchange(Exchange):
 
         return order
 
-    def fetch_open_orders(
-        self, symbol: Optional[str] = None, limit: Optional[int] = None
-    ) -> list:
+    def fetch_orders(self, symbol: str) -> List[Dict[str, Any]]:
+        """Returns a list of orders from the in-memory store."""
+        orders = []
+        for order in self._orders.values():
+            # Also apply aging when listing orders, excluding stop orders.
+            if order["type"] not in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT):
+                order["_age"] += 1
+                if order["_age"] >= self.AGING_LIMIT:
+                    self._execute_trade(order["id"])
+                    continue
+
+            if symbol is None or order["symbol"] == symbol:
+                orders.append(order)
+
+        return orders
+
+    def fetch_open_orders(self, symbol: str) -> List[Dict[str, Any]]:
         """Returns a list of open orders from the in-memory store."""
         open_orders = []
         for order in self._orders.values():
@@ -335,23 +349,4 @@ class DummyExchange(Exchange):
                 if symbol is None or order["symbol"] == symbol:
                     open_orders.append(order)
 
-        return open_orders[:limit] if limit else open_orders
-
-    def fetch_my_trades(
-        self,
-        symbol: Optional[str] = None,
-        since: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        """Returns a list of trades from the in-memory store."""
-        trades = []
-        # In DummyExchange, trades are stored within the simulated order object.
-        for order in self._orders.values():
-            for t in order.get("trades", []):
-                if symbol is None or t["symbol"] == symbol:
-                    trades.append(t)
-
-        # Sort trades by timestamp descending (newest first)
-        trades.sort(key=lambda x: x["timestamp"], reverse=True)
-
-        return trades[:limit] if limit else trades
+        return open_orders

@@ -81,25 +81,16 @@ def handle_exchange_error(context: grpc.ServicerContext, e: Exception, action: s
         context.abort(grpc.StatusCode.INTERNAL, f"Internal gateway error: {e}")
 
 
-def map_order(
-    order: dict, req: Any = None, is_trade: bool = False
-) -> exchange_pb2.OrderResponse:
-    """Maps a CCXT order or trade dictionary to a gRPC OrderResponse."""
+def map_order(req: Any, order: dict) -> exchange_pb2.OrderResponse:
+    """Maps a CCXT order dictionary to a gRPC OrderResponse."""
+    if not req:
+        raise ValueError("Request object is required for mapping order")
     if not order:
         return exchange_pb2.OrderResponse()
 
-    # Keep the original ID logic for trade executions vs standard orders
-    if is_trade:
-        oid = str(order.get("order") or order.get("id") or "")
-    else:
-        oid = str(order.get("id") or "")
-
-    # Normalize Status
-    status = str(order.get("status") or ("closed" if "order" in order else "open"))
-
     # Determine order properties (Stop vs Regular, Limit vs Market)
     raw_type = str(order.get("type") or "").lower()
-    if not raw_type and req:
+    if not raw_type:
         raw_type = str(getattr(req, "type", "")).lower()
 
     is_limit = "limit" in raw_type
@@ -114,7 +105,7 @@ def map_order(
             or order.get("price")
             or 0.0
         )
-        if price == 0 and req:
+        if price == 0:
             price = float(getattr(req, "stop_price", 0.0))
     else:
         otype = "limit" if is_limit else "market"
@@ -130,13 +121,13 @@ def map_order(
         fee_currency = str(order.get("fee_currency") or "")
 
     return exchange_pb2.OrderResponse(
-        id=oid,
+        id=str(order.get("id") or ""),
         symbol=order.get("symbol", getattr(req, "symbol", "")),
         side=order.get("side", getattr(req, "side", "")),
         type=otype,
         amount=float(order.get("amount") or getattr(req, "amount", 0.0)),
         price=price,
-        status=status,
+        status=str(order.get("status") or ""),
         filled=float(order.get("filled") or 0.0),
         remaining=float(order.get("remaining") or 0.0),
         cost=float(order.get("cost") or 0.0),

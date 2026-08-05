@@ -164,40 +164,35 @@ class TestDummyExchange(unittest.TestCase):
         with self.assertRaises(ExchangeError):
             self.exchange.fetch_order("non-existent-id", "ETH/USDT")
 
-    def test_fetch_open_orders(self):
-        """Verify open orders listing and limit filtering."""
-        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
+    def test_fetch_orders(self):
+        """Verify orders listing and symbol filtering."""
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.01, 20000)
         self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 21000)
-        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 22000)
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.01, 22000)
 
-        all_orders = self.exchange.fetch_open_orders("BTC/USDT")
+        all_orders = self.exchange.fetch_orders("BTC/USDT")
         self.assertGreaterEqual(len(all_orders), 3)
 
-        # Verify strict limit
-        limited_orders = self.exchange.fetch_open_orders("BTC/USDT", limit=2)
-        self.assertEqual(len(limited_orders), 2)
+        # Test symbol filtering
+        self.exchange.create_order("ETH/USDT", "market", "buy", 1.0, 2000)
+        eth_orders = self.exchange.fetch_orders("ETH/USDT")
+        self.assertEqual(len(eth_orders), 1)
+        self.assertEqual(eth_orders[0]["symbol"], "ETH/USDT")
+
+    def test_fetch_open_orders(self):
+        """Verify open orders listing and symbol filtering."""
+        self.exchange.create_order("BTC/USDT", "limit", "buy", 0.01, 20000)
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.01, 21000)
+        self.exchange.create_order("BTC/USDT", "limit", "sell", 0.01, 22000)
+
+        all_orders = self.exchange.fetch_open_orders("BTC/USDT")
+        self.assertGreaterEqual(len(all_orders), 2)
 
         # Test symbol filtering
         self.exchange.create_order("ETH/USDT", "limit", "buy", 1.0, 2000)
         eth_orders = self.exchange.fetch_open_orders("ETH/USDT")
         self.assertEqual(len(eth_orders), 1)
         self.assertEqual(eth_orders[0]["symbol"], "ETH/USDT")
-
-    def test_fetch_my_trades(self):
-        """Verify trade history listing and descending sort order."""
-        # Market orders in dummy exchange create trades immediately
-        self.exchange.create_order("BTC/USDT", "market", "buy", 0.01, 40000)
-        self.exchange.create_order("BTC/USDT", "market", "buy", 0.02, 41000)
-        self.exchange.create_order("BTC/USDT", "market", "buy", 0.03, 42000)
-
-        all_trades = self.exchange.fetch_my_trades("BTC/USDT")
-        self.assertGreaterEqual(len(all_trades), 3)
-
-        # Verify strict limit and descending sort (newest first)
-        limited_trades = self.exchange.fetch_my_trades("BTC/USDT", limit=2)
-        self.assertEqual(len(limited_trades), 2)
-        self.assertEqual(limited_trades[0]["amount"], 0.03)
-        self.assertIn("order", limited_trades[0])  # Verify ID mapping
 
     def test_reset(self):
         """Verify that reset clears orders and restores initial state."""
@@ -206,7 +201,7 @@ class TestDummyExchange(unittest.TestCase):
 
         self.exchange.reset()
 
-        self.assertEqual(len(self.exchange.fetch_open_orders()), 0)
+        self.assertEqual(len(self.exchange.fetch_open_orders("BTC/USDT")), 0)
         ticker = self.exchange.fetch_ticker("BTC/USDT")
         # dummy.py now applies 0.01% drift BEFORE returning the price
         self.assertEqual(

@@ -70,15 +70,15 @@ class ExchangeServiceStub(object):
                 request_serializer=v1_dot_exchange__pb2.GetOrderRequest.SerializeToString,
                 response_deserializer=v1_dot_exchange__pb2.OrderResponse.FromString,
                 _registered_method=True)
+        self.GetOrders = channel.unary_unary(
+                '/v1.ExchangeService/GetOrders',
+                request_serializer=v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+                response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
+                _registered_method=True)
         self.GetOpenOrders = channel.unary_unary(
                 '/v1.ExchangeService/GetOpenOrders',
                 request_serializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
-                response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
-                _registered_method=True)
-        self.GetRecentTrades = channel.unary_unary(
-                '/v1.ExchangeService/GetRecentTrades',
-                request_serializer=v1_dot_exchange__pb2.GetRecentTradesRequest.SerializeToString,
-                response_deserializer=v1_dot_exchange__pb2.OrdersResponse.FromString,
+                response_deserializer=v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
                 _registered_method=True)
         self.ResetState = channel.unary_unary(
                 '/v1.ExchangeService/ResetState',
@@ -141,15 +141,15 @@ class ExchangeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetOpenOrders(self, request, context):
-        """GetOpenOrders fetches all open orders for a symbol.
+    def GetOrders(self, request, context):
+        """GetOrders fetches orders for a symbol, sorted from most recent to oldest.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetRecentTrades(self, request, context):
-        """GetRecentTrades fetches recent execution history for a symbol.
+    def GetOpenOrders(self, request, context):
+        """GetOpenOrders fetches open orders for a symbol, sorted from most recent to oldest.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -201,15 +201,15 @@ def add_ExchangeServiceServicer_to_server(servicer, server):
                     request_deserializer=v1_dot_exchange__pb2.GetOrderRequest.FromString,
                     response_serializer=v1_dot_exchange__pb2.OrderResponse.SerializeToString,
             ),
+            'GetOrders': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOrders,
+                    request_deserializer=v1_dot_exchange__pb2.GetOrdersRequest.FromString,
+                    response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
+            ),
             'GetOpenOrders': grpc.unary_unary_rpc_method_handler(
                     servicer.GetOpenOrders,
                     request_deserializer=v1_dot_exchange__pb2.GetOpenOrdersRequest.FromString,
-                    response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
-            ),
-            'GetRecentTrades': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetRecentTrades,
-                    request_deserializer=v1_dot_exchange__pb2.GetRecentTradesRequest.FromString,
-                    response_serializer=v1_dot_exchange__pb2.OrdersResponse.SerializeToString,
+                    response_serializer=v1_dot_exchange__pb2.OpenOrdersResponse.SerializeToString,
             ),
             'ResetState': grpc.unary_unary_rpc_method_handler(
                     servicer.ResetState,
@@ -418,6 +418,33 @@ class ExchangeService(object):
             _registered_method=True)
 
     @staticmethod
+    def GetOrders(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/v1.ExchangeService/GetOrders',
+            v1_dot_exchange__pb2.GetOrdersRequest.SerializeToString,
+            v1_dot_exchange__pb2.OrdersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def GetOpenOrders(request,
             target,
             options=(),
@@ -433,34 +460,7 @@ class ExchangeService(object):
             target,
             '/v1.ExchangeService/GetOpenOrders',
             v1_dot_exchange__pb2.GetOpenOrdersRequest.SerializeToString,
-            v1_dot_exchange__pb2.OrdersResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def GetRecentTrades(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/v1.ExchangeService/GetRecentTrades',
-            v1_dot_exchange__pb2.GetRecentTradesRequest.SerializeToString,
-            v1_dot_exchange__pb2.OrdersResponse.FromString,
+            v1_dot_exchange__pb2.OpenOrdersResponse.FromString,
             options,
             channel_credentials,
             insecure,

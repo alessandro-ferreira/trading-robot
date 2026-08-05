@@ -37,9 +37,9 @@ class TestExchangeBase(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             ex.fetch_order("order_id", "BTC/USDT")
         with self.assertRaises(NotImplementedError):
-            ex.fetch_open_orders("BTC/USDT")
+            ex.fetch_orders("BTC/USDT")
         with self.assertRaises(NotImplementedError):
-            ex.fetch_my_trades("BTC/USDT")
+            ex.fetch_open_orders("BTC/USDT")
 
     def test_exception_hierarchy(self):
         """Verify that custom exceptions correctly inherit from ExchangeError."""

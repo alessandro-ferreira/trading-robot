@@ -3,6 +3,7 @@ import logging
 
 from typing import Any
 
+
 from . import utils
 from .exchanges import SUPPORTED_ASSETS
 from core.config import Config
@@ -42,6 +43,9 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
     ) -> exchange_pb2.TickerResponse:
         """Handles the GetTicker RPC."""
         logging.debug(f"GetTicker: {request.exchange} {request.symbol}")
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+
         exchange = utils.get_exchange(self.factory, request, context)
         ticker, price = None, None
         try:
@@ -60,9 +64,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.BalanceResponse:
         """Handles the GetBalance RPC."""
-        logging.info(
-            f"GetBalance: {request.exchange} asset={request.currency or 'ALL'}"
-        )
+        logging.info(f"GetBalance: {request.exchange}")
         exchange = utils.get_exchange(self.factory, request, context)
         balances = []
         try:
@@ -109,6 +111,14 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             f"CreateOrder: {request.exchange} sym={request.symbol} "
             f"side={request.side} type={request.type} qty={request.amount}{p_val}"
         )
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+        if not request.side:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Side is required")
+        if not request.type:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Type is required")
+        if not request.amount or request.amount <= 0:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Amount must be positive")
 
         exchange = utils.get_exchange(self.factory, request, context)
         order = None
@@ -128,7 +138,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             f"status={order.get('status')} fill={order.get('filled', 0.0)}"
         )
         logging.info(f"raw_order: {order}")
-        return utils.map_order(order, request)
+        return utils.map_order(request, order)
 
     def CreateStopOrder(
         self, request: Any, context: grpc.ServicerContext
@@ -141,6 +151,16 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             f"CreateStopOrder: {request.exchange} sym={request.symbol} "
             f"side={request.side} qty={request.amount} stop={request.stop_price}{l_val}"
         )
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+        if not request.side:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Side is required")
+        if not request.amount or request.amount <= 0:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Amount must be positive")
+        if not request.stop_price or request.stop_price <= 0:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Stop price must be positive"
+            )
 
         exchange = utils.get_exchange(self.factory, request, context)
         order = None
@@ -162,7 +182,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             f"status={order.get('status')} fill={order.get('filled', 0.0)}"
         )
         logging.info(f"raw_stop_order: {order}")
-        return utils.map_order(order, request)
+        return utils.map_order(request, order)
 
     def CancelOrder(
         self, request: Any, context: grpc.ServicerContext
@@ -171,6 +191,11 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         logging.info(
             f"CancelOrder: {request.exchange} id={request.id} sym={request.symbol}"
         )
+        if not request.id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Order ID is required")
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+
         exchange = utils.get_exchange(self.factory, request, context)
         result = {}
         try:
@@ -190,7 +215,14 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrderResponse:
         """Handles the GetOrder RPC."""
-        logging.info(f"GetOrder: {request.exchange} id={request.id}")
+        logging.info(
+            f"GetOrder: {request.exchange} id={request.id} sym={request.symbol}"
+        )
+        if not request.id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Order ID is required")
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+
         exchange = utils.get_exchange(self.factory, request, context)
         order = None
         try:
@@ -205,52 +237,68 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             f"status={order.get('status')} fill={order.get('filled', 0.0)}"
         )
         logging.info(f"raw_order: {order}")
-        return utils.map_order(order, request)
+        return utils.map_order(request, order)
 
-    def GetOpenOrders(
+    def GetOrders(
         self, request: Any, context: grpc.ServicerContext
     ) -> exchange_pb2.OrdersResponse:
-        """Handles the GetOpenOrders RPC."""
-        logging.info(f"GetOpenOrders: {request.exchange} sym={request.symbol or 'ALL'}")
+        """Handles the GetOrders RPC."""
+        logging.info(f"GetOrders: {request.exchange} sym={request.symbol}")
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+
         exchange = utils.get_exchange(self.factory, request, context)
         orders = []
         try:
-            symbol = request.symbol if request.symbol else None
             limit = request.limit if request.limit > 0 else None
             orders = utils.retry_network_call(
-                exchange.fetch_open_orders, symbol, limit=limit
+                exchange.fetch_orders, request.symbol, limit=limit
             )
+
+            # Sort orders by timestamp in descending order (most recent first)
+            orders.sort(
+                key=lambda order: order.get("timestamp") or 0,
+                reverse=True,
+            )
+            if limit:
+                orders = orders[: request.limit]
+        except Exception as e:
+            utils.handle_exchange_error(context, e, "fetching open orders")
+
+        logging.info(f"GetOrders Success: {request.exchange} count={len(orders)}")
+        return exchange_pb2.OrdersResponse(
+            orders=[utils.map_order(request, o) for o in orders]
+        )
+
+    def GetOpenOrders(
+        self, request: Any, context: grpc.ServicerContext
+    ) -> exchange_pb2.OpenOrdersResponse:
+        """Handles the GetOpenOrders RPC."""
+        logging.info(f"GetOpenOrders: {request.exchange} sym={request.symbol}")
+        if not request.symbol:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Symbol is required")
+
+        exchange = utils.get_exchange(self.factory, request, context)
+        orders = []
+        try:
+            limit = request.limit if request.limit > 0 else None
+            orders = utils.retry_network_call(
+                exchange.fetch_open_orders, request.symbol, limit=limit
+            )
+
+            # Sort orders by timestamp in descending order (most recent first)
+            orders.sort(
+                key=lambda order: order.get("timestamp") or 0,
+                reverse=True,
+            )
+            if limit:
+                orders = orders[: request.limit]
         except Exception as e:
             utils.handle_exchange_error(context, e, "fetching open orders")
 
         logging.info(f"GetOpenOrders Success: {request.exchange} count={len(orders)}")
-        return exchange_pb2.OrdersResponse(
-            orders=[utils.map_order(o, request) for o in orders[:limit]]
-        )
-
-    def GetRecentTrades(
-        self, request: Any, context: grpc.ServicerContext
-    ) -> exchange_pb2.OrdersResponse:
-        """Handles the GetRecentTrades RPC. Fetches historical executions."""
-        logging.info(
-            f"GetRecentTrades: {request.exchange} {request.symbol or 'ALL'} "
-            f"since:{request.since} limit:{request.limit}"
-        )
-        exchange = utils.get_exchange(self.factory, request, context)
-        trades = []
-        try:
-            symbol = request.symbol if request.symbol else None
-            since = request.since if request.since > 0 else None
-            limit = request.limit if request.limit > 0 else None
-            trades = utils.retry_network_call(
-                exchange.fetch_my_trades, symbol, since=since, limit=limit
-            )
-        except Exception as e:
-            utils.handle_exchange_error(context, e, "fetching recent trades")
-
-        logging.info(f"GetRecentTrades Success: {request.exchange} count={len(trades)}")
-        return exchange_pb2.OrdersResponse(
-            orders=[utils.map_order(t, request, True) for t in trades[:limit]]
+        return exchange_pb2.OpenOrdersResponse(
+            orders=[utils.map_order(request, o) for o in orders]
         )
 
     def ResetState(
