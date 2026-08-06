@@ -182,7 +182,7 @@ func TestSimulatedClient_GetBalance(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	resp, err := sc.GetBalance(ctx, "binance", "USDT")
+	resp, err := sc.GetBalance(ctx, "binance")
 	assert.NoError(t, err)
 	assert.Len(t, resp.Balances, 2)
 	assert.Equal(t, "USDT", resp.Balances[0].Asset)
@@ -439,17 +439,17 @@ func TestSimulatedClient_GetOrdersAndTrades(t *testing.T) {
 		assert.Nil(t, resp)
 	})
 
+	t.Run("get orders", func(t *testing.T) {
+		resp, err := sc.GetOrders(ctx, "binance", "BTC/USDT", 0)
+		assert.NoError(t, err)
+		assert.Len(t, resp.Orders, 2)
+	})
+
 	t.Run("get open orders", func(t *testing.T) {
 		resp, err := sc.GetOpenOrders(ctx, "binance", "BTC/USDT", 0)
 		assert.NoError(t, err)
 		assert.Len(t, resp.Orders, 1)
 		assert.Equal(t, "1", resp.Orders[0].Id)
-	})
-
-	t.Run("get recent trades", func(t *testing.T) {
-		resp, err := sc.GetRecentTrades(ctx, "binance", "BTC/USDT", 0, 0)
-		assert.NoError(t, err)
-		assert.Empty(t, resp.Orders)
 	})
 }
 

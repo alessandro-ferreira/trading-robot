@@ -144,7 +144,6 @@ func main() {
 	setupHealthMonitor(cfg, execService, bgManager)
 	setupOrderSync(cfg, recon, bgManager)
 	setupPositionSync(cfg, execService, pf, recon, bgManager)
-	setupTradeAudit(cfg, recon, bgManager)
 
 	bgManager.Start(ctx)
 

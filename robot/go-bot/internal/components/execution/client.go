@@ -15,15 +15,13 @@ import (
 type Client interface {
 	Ping(ctx context.Context) (string, error)
 	GetTicker(ctx context.Context, exchange, symbol string) (*pb.TickerResponse, error)
-	GetBalance(ctx context.Context, exchange, currency string) (*pb.BalanceResponse, error)
+	GetBalance(ctx context.Context, exchange string) (*pb.BalanceResponse, error)
 	CreateOrder(ctx context.Context, req *pb.CreateOrderRequest) (*pb.OrderResponse, error)
 	CreateStopOrder(ctx context.Context, req *pb.CreateStopOrderRequest) (*pb.OrderResponse, error)
 	CancelOrder(ctx context.Context, exchange, symbol, id string) (*pb.CancelOrderResponse, error)
 	GetOrder(ctx context.Context, exchange, symbol, id string) (*pb.OrderResponse, error)
-	GetOpenOrders(ctx context.Context, exchange, symbol string, limit int) (*pb.OrdersResponse, error)
-	GetRecentTrades(
-		ctx context.Context, exchange, symbol string, since int64, limit int,
-	) (*pb.OrdersResponse, error)
+	GetOrders(ctx context.Context, exchange, symbol string, limit int) (*pb.OrdersResponse, error)
+	GetOpenOrders(ctx context.Context, exchange, symbol string, limit int) (*pb.OpenOrdersResponse, error)
 	ResetState(ctx context.Context) (*pb.ResetStateResponse, error)
 	Close() error
 }
@@ -86,15 +84,12 @@ func (c *grpcClient) GetTicker(
 
 // GetBalance fetches the account balance.
 func (c *grpcClient) GetBalance(
-	ctx context.Context, exchange, currency string,
+	ctx context.Context, exchange string,
 ) (*pb.BalanceResponse, error) {
 	req := &pb.GetBalanceRequest{Exchange: exchange}
-	if currency != "" {
-		req.Currency = &currency
-	}
 	resp, err := c.client.GetBalance(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get balance for %s on %s: %w", currency, exchange, err)
+		return nil, fmt.Errorf("failed to get balance for %s: %w", exchange, err)
 	}
 	return resp, nil
 }
@@ -146,14 +141,27 @@ func (c *grpcClient) GetOrder(
 	return resp, nil
 }
 
+// GetOrders fetches a list of orders for a symbol.
+func (c *grpcClient) GetOrders(
+	ctx context.Context, exchange, symbol string, limit int,
+) (*pb.OrdersResponse, error) {
+	req := &pb.GetOrdersRequest{Exchange: exchange, Symbol: symbol}
+	if limit > 0 {
+		l := int32(limit)
+		req.Limit = &l
+	}
+	resp, err := c.client.GetOrders(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get orders for %s on %s: %w", symbol, exchange, err)
+	}
+	return resp, nil
+}
+
 // GetOpenOrders fetches all open orders for a symbol.
 func (c *grpcClient) GetOpenOrders(
 	ctx context.Context, exchange, symbol string, limit int,
-) (*pb.OrdersResponse, error) {
-	req := &pb.GetOpenOrdersRequest{Exchange: exchange}
-	if symbol != "" {
-		req.Symbol = &symbol
-	}
+) (*pb.OpenOrdersResponse, error) {
+	req := &pb.GetOpenOrdersRequest{Exchange: exchange, Symbol: symbol}
 	if limit > 0 {
 		l := int32(limit)
 		req.Limit = &l
@@ -161,28 +169,6 @@ func (c *grpcClient) GetOpenOrders(
 	resp, err := c.client.GetOpenOrders(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get open orders for %s on %s: %w", symbol, exchange, err)
-	}
-	return resp, nil
-}
-
-// GetRecentTrades fetches historical executions.
-func (c *grpcClient) GetRecentTrades(
-	ctx context.Context, exchange, symbol string, since int64, limit int,
-) (*pb.OrdersResponse, error) {
-	req := &pb.GetRecentTradesRequest{Exchange: exchange}
-	if symbol != "" {
-		req.Symbol = &symbol
-	}
-	if since > 0 {
-		req.Since = &since
-	}
-	if limit > 0 {
-		l := int32(limit)
-		req.Limit = &l
-	}
-	resp, err := c.client.GetRecentTrades(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get trade history for %s on %s: %w", symbol, exchange, err)
 	}
 	return resp, nil
 }

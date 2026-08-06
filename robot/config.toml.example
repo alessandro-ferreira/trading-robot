@@ -5,7 +5,8 @@
 orchestrator_interval = "5s"        # Time interval for processing the signal of each pair.
 refresh_strat_interval = "1m"       # Time interval for refreshing valid strategies and recover from panic.
 default_exchange_timeout = "10s"    # Default timeout for exchange operations.
-shutdown_timeout = "10s"            # Time to wait for graceful shutdown before force-quitting.
+shutdown_timeout = "2s"             # Time to wait for graceful shutdown before force-quitting.
+check_pending_policy = ["0s", "5s", "15s", "30s"] # Delays before checking pending orders again.
 
 # gRPC server settings
 [grpc]

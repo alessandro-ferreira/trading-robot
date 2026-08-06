@@ -242,7 +242,7 @@ func mapConfig(
 		windowDump := make([]string, len(stratCfg.MomentumWindows))
 		for i, w := range stratCfg.MomentumWindows {
 			windowDump[i] = fmt.Sprintf(
-				"{lookback: %ds, threshold: %.2f%%}", w.LookbackSeconds, w.Threshold*100,
+				"{lookback: %ds, threshold: %.3f%%}", w.LookbackSeconds, w.Threshold*100,
 			)
 		}
 

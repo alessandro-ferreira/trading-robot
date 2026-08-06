@@ -4,6 +4,7 @@ package portfolio
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"os"
@@ -95,7 +96,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 		orderID, err := repo.Orders.CreateOrder(ctx, db, repository.OrderData{
 			ExchangeName:     exchange,
 			InstrumentSymbol: symbol,
-			ExchangeOrderID:  "dummy-order-link-1001",
+			ExchangeOrderID:  sql.NullString{String: "dummy-order-link-1001", Valid: true},
 			Side:             repository.OrderSideBuy,
 			OrderType:        repository.OrderTypeLimit,
 			Status:           repository.OrderStatusClosed,

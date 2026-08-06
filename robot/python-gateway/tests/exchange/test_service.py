@@ -574,7 +574,7 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(len(response.orders), 2)
         self.assertEqual(response.orders[0].id, "101")
         self.assertEqual(response.orders[1].id, "100")
-        self.mock_exchange.fetch_orders.assert_called_with("BTC/USDT", limit=2)
+        self.mock_exchange.fetch_orders.assert_called_with("BTC/USDT")
 
         # Test that limit parameter is correctly applied
         request = exchange_pb2.GetOrdersRequest(
@@ -583,7 +583,7 @@ class TestExchangeService(unittest.TestCase):
         response = self.service.GetOrders(request, self.context)
         self.assertEqual(len(response.orders), 1)
         self.assertEqual(response.orders[0].id, "101")
-        self.mock_exchange.fetch_orders.assert_called_with("BTC/USDT", limit=1)
+        self.mock_exchange.fetch_orders.assert_called_with("BTC/USDT")
 
     def test_get_orders_requires_symbol(self):
         request = exchange_pb2.GetOrdersRequest(exchange="binance", symbol="", limit=0)
@@ -618,7 +618,7 @@ class TestExchangeService(unittest.TestCase):
         self.assertEqual(len(response.orders), 2)
         self.assertEqual(response.orders[0].id, "102")
         self.assertEqual(response.orders[1].id, "101")
-        self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT", limit=2)
+        self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT")
 
         # Test that limit parameter is correctly applied
         request = exchange_pb2.GetOpenOrdersRequest(
@@ -627,7 +627,7 @@ class TestExchangeService(unittest.TestCase):
         response = self.service.GetOpenOrders(request, self.context)
         self.assertEqual(len(response.orders), 1)
         self.assertEqual(response.orders[0].id, "102")
-        self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT", limit=1)
+        self.mock_exchange.fetch_open_orders.assert_called_with("BTC/USDT")
 
     def test_get_open_orders_requires_symbol(self):
         request = exchange_pb2.GetOpenOrdersRequest(

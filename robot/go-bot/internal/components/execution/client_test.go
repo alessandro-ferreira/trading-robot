@@ -39,7 +39,9 @@ type mockExchangeServer struct {
 	cancelOrderError        error
 	getOrderResponse        *pb.OrderResponse
 	getOrderError           error
-	getOpenOrdersResponse   *pb.OrdersResponse
+	getOrdersResponse       *pb.OrdersResponse
+	getOrdersError          error
+	getOpenOrdersResponse   *pb.OpenOrdersResponse
 	getOpenOrdersError      error
 	resetStateResponse      *pb.ResetStateResponse
 	resetStateError         error
@@ -94,14 +96,14 @@ func (s *mockExchangeServer) GetOrder(ctx context.Context, req *pb.GetOrderReque
 	return s.getOrderResponse, nil
 }
 
-func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOpenOrdersRequest) (*pb.OrdersResponse, error) {
-	if s.getOpenOrdersError != nil {
-		return nil, s.getOpenOrdersError
+func (s *mockExchangeServer) GetOrders(ctx context.Context, req *pb.GetOrdersRequest) (*pb.OrdersResponse, error) {
+	if s.getOrdersError != nil {
+		return nil, s.getOrdersError
 	}
-	return s.getOpenOrdersResponse, nil
+	return s.getOrdersResponse, nil
 }
 
-func (s *mockExchangeServer) GetRecentTrades(ctx context.Context, req *pb.GetRecentTradesRequest) (*pb.OrdersResponse, error) {
+func (s *mockExchangeServer) GetOpenOrders(ctx context.Context, req *pb.GetOpenOrdersRequest) (*pb.OpenOrdersResponse, error) {
 	if s.getOpenOrdersError != nil {
 		return nil, s.getOpenOrdersError
 	}
@@ -327,7 +329,7 @@ func TestClient_GetBalance(t *testing.T) {
 			client, cleanup := setupTest(t, mockSrv)
 			defer cleanup()
 
-			resp, err := client.GetBalance(context.Background(), "binance", "USDT")
+			resp, err := client.GetBalance(context.Background(), "binance")
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -571,6 +573,55 @@ func TestClient_GetOrder(t *testing.T) {
 	}
 }
 
+func TestClient_GetOrders(t *testing.T) {
+	testCases := []struct {
+		name        string
+		setupMock   func(*mockExchangeServer)
+		expectedLen int
+		expectError bool
+	}{
+		{
+			name: "Success",
+			setupMock: func(s *mockExchangeServer) {
+				s.getOrdersResponse = &pb.OrdersResponse{
+					Orders: []*pb.OrderResponse{
+						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen, Fee: 0, FeeCurrency: "USDT"},
+						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen, Fee: 0, FeeCurrency: "USDT"},
+					},
+				}
+			},
+			expectedLen: 2,
+		},
+		{
+			name: "Server Error",
+			setupMock: func(s *mockExchangeServer) {
+				s.getOrdersError = status.Error(codes.Internal, "internal server error")
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{}
+			if tc.setupMock != nil {
+				tc.setupMock(mockSrv)
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			resp, err := client.GetOrders(context.Background(), "binance", "BTC/USDT", 10)
+
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Len(t, resp.Orders, tc.expectedLen)
+			}
+		})
+	}
+}
+
 func TestClient_GetOpenOrders(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -581,7 +632,7 @@ func TestClient_GetOpenOrders(t *testing.T) {
 		{
 			name: "Success",
 			setupMock: func(s *mockExchangeServer) {
-				s.getOpenOrdersResponse = &pb.OrdersResponse{
+				s.getOpenOrdersResponse = &pb.OpenOrdersResponse{
 					Orders: []*pb.OrderResponse{
 						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen, Fee: 0, FeeCurrency: "USDT"},
 						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusOpen, Fee: 0, FeeCurrency: "USDT"},
@@ -609,55 +660,6 @@ func TestClient_GetOpenOrders(t *testing.T) {
 			defer cleanup()
 
 			resp, err := client.GetOpenOrders(context.Background(), "binance", "BTC/USDT", 10)
-
-			if tc.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Len(t, resp.Orders, tc.expectedLen)
-			}
-		})
-	}
-}
-
-func TestClient_GetRecentTrades(t *testing.T) {
-	testCases := []struct {
-		name        string
-		setupMock   func(*mockExchangeServer)
-		expectedLen int
-		expectError bool
-	}{
-		{
-			name: "Success",
-			setupMock: func(s *mockExchangeServer) {
-				s.getOpenOrdersResponse = &pb.OrdersResponse{
-					Orders: []*pb.OrderResponse{
-						{Id: "123", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed, Fee: 0.1, FeeCurrency: "USDT"},
-						{Id: "124", Symbol: "BTC/USDT", Status: repository.OrderStatusClosed, Fee: 0.1, FeeCurrency: "USDT"},
-					},
-				}
-			},
-			expectedLen: 2,
-		},
-		{
-			name: "Server Error",
-			setupMock: func(s *mockExchangeServer) {
-				s.getOpenOrdersError = status.Error(codes.Internal, "internal server error")
-			},
-			expectError: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockSrv := &mockExchangeServer{}
-			if tc.setupMock != nil {
-				tc.setupMock(mockSrv)
-			}
-			client, cleanup := setupTest(t, mockSrv)
-			defer cleanup()
-
-			resp, err := client.GetRecentTrades(context.Background(), "binance", "BTC/USDT", 0, 10)
 
 			if tc.expectError {
 				require.Error(t, err)

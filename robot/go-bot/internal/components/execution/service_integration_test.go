@@ -147,7 +147,7 @@ func TestService_Integration_GetBalance(t *testing.T) {
 	assert.Equal(t, amount, storedBalance.Total)
 
 	// Verify specific asset baseline expectation directly from Gateway
-	expectedResp, err := client.GetBalance(ctx, exchangeName, "BTC")
+	expectedResp, err := client.GetBalance(ctx, exchangeName)
 	require.NoError(t, err)
 	var expectedTotal float64
 	for _, b := range expectedResp.Balances {
@@ -174,7 +174,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// List open orders (should be empty)
 	t.Log("Listing open orders (expecting empty)")
-	openOrders, err := svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
+	openOrders, err := svc.GetOpenOrders(ctx, exchangeName, symbol, 10, true)
 	require.NoError(t, err)
 	assert.Empty(t, openOrders, "Initially, there should be no open orders")
 	t.Logf("Initial open orders response: %+v", openOrders)
@@ -192,7 +192,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// Get the order from the service
 	t.Log("Getting the first order from the service")
-	fetchedOrder1, err := svc.GetOrder(ctx, exchangeName, symbol, order1.ExchangeOrderID)
+	fetchedOrder1, err := svc.GetOrder(ctx, exchangeName, symbol, order1.ExchangeOrderID.String)
 	require.NoError(t, err)
 	assert.Equal(t, order1.ExchangeOrderID, fetchedOrder1.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusOpen, fetchedOrder1.Status)
@@ -200,7 +200,7 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// Get the order directly from the database
 	t.Log("Getting the first order from the database")
-	dbOrder1, err := repo.Orders.GetOrder(ctx, db, exchangeName, order1.ExchangeOrderID)
+	dbOrder1, err := repo.Orders.GetOrder(ctx, db, exchangeName, order1.ExchangeOrderID.String)
 	require.NoError(t, err)
 	assert.Equal(t, order1.ExchangeOrderID, dbOrder1.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusOpen, dbOrder1.Status)
@@ -220,19 +220,19 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// List open orders (should have two)
 	t.Log("Listing open orders (expecting two)")
-	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
+	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10, true)
 	require.NoError(t, err)
 	assert.Len(t, openOrders, 2, "Should be two open orders")
 	t.Logf("Open orders response (with 2 orders): %+v", openOrders)
 
 	// Cancel the second order
 	t.Log("Canceling the second order")
-	err = svc.CancelOrder(ctx, exchangeName, symbol, order2.ExchangeOrderID)
+	err = svc.CancelOrder(ctx, exchangeName, symbol, order2.ExchangeOrderID.String)
 	require.NoError(t, err)
 
 	// Get the second order from the database to check status
 	t.Log("Getting the second order from the database (expecting canceled)")
-	dbOrder2, err := repo.Orders.GetOrder(ctx, db, exchangeName, order2.ExchangeOrderID)
+	dbOrder2, err := repo.Orders.GetOrder(ctx, db, exchangeName, order2.ExchangeOrderID.String)
 	require.NoError(t, err)
 	assert.Equal(t, order2.ExchangeOrderID, dbOrder2.ExchangeOrderID)
 	assert.Equal(t, repository.OrderStatusCanceled, dbOrder2.Status, "Order status in DB should be canceled")
@@ -240,10 +240,28 @@ func TestService_Integration_OrderLifecycle(t *testing.T) {
 
 	// List open orders again (should have one)
 	t.Log("Listing open orders again (expecting one)")
-	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10)
+	openOrders, err = svc.GetOpenOrders(ctx, exchangeName, symbol, 10, true)
 	require.NoError(t, err)
 	require.Len(t, openOrders, 1, "Should be one open order left")
 	assert.Equal(t, order1.ExchangeOrderID, openOrders[0].ExchangeOrderID, "The remaining open order should be the first one")
+
+	// List orders (including closed and canceled) to verify all three orders are present
+	t.Log("Listing all orders (expecting three)")
+	allOrders, err := svc.GetOrders(ctx, exchangeName, symbol, 10, false)
+	require.NoError(t, err)
+	require.Len(t, allOrders, 3, "Should be three orders in total")
+	var foundCanceled, foundClosed bool
+	for _, o := range allOrders {
+		if o.ExchangeOrderID.String == order2.ExchangeOrderID.String && o.Status == repository.OrderStatusCanceled {
+			foundCanceled = true
+		}
+		if o.Status == repository.OrderStatusClosed {
+			foundClosed = true
+		}
+	}
+	assert.True(t, foundCanceled, "One of the orders should be canceled")
+	assert.True(t, foundClosed, "One of the orders should be closed")
+	t.Logf("All orders response: %+v", allOrders)
 }
 
 func TestService_Integration_StopOrder(t *testing.T) {
@@ -262,46 +280,8 @@ func TestService_Integration_StopOrder(t *testing.T) {
 	assert.Equal(t, repository.OrderTypeStopMarket, order.OrderType)
 
 	// Verify persistence
-	dbOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID)
+	dbOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID.String)
 	require.NoError(t, err)
 	assert.Equal(t, stopPrice, dbOrder.Price.Float64)
 	assert.Equal(t, repository.OrderTypeStopMarket, dbOrder.OrderType)
-}
-
-func TestService_Integration_RecentTrades(t *testing.T) {
-	svc, _, db, repo, cleanup := setupIntegrationTest(t)
-	defer cleanup()
-
-	ctx := context.Background()
-	exchange := "dummy"
-	symbol := "ETH/USDT"
-
-	// Capture 'since' before creating the order to ensure it's included
-	since := time.Now().Add(-1 * time.Minute).UnixMilli()
-
-	// Create a Market Buy (immediately generates a trade in DummyExchange)
-	amount := 0.01
-	order, err := svc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, amount, 0)
-	require.NoError(t, err)
-	require.Equal(t, repository.OrderStatusClosed, order.Status)
-
-	// Fetch Recent Trades
-	trades, err := svc.GetRecentTrades(ctx, exchange, symbol, since, 10)
-	require.NoError(t, err)
-
-	// We expect at least the trade from our market order
-	var found bool
-	for _, tr := range trades {
-		if tr.ExchangeOrderID == order.ExchangeOrderID || tr.ExchangeOrderID == "trade-"+order.ExchangeOrderID {
-			assert.Equal(t, amount, tr.Filled)
-			assert.Equal(t, repository.OrderStatusClosed, tr.Status)
-			found = true
-		}
-	}
-	assert.True(t, found, "The trade from the market order should be returned by GetRecentTrades")
-
-	// Verify DB sync: The order status in DB should be Closed (synced by GetRecentTrades logic)
-	dbOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID)
-	require.NoError(t, err)
-	assert.Equal(t, repository.OrderStatusClosed, dbOrder.Status)
 }

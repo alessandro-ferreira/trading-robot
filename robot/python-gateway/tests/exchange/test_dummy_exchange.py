@@ -1,3 +1,4 @@
+import math
 import unittest
 
 from core.config import ExchangeConfig
@@ -78,6 +79,18 @@ class TestDummyExchange(unittest.TestCase):
         """Verify that creating an order with insufficient funds raises an exception."""
         with self.assertRaisesRegex(Exception, "Insufficient funds"):
             self.exchange.create_order("BTC/USDT", "limit", "buy", 1000.0, 42000)
+
+    def test_create_order_response_error_keeps_order(self):
+        """Verify that the sentinel failure leaves the exchange order discoverable."""
+        amount = math.e + 1e-9 / 2
+
+        with self.assertRaisesRegex(ExchangeError, "response not delivered"):
+            self.exchange.create_order("LTC/USDT", "limit", "buy", amount)
+
+        orders = self.exchange.fetch_orders("LTC/USDT")
+        self.assertEqual(len(orders), 1)
+        self.assertAlmostEqual(orders[0]["amount"], amount)
+        self.assertEqual(orders[0]["status"], "open")
 
     def test_create_stop_order(self):
         """Verify creation of stop_market and stop_limit orders."""

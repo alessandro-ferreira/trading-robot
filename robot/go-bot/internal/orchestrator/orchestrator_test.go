@@ -54,6 +54,25 @@ func (m *MockMarketDataRepo) InsertTick(ctx context.Context, db repository.DBExe
 	return m.Called(ctx, db, t).Error(0)
 }
 
+type MockOrdersRepo struct{ mock.Mock }
+
+func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor, ex, id string) (repository.OrderData, error) {
+	args := m.Called(ctx, db, ex, id)
+	return args.Get(0).(repository.OrderData), args.Error(1)
+}
+func (m *MockOrdersRepo) GetOrders(ctx context.Context, db repository.DBExecutor, ex, sym string, st, tp, sd []string, lim int) ([]repository.OrderData, error) {
+	args := m.Called(ctx, db, ex, sym, st, tp, sd, lim)
+	return args.Get(0).([]repository.OrderData), args.Error(1)
+}
+func (m *MockOrdersRepo) CreateOrder(ctx context.Context, db repository.DBExecutor, o repository.OrderData) (int64, error) {
+	args := m.Called(ctx, db, o)
+	return args.Get(0).(int64), args.Error(1)
+}
+func (m *MockOrdersRepo) UpdateOrder(ctx context.Context, db repository.DBExecutor, o repository.OrderData) (int64, error) {
+	args := m.Called(ctx, db, o)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 type MockBalancesRepo struct{ mock.Mock }
 
 func (m *MockBalancesRepo) GetBalance(ctx context.Context, db repository.DBExecutor, exchange, asset string) (repository.BalanceData, error) {
@@ -147,15 +166,15 @@ func (m *MockExecutionService) GetOrder(ctx context.Context, ex, sym, id string)
 	args := m.Called(ctx, ex, sym, id)
 	return args.Get(0).(repository.OrderData), args.Error(1)
 }
-func (m *MockExecutionService) GetOpenOrders(ctx context.Context, ex, sym string, lim int) ([]repository.OrderData, error) {
-	args := m.Called(ctx, ex, sym, lim)
+func (m *MockExecutionService) GetOrders(ctx context.Context, ex, sym string, lim int, updb bool) ([]repository.OrderData, error) {
+	args := m.Called(ctx, ex, sym, lim, updb)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]repository.OrderData), args.Error(1)
 }
-func (m *MockExecutionService) GetRecentTrades(ctx context.Context, ex, sym string, since int64, lim int) ([]repository.OrderData, error) {
-	args := m.Called(ctx, ex, sym, since, lim)
+func (m *MockExecutionService) GetOpenOrders(ctx context.Context, ex, sym string, lim int, updb bool) ([]repository.OrderData, error) {
+	args := m.Called(ctx, ex, sym, lim, updb)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -177,6 +196,7 @@ func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, 
 	mExec := new(MockExecutionService)
 	mClock := new(MockClock)
 	mBal := new(MockBalancesRepo)
+	mOrders := new(MockOrdersRepo)
 	mMD := new(MockMarketDataRepo)
 	mRisk := new(MockRiskRepo)
 	mStrats := new(MockStrategiesRepo)
@@ -186,12 +206,14 @@ func setupOrchestratorTest(t *testing.T) (*Orchestrator, *repository.Container, 
 		MarketData: mMD,
 		Risks:      mRisk,
 		Balances:   mBal,
+		Orders:     mOrders,
 	}
 
 	cfg := &config.Config{
 		Server: config.ServerConfig{
 			OrchestratorInterval: 100 * time.Millisecond,
 			RefreshStratInterval: 1 * time.Minute,
+			CheckPendingPolicy:   []time.Duration{0},
 		},
 		Risk: config.RiskConfig{
 			MaxOpenPositions:  3,
@@ -256,6 +278,19 @@ func TestNewOrchestrator_InvalidConfig(t *testing.T) {
 		}
 		orch, err := New(logger, nil, repo, cfg, nil, nil, nil, nil)
 		assert.Error(t, err)
+		assert.Nil(t, orch)
+	})
+
+	t.Run("empty CheckPendingPolicy", func(t *testing.T) {
+		cfg := &config.Config{
+			Server: config.ServerConfig{
+				OrchestratorInterval: 1 * time.Second,
+				RefreshStratInterval: 1 * time.Minute,
+				CheckPendingPolicy:   []time.Duration{},
+			},
+		}
+		orch, err := New(logger, nil, repo, cfg, nil, nil, nil, nil)
+		assert.EqualError(t, err, "invalid configuration: check_pending_policy must not be empty")
 		assert.Nil(t, orch)
 	})
 }

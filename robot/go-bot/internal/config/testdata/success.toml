@@ -3,6 +3,7 @@ orchestrator_interval = "10s"
 refresh_strat_interval = "1m"
 default_exchange_timeout = "10s"
 shutdown_timeout = "30s"
+check_pending_policy = ["0s", "10s"]
 
 [go_log]
 level = "info"

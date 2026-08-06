@@ -57,7 +57,7 @@ func TestClient_Integration(t *testing.T) {
 	require.Greater(t, tickerResp.Price, 0.0)
 
 	// Test GetBalance (Initial setup from dummy.py: USDT 10000)
-	balanceResp, err := client.GetBalance(ctx, "dummy", "USDT")
+	balanceResp, err := client.GetBalance(ctx, "dummy")
 	require.NoError(t, err, "GetBalance should not error")
 	require.NotNil(t, balanceResp, "GetBalance response should not be nil")
 	require.NotEmpty(t, balanceResp.Balances)
@@ -76,12 +76,6 @@ func TestClient_Integration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, repository.OrderStatusClosed, marketResp.Status)
 	require.Equal(t, 0.1, marketResp.Filled)
-
-	// Test GetRecentTrades - Verifying the trade from the market order
-	recentTrades, err := client.GetRecentTrades(ctx, "dummy", symbol, 0, 10)
-	require.NoError(t, err)
-	require.NotEmpty(t, recentTrades.Orders)
-	require.Equal(t, 0.1, recentTrades.Orders[0].Amount)
 
 	// Test CreateOrder (Limit Buy) - Stays open in DummyExchange
 	price := 30000.0
@@ -129,6 +123,19 @@ func TestClient_Integration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, repository.OrderStatusOpen, stopResp.Status)
 	require.Equal(t, stopPrice, stopResp.Price)
+
+	// Test GetOpenOrders
+	openOrdersResp, err = client.GetOpenOrders(ctx, "dummy", symbol, 10)
+	require.NoError(t, err, "GetOpenOrders should not error")
+	require.Len(t, openOrdersResp.Orders, 1)
+	require.Equal(t, stopResp.Id, openOrdersResp.Orders[0].Id)
+
+	// Test GetOrders
+	ordersResp, err := client.GetOrders(ctx, "dummy", symbol, 10)
+	require.NoError(t, err, "GetOrders should not error")
+	require.Len(t, ordersResp.Orders, 3)
+	require.Equal(t, stopResp.Id, ordersResp.Orders[0].Id)
+	require.Equal(t, orderResp.Id, ordersResp.Orders[1].Id)
 
 	// Test Exchange not configured error
 	_, err = client.GetTicker(ctx, "nonexistent_exchange", symbol)

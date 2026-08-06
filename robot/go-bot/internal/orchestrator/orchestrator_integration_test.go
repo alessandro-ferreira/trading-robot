@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sync"
 	"testing"
@@ -81,6 +82,7 @@ func setupOrchestratorIntegrationTest(
 		Server: config.ServerConfig{
 			OrchestratorInterval: orchInterval,
 			RefreshStratInterval: refreshInterval,
+			CheckPendingPolicy:   []time.Duration{0, 50 * time.Millisecond, 100 * time.Millisecond},
 		},
 		Risk: config.RiskConfig{
 			MaxOpenPositions:  10,
@@ -130,7 +132,7 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	symbol := "LTC/USDT"
 
 	// Store initial USDT balance to verify profit at the end
-	initialBal, err := client.GetBalance(ctx, exchange, "USDT")
+	initialBal, err := client.GetBalance(ctx, exchange)
 	require.NoError(t, err)
 	var initialUSDT float64
 	for _, b := range initialBal.Balances {
@@ -224,7 +226,7 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	require.NotEmpty(t, orders)
 
 	// Verify LTC balance consistency on exchange
-	bal, err := client.GetBalance(ctx, exchange, "LTC")
+	bal, err := client.GetBalance(ctx, exchange)
 	require.NoError(t, err)
 	var balanceLTC float64
 	for _, b := range bal.Balances {
@@ -259,7 +261,7 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	require.NotEmpty(t, sellOrders)
 
 	// Final balance verification: LTC should be zeroed and USDT must be higher than starting point
-	finalBal, err := client.GetBalance(ctx, exchange, "")
+	finalBal, err := client.GetBalance(ctx, exchange)
 	require.NoError(t, err)
 	var finalUSDT, finalLTC float64
 	for _, b := range finalBal.Balances {
@@ -282,6 +284,172 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Orchestrator failed to shut down gracefully within timeout")
 	}
+}
+
+// TestOrchestrator_Integration_OrderCreationFailure verifies that an order persisted
+// locally but rejected by the exchange is eventually marked as rejected.
+func TestOrchestrator_Integration_OrderCreationFailure(t *testing.T) {
+	orch, db, client, cleanup := setupOrchestratorIntegrationTest(t, 50*time.Millisecond, 1*time.Minute)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	repo := repository.New()
+	exchange, symbol := "dummy", "LTC/USDT"
+
+	err := repo.Risks.UpsertRiskPair(ctx, db, repository.RiskPair{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		AllocatedBudget:  1000.0,
+	})
+	require.NoError(t, err)
+
+	momentum := repository.StrategyMomentum{
+		WindowSeconds: 10,
+		Windows: []repository.MomentumWindow{
+			{LookbackSeconds: 1, Threshold: 0.005 * 0.01},
+		},
+		RequireAll:      true,
+		StopLossPct:     0.2 * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: 5 * 0.01, Valid: true},
+	}
+	err = repo.Strategies.UpsertEnabledStrategy(
+		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", momentum,
+	)
+	require.NoError(t, err)
+
+	// Directly create a BUY order with an amount with excessive size, ensuring the exchange will reject it.
+	execSvc := execution.NewService(slog.Default(), db, client, repository.New(), utils.NewSystemClock())
+	_, err = execSvc.CreateOrder(
+		ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 1_000_000, 0,
+	)
+	require.Error(t, err)
+
+	orders, err := repo.Orders.GetOrders(
+		ctx, db, exchange, symbol, []string{repository.OrderStatusRejected}, []string{}, []string{}, 1,
+	)
+	require.NoError(t, err)
+	require.Empty(t, orders, "No rejected order should exist in DB before orchestrator starts")
+
+	go orch.Start(ctx)
+
+	require.Eventually(t, func() bool {
+		// Check pending order should reject the order after a few retries, since the exchange will never return it.
+		orders, err := repo.Orders.GetOrders(
+			ctx, db, exchange, symbol, []string{repository.OrderStatusRejected}, []string{}, []string{}, 1,
+		)
+		if err == nil && len(orders) > 0 {
+			t.Logf("Order %s - id: %d, amount: %f", orders[0].Status, orders[0].ID, orders[0].Amount)
+		}
+		return err == nil && len(orders) > 0 && !orders[0].ExchangeOrderID.Valid
+	}, 2*time.Second, 50*time.Millisecond, "Failed exchange order should eventually be rejected locally")
+}
+
+// TestOrchestrator_Integration_PendingOrderRecovery verifies that an exchange order
+// created without a response is recovered from the pending local order.
+func TestOrchestrator_Integration_PendingOrderRecovery(t *testing.T) {
+	orch, db, client, cleanup := setupOrchestratorIntegrationTest(t, 50*time.Millisecond, 1*time.Minute)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	repo := repository.New()
+	exchange, symbol := "dummy", "LTC/USDT"
+
+	err := repo.Risks.UpsertRiskPair(ctx, db, repository.RiskPair{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		AllocatedBudget:  1000.0,
+	})
+	require.NoError(t, err)
+
+	momentum := repository.StrategyMomentum{
+		WindowSeconds: 10,
+		Windows: []repository.MomentumWindow{
+			{LookbackSeconds: 1, Threshold: 0.005 * 0.01},
+		},
+		RequireAll:      true,
+		StopLossPct:     0.2 * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: 5 * 0.01, Valid: true},
+	}
+	err = repo.Strategies.UpsertEnabledStrategy(
+		ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", momentum,
+	)
+	require.NoError(t, err)
+
+	// The dummy exchange persists order with amount = math.E but does not return a response.
+	pendingAmount := math.E
+	execSvc := execution.NewService(slog.Default(), db, client, repository.New(), utils.NewSystemClock())
+	_, err = execSvc.CreateOrder(
+		ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, pendingAmount, 0,
+	)
+	require.Error(t, err)
+
+	pendingOrders, err := repo.Orders.GetOrders(
+		ctx, db, exchange, symbol, []string{repository.OrderStatusNew}, []string{}, []string{}, 10,
+	)
+	require.NoError(t, err)
+
+	var pendingOrderID int64
+	for _, order := range pendingOrders {
+		if math.Abs(order.Amount-pendingAmount) <= 1e-9 {
+			require.False(t, order.ExchangeOrderID.Valid)
+			pendingOrderID = order.ID
+			break
+		}
+	}
+	require.NotZero(t, pendingOrderID, "Sentinel order should remain pending locally")
+
+	go orch.Start(ctx)
+
+	// The order should eventually be linked to the exchange order ID
+	var exchangeOrderId string
+	require.Eventually(t, func() bool {
+		orders, err := repo.Orders.GetOrders(
+			ctx, db, exchange, symbol, []string{}, []string{}, []string{}, 100,
+		)
+		if err == nil && len(orders) > 0 {
+			for _, order := range orders {
+				if order.ID == pendingOrderID && order.ExchangeOrderID.Valid {
+					exchangeOrderId = order.ExchangeOrderID.String
+					t.Logf("Pending order %d - exchange_order_id: %s", pendingOrderID, exchangeOrderId)
+					return true
+				}
+			}
+		}
+		return false
+	}, 3*time.Second, 50*time.Millisecond, "Pending order should eventually be linked to exchange order")
+
+	pendingOrder, err := repo.Orders.GetOrder(ctx, db, exchange, exchangeOrderId)
+	require.NoError(t, err)
+	require.Equal(t, pendingOrder.Status, repository.OrderStatusNew)
+
+	// Let's explicitly call SyncOrders to ensure the order is reconciled and filled.
+	orch.recon.SyncOrders(ctx, exchange, symbol)
+
+	require.Eventually(t, func() bool {
+		orders, err := repo.Orders.GetOrders(
+			ctx, db, exchange, symbol, []string{}, []string{}, []string{}, 100,
+		)
+		if err == nil && len(orders) > 0 {
+			for _, order := range orders {
+				if order.ID == pendingOrderID && order.Status == repository.OrderStatusClosed && order.Filled > 0 {
+					t.Logf("Pending order %d - status: %s, filled: %f", order.ID, order.Status, order.Filled)
+					return true
+				}
+			}
+		}
+		return false
+	}, 1*time.Second, 50*time.Millisecond, "Pending order should eventually be closed and filled")
+
+	// Check that the position was created for the filled order
+	pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	require.NoError(t, err)
+	require.True(t, pos.Active)
+	require.Equal(t, pos.OrderID.Int64, pendingOrderID)
+	assert.InDelta(t, pos.Quantity, pendingAmount, 0.000001)
 }
 
 // TestOrchestrator_Integration_MultiPairScaling verifies that the Orchestrator
@@ -548,7 +716,7 @@ func TestOrchestrator_Integration_StateHydration(t *testing.T) {
 	orderID, err := repo.Orders.CreateOrder(ctx, db, repository.OrderData{
 		ExchangeName:     exchange,
 		InstrumentSymbol: symbol,
-		ExchangeOrderID:  "hydra-order-1",
+		ExchangeOrderID:  sql.NullString{String: "hydra-order-1", Valid: true},
 		Side:             repository.OrderSideBuy,
 		OrderType:        repository.OrderTypeMarket,
 		Amount:           1.0,

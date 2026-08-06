@@ -159,7 +159,7 @@ func (sc *SimulatedClient) GetTicker(
 
 // GetBalance returns current USDT and crypto holdings.
 func (sc *SimulatedClient) GetBalance(
-	ctx context.Context, exchange, currency string,
+	ctx context.Context, exchange string,
 ) (*pb.BalanceResponse, error) {
 	balances := []*pb.BalanceObject{
 		{Asset: BudgetAsset, Free: sc.cashOwned, Total: sc.cashOwned},
@@ -318,24 +318,28 @@ func (sc *SimulatedClient) GetOrder(
 	return nil, fmt.Errorf("order %s not found", id)
 }
 
+// GetOrders returns list of all orders.
+func (sc *SimulatedClient) GetOrders(
+	ctx context.Context, exchange, symbol string, limit int,
+) (*pb.OrdersResponse, error) {
+	var orders []*pb.OrderResponse
+	for _, order := range sc.orders {
+		orders = append(orders, order)
+	}
+	return &pb.OrdersResponse{Orders: orders}, nil
+}
+
 // GetOpenOrders returns list of open orders (only the stop order in simulation).
 func (sc *SimulatedClient) GetOpenOrders(
 	ctx context.Context, exchange, symbol string, limit int,
-) (*pb.OrdersResponse, error) {
+) (*pb.OpenOrdersResponse, error) {
 	var openOrders []*pb.OrderResponse
 	for _, order := range sc.orders {
 		if order.Status == repository.OrderStatusOpen {
 			openOrders = append(openOrders, order)
 		}
 	}
-	return &pb.OrdersResponse{Orders: openOrders}, nil
-}
-
-// GetRecentTrades returns list of recent trades (empty in simulation).
-func (sc *SimulatedClient) GetRecentTrades(
-	ctx context.Context, exchange, symbol string, since int64, limit int,
-) (*pb.OrdersResponse, error) {
-	return &pb.OrdersResponse{Orders: make([]*pb.OrderResponse, 0)}, nil
+	return &pb.OpenOrdersResponse{Orders: openOrders}, nil
 }
 
 // ResetState resets the simulated client.

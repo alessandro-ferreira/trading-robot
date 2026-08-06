@@ -36,7 +36,7 @@ type OrderData struct {
 	ID                int64
 	ExchangeName      string
 	InstrumentSymbol  string
-	ExchangeOrderID   string
+	ExchangeOrderID   sql.NullString
 	ClientOrderID     sql.NullString
 	Side              string
 	OrderType         string
@@ -298,7 +298,7 @@ func (r *pgOrdersRepo) CreateOrder(ctx context.Context, db DBExecutor, order Ord
 	return id, nil
 }
 
-// UpdateOrder updates an existing order in the database.
+// UpdateOrder updates an existing order in the database with new details.
 func (r *pgOrdersRepo) UpdateOrder(ctx context.Context, db DBExecutor, order OrderData) (int64, error) {
 	query := `
 		UPDATE trading.orders
@@ -312,11 +312,16 @@ func (r *pgOrdersRepo) UpdateOrder(ctx context.Context, db DBExecutor, order Ord
 			order_status = $7::trading.order_status,
 			error_message = $8,
 			exchange_timestamp = $9,
+			exchange_order_id = COALESCE(exchange_order_id, $10),
+			client_order_id = COALESCE(client_order_id, $11),
 			updated_at = NOW(),
-			updated_by = $10
-		WHERE
-			exchange_order_id = $11
-			AND exchange_id = (SELECT id FROM trading.exchanges WHERE name = $12 AND active)
+			updated_by = $12
+		WHERE (id = $13 AND COALESCE($13, 0) > 0)
+		   OR (
+				exchange_id = (SELECT id FROM trading.exchanges WHERE name = $14 AND active)
+				AND exchange_order_id = $10
+				AND COALESCE($13, 0) = 0
+		   )
 		RETURNING id
 	`
 
@@ -331,8 +336,10 @@ func (r *pgOrdersRepo) UpdateOrder(ctx context.Context, db DBExecutor, order Ord
 		order.Status,
 		order.ErrorMessage,
 		order.ExchangeTimestamp,
+		order.ExchangeOrderID, // Update exchange_order_id only if it's not already set
+		order.ClientOrderID,   // Update client_order_id only if it's not already set
 		DefaultUser,
-		order.ExchangeOrderID,
+		order.ID,
 		order.ExchangeName,
 	).Scan(&id)
 

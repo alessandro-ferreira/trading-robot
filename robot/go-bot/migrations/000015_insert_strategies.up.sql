@@ -43,24 +43,24 @@ BEGIN
         label, strategy_pair_id, strategy_type, window_seconds, momentum_windows,
         stop_loss_pct, activation_pct, trailing_stop_pct, created_by
     )
-    VALUES ('default', v_btc_trailing_id, 'momentum_trailing', 10, ARRAY[(5, 0.0001)]::trading.momentum_window[], 0.1, 0.05, 0.02, v_created_by);
+    VALUES ('default', v_btc_trailing_id, 'momentum_trailing', 10, ARRAY[(5, 0.00001)]::trading.momentum_window[], 0.01, 0.005, 0.002, v_created_by);
 
     INSERT INTO trading.strategy_momentum (
         label, strategy_pair_id, strategy_type, window_seconds, momentum_windows,
         stop_loss_pct, profit_target_pct, created_by
     )
-    VALUES ('default', v_btc_profit_id, 'momentum_profit', 10, ARRAY[(5, 0.0001)]::trading.momentum_window[], 0.1, 0.05, v_created_by);
+    VALUES ('default', v_btc_profit_id, 'momentum_profit', 10, ARRAY[(5, 0.00001)]::trading.momentum_window[], 0.01, 0.005, v_created_by);
 
     -- ETH/USDT - Trailing disabled, Profit enabled
     INSERT INTO trading.strategy_momentum (
         label, strategy_pair_id, strategy_type, is_enabled, window_seconds, momentum_windows,
         stop_loss_pct, activation_pct, trailing_stop_pct, created_by
     )
-    VALUES ('default', v_eth_trailing_id, 'momentum_trailing', FALSE, 10, ARRAY[(5, 0.0001)]::trading.momentum_window[], 0.1, 0.05, 0.02, v_created_by);
+    VALUES ('default', v_eth_trailing_id, 'momentum_trailing', FALSE, 10, ARRAY[(5, 0.00001)]::trading.momentum_window[], 0.01, 0.005, 0.002, v_created_by);
 
     INSERT INTO trading.strategy_momentum (
         label, strategy_pair_id, strategy_type, window_seconds, momentum_windows,
         require_all, stop_loss_pct, profit_target_pct, created_by
     )
-    VALUES ('default', v_eth_profit_id, 'momentum_profit', 10, ARRAY[(5, 0.0001), (6, 0.0002), (8, 0.0003)]::trading.momentum_window[], TRUE, 0.1, 0.05, v_created_by);
+    VALUES ('default', v_eth_profit_id, 'momentum_profit', 10, ARRAY[(5, 0.00001), (6, 0.00002), (8, 0.00003)]::trading.momentum_window[], TRUE, 0.01, 0.005, v_created_by);
 END $$;

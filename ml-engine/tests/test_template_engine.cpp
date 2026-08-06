@@ -22,12 +22,12 @@ TEST_F(TemplateEngineTest, BTCConfigurationMatchesMigration) {
     EXPECT_EQ(update.strategy_type, "momentum_trailing");
     EXPECT_EQ(update.momentum_params.window_seconds, 10);
     EXPECT_FALSE(update.momentum_params.require_all);
-    EXPECT_DOUBLE_EQ(update.momentum_params.stop_loss_pct, 0.1);
+    EXPECT_DOUBLE_EQ(update.momentum_params.stop_loss_pct, 0.01);
 
     ASSERT_TRUE(update.momentum_params.activation_pct.has_value());
-    EXPECT_DOUBLE_EQ(*update.momentum_params.activation_pct, 0.05);
+    EXPECT_DOUBLE_EQ(*update.momentum_params.activation_pct, 0.005);
     ASSERT_TRUE(update.momentum_params.trailing_stop_pct.has_value());
-    EXPECT_DOUBLE_EQ(*update.momentum_params.trailing_stop_pct, 0.02);
+    EXPECT_DOUBLE_EQ(*update.momentum_params.trailing_stop_pct, 0.002);
 
     auto risk = engine_.GenerateRiskUpdate(exchange_, "BTC/USDT");
     EXPECT_DOUBLE_EQ(risk.allocated_budget, 500.0);
@@ -41,7 +41,7 @@ TEST_F(TemplateEngineTest, ETHConfigurationMatchesMigration) {
     EXPECT_TRUE(update.momentum_params.require_all);
 
     ASSERT_TRUE(update.momentum_params.profit_target_pct.has_value());
-    EXPECT_DOUBLE_EQ(*update.momentum_params.profit_target_pct, 0.05);
+    EXPECT_DOUBLE_EQ(*update.momentum_params.profit_target_pct, 0.005);
     EXPECT_EQ(update.momentum_params.windows.size(), 3);
 
     auto risk = engine_.GenerateRiskUpdate(exchange_, "ETH/USDT");

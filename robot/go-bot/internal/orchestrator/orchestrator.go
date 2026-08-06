@@ -54,6 +54,9 @@ func New(
 			"invalid configuration: orchestrator_interval and refresh_strat_interval must be greater than 0",
 		)
 	}
+	if len(cfg.Server.CheckPendingPolicy) == 0 {
+		return nil, fmt.Errorf("invalid configuration: check_pending_policy must not be empty")
+	}
 
 	return &Orchestrator{
 		logger:    logger,
@@ -92,6 +95,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 	o.logger.Info("Orchestrator active",
 		"loop_interval", o.cfg.Server.OrchestratorInterval.String(),
 		"refresh_stat_interval", o.cfg.Server.RefreshStratInterval.String(),
+		"check_pending_policy", o.cfg.Server.CheckPendingPolicy,
 	)
 
 	for {

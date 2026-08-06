@@ -151,7 +151,7 @@ func TestReconciler_Integration_SyncSellOrder(t *testing.T) {
 	_, err = repo.Orders.UpdateOrder(ctx, db, order)
 	require.NoError(t, err)
 
-	openOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID)
+	openOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID.String)
 	require.NoError(t, err)
 	assert.Equal(t, repository.OrderStatusOpen, openOrder.Status)
 
@@ -160,7 +160,7 @@ func TestReconciler_Integration_SyncSellOrder(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate that the order status is updated to closed in the database after reconciliation.
-	updatedOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID)
+	updatedOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID.String)
 	require.NoError(t, err)
 	assert.Equal(t, repository.OrderStatusClosed, updatedOrder.Status)
 }
@@ -181,7 +181,7 @@ func TestReconciler_Integration_NoSyncCanceledOrder(t *testing.T) {
 	require.Equal(t, repository.OrderStatusOpen, order.Status)
 
 	// Cancel the open exchange order so the gateway reports 'canceled'.
-	err = execSvc.CancelOrder(ctx, exchange, symbol, order.ExchangeOrderID)
+	err = execSvc.CancelOrder(ctx, exchange, symbol, order.ExchangeOrderID.String)
 	require.NoError(t, err)
 
 	// Now deliberately set DB to think the order is still open (stale DB state).
@@ -327,79 +327,4 @@ func TestReconciler_Integration_AdoptGhostBalance(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, pos.UnknownOrigin)
 	assert.Equal(t, 2.0, pos.Quantity)
-}
-
-// TestReconciler_Integration_NoPromoteQuantityMismatch verifies that a trade whose filled quantity
-// differs beyond the allowed fee margin does not promote an unknown-origin position.
-func TestReconciler_Integration_NoPromoteQuantityMismatch(t *testing.T) {
-	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
-	defer cleanup()
-
-	ctx := context.Background()
-	exchange := "dummy"
-	symbol := "LTC/USDT"
-
-	// Create an exchange order with a larger filled quantity than the DB position.
-	order, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 1.10, 0)
-	require.NoError(t, err)
-	require.Equal(t, repository.OrderStatusClosed, order.Status)
-
-	// Insert an unknown-origin position with smaller quantity (1.0) into DB
-	pos := repository.PositionData{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
-		Side:             repository.PositionSideLong,
-		Quantity:         1.0,
-		EntryPrice:       0,
-		HighestPrice:     0,
-		UnknownOrigin:    true,
-	}
-	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos))
-
-	// Sync trade history — the mismatch beyond maxFeeMargin should prevent promotion.
-	err = recon.SyncTradeHistory(ctx, exchange, symbol, 1*time.Minute)
-	require.NoError(t, err)
-
-	// Verify the position remains unknown-origin and not promoted
-	updated, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-	require.NoError(t, err)
-	assert.True(t, updated.UnknownOrigin)
-	assert.Equal(t, 0.0, updated.EntryPrice)
-}
-
-// TestReconciler_Integration_PromoteUnknowOrigin verifies that an unknown-origin position is promoted by trade history when matching.
-func TestReconciler_Integration_PromoteUnknowOrigin(t *testing.T) {
-	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
-	defer cleanup()
-
-	ctx := context.Background()
-	exchange := "dummy"
-	symbol := "SOL/USDT"
-
-	// Create a order in the dummy gateway
-	order, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.01, 0)
-	require.NoError(t, err)
-	require.Equal(t, repository.OrderStatusClosed, order.Status)
-
-	// Insert an unknown-origin position with the order filled as quantity
-	pos := repository.PositionData{
-		ExchangeName:     exchange,
-		InstrumentSymbol: symbol,
-		Side:             repository.PositionSideLong,
-		Quantity:         order.Filled,
-		EntryPrice:       0,
-		HighestPrice:     0,
-		UnknownOrigin:    true,
-	}
-	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos))
-
-	// Sync trade history to find matching execution and promote the position
-	err = recon.SyncTradeHistory(ctx, exchange, symbol, 1*time.Minute)
-	require.NoError(t, err)
-
-	// Position is promoted and entry price set
-	updated, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
-	require.NoError(t, err)
-	assert.False(t, updated.UnknownOrigin)
-	assert.NotZero(t, updated.EntryPrice)
 }

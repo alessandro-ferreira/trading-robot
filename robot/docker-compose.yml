@@ -24,7 +24,7 @@ services:
     command: ["python", "main.py", "--config", "/config.toml"]
     volumes:
       - ./python-gateway:/app
-      - ./config.toml:/config.toml:ro
+      - ./config.toml.example:/config.toml:ro
     environment:
       - PYTHONUNBUFFERED=1
     ports:

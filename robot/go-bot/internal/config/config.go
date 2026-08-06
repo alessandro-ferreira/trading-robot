@@ -24,10 +24,11 @@ type Config struct {
 
 // ServerConfig holds server-related settings.
 type ServerConfig struct {
-	OrchestratorInterval   time.Duration `toml:"orchestrator_interval"`
-	RefreshStratInterval   time.Duration `toml:"refresh_strat_interval"`
-	DefaultExchangeTimeout time.Duration `toml:"default_exchange_timeout"`
-	ShutdownTimeout        time.Duration `toml:"shutdown_timeout"`
+	OrchestratorInterval   time.Duration   `toml:"orchestrator_interval"`
+	RefreshStratInterval   time.Duration   `toml:"refresh_strat_interval"`
+	DefaultExchangeTimeout time.Duration   `toml:"default_exchange_timeout"`
+	ShutdownTimeout        time.Duration   `toml:"shutdown_timeout"`
+	CheckPendingPolicy     []time.Duration `toml:"check_pending_policy"`
 }
 
 // LogConfig holds the logging configuration.
@@ -102,6 +103,7 @@ func newWithDefaults() *Config {
 			RefreshStratInterval:   1 * time.Minute,
 			DefaultExchangeTimeout: 10 * time.Second,
 			ShutdownTimeout:        10 * time.Second,
+			CheckPendingPolicy:     []time.Duration{0, 5 * time.Second, 15 * time.Second, 30 * time.Second},
 		},
 		Log: LogConfig{
 			Level:  "info",

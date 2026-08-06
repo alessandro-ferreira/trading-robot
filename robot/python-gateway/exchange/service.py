@@ -251,9 +251,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         orders = []
         try:
             limit = request.limit if request.limit > 0 else None
-            orders = utils.retry_network_call(
-                exchange.fetch_orders, request.symbol, limit=limit
-            )
+            orders = utils.retry_network_call(exchange.fetch_orders, request.symbol)
 
             # Sort orders by timestamp in descending order (most recent first)
             orders.sort(
@@ -283,7 +281,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
         try:
             limit = request.limit if request.limit > 0 else None
             orders = utils.retry_network_call(
-                exchange.fetch_open_orders, request.symbol, limit=limit
+                exchange.fetch_open_orders, request.symbol
             )
 
             # Sort orders by timestamp in descending order (most recent first)

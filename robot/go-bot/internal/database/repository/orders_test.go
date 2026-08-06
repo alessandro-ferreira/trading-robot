@@ -31,7 +31,7 @@ func getSampleOrder() OrderData {
 		ID:                r.Int63n(1000) + 1,
 		ExchangeName:      "dummy",
 		InstrumentSymbol:  "BTC/USDT",
-		ExchangeOrderID:   fmt.Sprintf("order-%d", r.Intn(10000)),
+		ExchangeOrderID:   sql.NullString{String: fmt.Sprintf("order-%d", r.Intn(10000)), Valid: true},
 		ClientOrderID:     sql.NullString{String: fmt.Sprintf("client-%d", r.Intn(10000)), Valid: true},
 		Side:              OrderSideBuy,
 		OrderType:         OrderTypeMarket,
@@ -72,7 +72,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				rows := pgxmock.NewRows(orderColumns).AddRow(toOrderRow(order)...)
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeName, order.ExchangeOrderID).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID.String).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, result OrderData, err error) {
@@ -93,7 +93,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 
 				rows := pgxmock.NewRows(orderColumns).AddRow(toOrderRow(oNull)...)
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeName, order.ExchangeOrderID).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID.String).
 					WillReturnRows(rows)
 			},
 			assertResult: func(t *testing.T, result OrderData, err error) {
@@ -107,7 +107,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			name: "Not Found",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeName, order.ExchangeOrderID).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID.String).
 					WillReturnError(pgx.ErrNoRows)
 			},
 			expectedErrContains: "failed to get order",
@@ -116,7 +116,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			name: "DB Error",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				mockDB.ExpectQuery("SELECT o.id, e.name AS exchange_name").
-					WithArgs(order.ExchangeName, order.ExchangeOrderID).
+					WithArgs(order.ExchangeName, order.ExchangeOrderID.String).
 					WillReturnError(errors.New("db query error"))
 			},
 			expectedErrContains: "db query error",
@@ -131,7 +131,7 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeName, order.ExchangeOrderID)
+			result, err := repo.GetOrder(context.Background(), mockDB, order.ExchangeName, order.ExchangeOrderID.String)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)
@@ -429,7 +429,7 @@ func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 	b := getSampleOrder()
 	updateArgs := []any{
 		b.Filled, b.Remaining, b.AveragePrice, b.Fee, b.FeeAssetSymbol, b.Cost, b.Status,
-		b.ErrorMessage, b.ExchangeTimestamp, DefaultUser, b.ExchangeOrderID, b.ExchangeName,
+		b.ErrorMessage, b.ExchangeTimestamp, b.ExchangeOrderID, b.ClientOrderID, DefaultUser, b.ID, b.ExchangeName,
 	}
 
 	testCases := []struct {

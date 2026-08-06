@@ -16,21 +16,21 @@ StrategyUpdate TemplateEngine::GenerateStrategyUpdate(const string& exchange, co
         update.momentum_params.label = "default";
         update.momentum_params.window_seconds = 10;
         update.momentum_params.require_all = false;
-        update.momentum_params.stop_loss_pct = 0.1;
-        update.momentum_params.activation_pct = 0.05;
-        update.momentum_params.trailing_stop_pct = 0.02;
-        update.momentum_params.windows.push_back({5, 0.0001});
+        update.momentum_params.stop_loss_pct = 0.01;
+        update.momentum_params.activation_pct = 0.005;
+        update.momentum_params.trailing_stop_pct = 0.002;
+        update.momentum_params.windows.push_back({5, 0.00001});
 
     } else if (symbol == "ETH/USDT") {
         update.strategy_type = "momentum_profit";
         update.momentum_params.label = "default";
         update.momentum_params.window_seconds = 10;
         update.momentum_params.require_all = true;
-        update.momentum_params.stop_loss_pct = 0.1;
-        update.momentum_params.profit_target_pct = 0.05;
-        update.momentum_params.windows.push_back({5, 0.0001});
-        update.momentum_params.windows.push_back({6, 0.0002});
-        update.momentum_params.windows.push_back({8, 0.0003});
+        update.momentum_params.stop_loss_pct = 0.01;
+        update.momentum_params.profit_target_pct = 0.005;
+        update.momentum_params.windows.push_back({5, 0.00001});
+        update.momentum_params.windows.push_back({6, 0.00002});
+        update.momentum_params.windows.push_back({8, 0.00003});
 
     } else if (symbol == "LTC/USDT") {
         update.strategy_type = "dummy";
