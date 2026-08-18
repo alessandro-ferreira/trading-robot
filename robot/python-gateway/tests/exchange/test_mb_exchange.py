@@ -54,6 +54,50 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         with self.assertRaises(ExchangeError):
             self.exchange._authenticate()
 
+    @patch("requests.post")
+    @patch("requests.request")
+    def test_request_unauthorized_clears_token_and_reauthenticates(
+        self, mock_request, mock_post
+    ):
+        """Verify that receiving 401 clears token, re-authenticates on next call, and succeeds."""
+        # Initial valid token
+        self.exchange._token = "initial_token"
+        self.exchange._token_expiry = 9999999999
+
+        # First request receives 401 Unauthorized
+        resp_401 = MagicMock()
+        resp_401.status_code = http.client.UNAUTHORIZED
+        resp_401.text = "Unauthorized"
+
+        # Second request (after re-authentication) succeeds
+        resp_200 = MagicMock()
+        resp_200.status_code = http.client.OK
+        resp_200.json.return_value = [{"id": "acc_456"}]
+
+        mock_request.side_effect = [resp_401, resp_200]
+
+        # Auth response for re-authentication
+        auth_resp = MagicMock()
+        auth_resp.status_code = http.client.OK
+        auth_resp.json.return_value = {
+            "access_token": "new_token",
+            "expiration": 9999999999,
+        }
+        mock_post.return_value = auth_resp
+
+        # First request fails with AuthenticationError and resets token
+        with self.assertRaises(AuthenticationError):
+            self.exchange._request("GET", "/accounts")
+
+        self.assertIsNone(self.exchange._token)
+        self.assertEqual(self.exchange._token_expiry, 0)
+
+        # Second request triggers re-authentication and succeeds
+        data = self.exchange._request("GET", "/accounts")
+        self.assertEqual(data, [{"id": "acc_456"}])
+        self.assertEqual(self.exchange._token, "new_token")
+        mock_post.assert_called_once()
+
     @patch("requests.request")
     def test_fetch_ticker_success(self, mock_request):
         """Verify ticker fetching and nanosecond-to-millisecond timestamp conversion."""

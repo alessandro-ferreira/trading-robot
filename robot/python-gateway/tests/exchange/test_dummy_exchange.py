@@ -94,6 +94,9 @@ class TestDummyExchange(unittest.TestCase):
 
     def test_create_stop_order(self):
         """Verify creation of stop_market and stop_limit orders."""
+        # Buy BTC first to fund the sell stop order
+        self.exchange.create_order("BTC/USDT", "market", "buy", 0.1)
+
         # Test Stop Market (Open)
         order = self.exchange.create_stop_order("BTC/USDT", "sell", 0.1, 40000.0)
         self.assertEqual(order["symbol"], "BTC/USDT")
@@ -108,6 +111,16 @@ class TestDummyExchange(unittest.TestCase):
         )
         self.assertEqual(order_limit["type"], OrderType.STOP_LIMIT)
         self.assertEqual(order_limit["price"], 39500.0)
+
+    def test_create_stop_order_insufficient_funds(self):
+        """Verify that creating a stop order with insufficient funds raises an exception."""
+        # Sell stop order without holding base asset
+        with self.assertRaisesRegex(Exception, "Insufficient funds"):
+            self.exchange.create_stop_order("BTC/USDT", "sell", 1.0, 40000.0)
+
+        # Buy stop order requiring more USDT than available
+        with self.assertRaisesRegex(Exception, "Insufficient funds"):
+            self.exchange.create_stop_order("BTC/USDT", "buy", 1.0, 50000.0)
 
     def test_cancel_order(self):
         """Verify that canceling an open order releases locked funds."""

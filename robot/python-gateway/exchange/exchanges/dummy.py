@@ -250,6 +250,17 @@ class DummyExchange(Exchange):
     ) -> Dict[str, Any]:
         """Simulates creating a stop order and stores it in memory."""
         base, quote = symbol.split("/")
+        exec_price = limit_price or stop_price
+        cost = amount * exec_price
+
+        # Balance check
+        if side == "buy":
+            if self._balances["free"].get(quote, 0.0) < cost:
+                raise InsufficientFundsError(f"Insufficient funds: {quote}")
+        else:
+            if self._balances["free"].get(base, 0.0) < amount:
+                raise InsufficientFundsError(f"Insufficient funds: {base}")
+
         # Stop orders typically don't lock funds until triggered
         self._order_id_counter += 1
         timestamp = int(time.time() * 1000) + self._order_id_counter

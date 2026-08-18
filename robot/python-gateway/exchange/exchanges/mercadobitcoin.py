@@ -1,6 +1,7 @@
 import http.client
 import logging
 import requests
+import threading
 import time
 
 from datetime import datetime, timezone
@@ -41,55 +42,59 @@ class MercadoBitcoinExchange(Exchange):
         self._account_id: Optional[str] = None
         self._token: Optional[str] = None
         self._token_expiry: float = 0
+        self._auth_lock = threading.RLock()
 
     def _authenticate(self):
         """
         Authenticates using the API key and secret to obtain a Bearer token.
         """
-        if not self._cfg or not self._cfg.secret or not self._cfg.api_key:
-            raise ExchangeError(
-                "API key and Secret are required for MercadoBitcoin private API"
-            )
-
-        url = f"{self.BASE_URL}{self.PATH_OAUTH_TOKEN}"
-        payload = {"login": self._cfg.api_key, "password": self._cfg.secret}
-        timeout = (
-            self._cfg.timeout
-            if self._cfg and self._cfg.timeout
-            else self.TIMEOUT_SECONDS
-        )
-
-        try:
-            response = requests.post(url, json=payload, timeout=timeout)
-
-            if response.status_code != http.client.OK:
+        with self._auth_lock:
+            if not self._cfg or not self._cfg.secret or not self._cfg.api_key:
                 raise ExchangeError(
-                    f"Authentication failed: {response.status_code} - {response.text}"
+                    "API key and Secret are required for MercadoBitcoin private API"
                 )
 
-            data = response.json()
+            url = f"{self.BASE_URL}{self.PATH_OAUTH_TOKEN}"
+            payload = {"login": self._cfg.api_key, "password": self._cfg.secret}
 
-            self._token = data.get("access_token")
-            # Expiration is in seconds (e.g., 1800). Add buffer.
-            self._token_expiry = time.time() + int(data.get("expiration", 1800)) - 60
-        except ExchangeError:
-            raise
-        except Exception as e:
-            raise ExchangeError(f"Authentication failed: {e}")
+            timeout = self.TIMEOUT_SECONDS
+            if self._cfg and self._cfg.timeout:
+                timeout = self._cfg.timeout
+
+            try:
+                response = requests.post(url, json=payload, timeout=timeout)
+
+                if response.status_code != http.client.OK:
+                    raise ExchangeError(
+                        f"Authentication failed: {response.status_code} - {response.text}"
+                    )
+
+                data = response.json()
+
+                self._token = data.get("access_token")
+                # 'expiration' is already in seconds since epoch; we subtract 60s for a safety buffer.
+                raw_exp = data.get("expiration")
+                if raw_exp:
+                    self._token_expiry = float(raw_exp) - 60
+                else:
+                    self._token_expiry = time.time() + 1800 - 60
+            except ExchangeError:
+                raise
+            except Exception as e:
+                raise ExchangeError(f"Authentication failed: {e}")
 
     def _request(
         self, method: str, path: str, data: Optional[Dict[str, Any]] = None
     ) -> Any:
-        if not self._token or time.time() >= self._token_expiry:
-            self._authenticate()
+        with self._auth_lock:
+            if not self._token or time.time() >= self._token_expiry:
+                self._authenticate()
+            request_token = self._token
 
         url = f"{self.BASE_URL}{path}"
-        # Let requests handle JSON serialization by using the `json` parameter.
-        timeout = (
-            self._cfg.timeout
-            if self._cfg and self._cfg.timeout
-            else self.TIMEOUT_SECONDS
-        )
+        timeout = self.TIMEOUT_SECONDS
+        if self._cfg and self._cfg.timeout:
+            timeout = self._cfg.timeout
         headers = {"Authorization": f"Bearer {self._token}"}
 
         if method == "GET":
@@ -121,6 +126,12 @@ class MercadoBitcoinExchange(Exchange):
             return {}
 
         if response.status_code not in [http.client.OK, http.client.CREATED]:
+            if response.status_code == http.client.UNAUTHORIZED:
+                # If we get a 401, clear the token and to force re-authentication on the next request.
+                with self._auth_lock:
+                    if self._token == request_token:
+                        self._token = None
+                        self._token_expiry = 0
             self._handle_http_errors(response)
 
         return response.json()
@@ -152,6 +163,7 @@ class MercadoBitcoinExchange(Exchange):
                 self._account_id = data[0]["id"]
             except Exception:
                 raise ExchangeError("Failed to retrieve account ID from MercadoBitcoin")
+
         return self._account_id
 
     def _normalize_symbol(self, symbol: str) -> str:
