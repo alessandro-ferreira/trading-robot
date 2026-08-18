@@ -147,6 +147,8 @@ func main() {
 	setupStopOrderSync(cfg, execService, pf, recon, bgManager)
 	setupPositionSync(cfg, execService, pf, recon, bgManager)
 
+	setupCronJobs(cfg, db, repoContainer, bgManager)
+
 	bgManager.Start(ctx)
 
 	// --- Orchestration ---

@@ -13,12 +13,13 @@ const LockFilePath = "/tmp/go-bot.lock"
 // Config holds the application's configuration.
 type Config struct {
 	Server     ServerConfig      `toml:"server"`
-	Log        LogConfig         `toml:"go_log"`
-	Database   DatabaseConfig    `toml:"database"`
 	GRPC       GRPCConfig        `toml:"grpc"`
+	Database   DatabaseConfig    `toml:"database"`
+	Log        LogConfig         `toml:"go_log"`
 	Health     HealthCheckConfig `toml:"health_check"`
-	Exchanges  []ExchangeConfig  `toml:"exchange"`
+	Cron       CronConfig        `toml:"cron"`
 	Risk       RiskConfig        `toml:"risk"`
+	Exchanges  []ExchangeConfig  `toml:"exchange"`
 	Simulation SimulationConfig  `toml:"simulation"`
 }
 
@@ -31,13 +32,12 @@ type ServerConfig struct {
 	CheckPendingPolicy     []time.Duration `toml:"check_pending_policy"`
 }
 
-// LogConfig holds the logging configuration.
-type LogConfig struct {
-	Level  string `toml:"level"`
-	Format string `toml:"format"`
-	Path   string `toml:"path"`
-	Rotate bool   `toml:"rotate"`
-	Source bool   `toml:"source"`
+// GRPCConfig holds the gRPC connection parameters.
+type GRPCConfig struct {
+	GoBotAddress         string        `toml:"go_bot_address"`
+	PythonGatewayAddress string        `toml:"python_gateway_address"`
+	ManagementAddress    string        `toml:"management_address"`
+	ConnectionTimeout    time.Duration `toml:"connection_timeout"`
 }
 
 // DatabaseConfig holds the database connection parameters.
@@ -50,12 +50,13 @@ type DatabaseConfig struct {
 	SSLMode  string `toml:"sslmode"`
 }
 
-// GRPCConfig holds the gRPC connection parameters.
-type GRPCConfig struct {
-	GoBotAddress         string        `toml:"go_bot_address"`
-	PythonGatewayAddress string        `toml:"python_gateway_address"`
-	ManagementAddress    string        `toml:"management_address"`
-	ConnectionTimeout    time.Duration `toml:"connection_timeout"`
+// LogConfig holds the logging configuration.
+type LogConfig struct {
+	Level  string `toml:"level"`
+	Format string `toml:"format"`
+	Path   string `toml:"path"`
+	Rotate bool   `toml:"rotate"`
+	Source bool   `toml:"source"`
 }
 
 // HealthCheckConfig holds settings for the background health monitor.
@@ -66,14 +67,17 @@ type HealthCheckConfig struct {
 	RetryDelay    time.Duration `toml:"retry_delay"`
 }
 
-// ExchangeConfig holds the exchange connection parameters.
-type ExchangeConfig struct {
-	Name        string        `toml:"name"`
-	APIKey      string        `toml:"api_key"`
-	Secret      string        `toml:"secret"`
-	SandboxMode bool          `toml:"sandbox_mode"`
-	HealthCheck bool          `toml:"health_check"`
-	Timeout     time.Duration `toml:"timeout"`
+// CronConfig holds the configuration for scheduled cron jobs.
+type CronConfig struct {
+	MarketDataCleanup MarketDataCleanupConfig `toml:"market_data_cleanup"`
+}
+
+// MarketDataCleanupConfig holds settings for the market data cleanup cron job.
+type MarketDataCleanupConfig struct {
+	Enabled       bool   `toml:"enabled"`
+	Schedule      string `toml:"schedule"`
+	RetentionDays int    `toml:"retention_days"`
+	RunOnStartup  bool   `toml:"run_on_startup"`
 }
 
 // RiskConfig holds the risk management parameters.
@@ -82,6 +86,16 @@ type RiskConfig struct {
 	MaxOpenPositions int `toml:"max_open_positions"`
 	// MaxBudgetPerTrade limits the maximum budget allocated per trade for specific assets.
 	MaxBudgetPerTrade map[string]float64 `toml:"max_budget_per_trade"`
+}
+
+// ExchangeConfig holds the exchange connection parameters.
+type ExchangeConfig struct {
+	Name        string        `toml:"name"`
+	APIKey      string        `toml:"api_key"`
+	Secret      string        `toml:"secret"`
+	SandboxMode bool          `toml:"sandbox_mode"`
+	HealthCheck bool          `toml:"health_check"`
+	Timeout     time.Duration `toml:"timeout"`
 }
 
 // SimulationConfig holds backtesting and simulation parameters.
@@ -105,16 +119,24 @@ func newWithDefaults() *Config {
 			ShutdownTimeout:        10 * time.Second,
 			CheckPendingPolicy:     []time.Duration{0, 5 * time.Second, 15 * time.Second, 30 * time.Second},
 		},
+		GRPC: GRPCConfig{
+			ConnectionTimeout: 5 * time.Second,
+		},
+		Database: DatabaseConfig{
+			SSLMode: "disable",
+		},
 		Log: LogConfig{
 			Level:  "info",
 			Format: "text",
 			Source: false, // Disabled by default for performance.
 		},
-		Database: DatabaseConfig{
-			SSLMode: "disable",
-		},
-		GRPC: GRPCConfig{
-			ConnectionTimeout: 5 * time.Second,
+		Cron: CronConfig{
+			MarketDataCleanup: MarketDataCleanupConfig{
+				Enabled:       false,
+				Schedule:      "0 0 0 * * *",
+				RetentionDays: 7,
+				RunOnStartup:  false,
+			},
 		},
 		Simulation: SimulationConfig{
 			Enabled: false,

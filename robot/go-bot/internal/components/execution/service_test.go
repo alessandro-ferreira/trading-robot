@@ -37,6 +37,11 @@ func (m *MockMarketDataRepo) InsertTick(ctx context.Context, db repository.DBExe
 	return args.Error(0)
 }
 
+func (m *MockMarketDataRepo) DeleteMarketDataTicks(ctx context.Context, db repository.DBExecutor, retentionDays int) error {
+	args := m.Called(ctx, db, retentionDays)
+	return args.Error(0)
+}
+
 func TestService_GetTicker(t *testing.T) {
 	testCases := []struct {
 		name                string

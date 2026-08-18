@@ -22,6 +22,7 @@ type MarketDataRepo interface {
 		ctx context.Context, db DBExecutor, exchangeName, symbol string, sinceEpoch int64,
 	) ([]MarketDataTick, error)
 	InsertTick(ctx context.Context, db DBExecutor, tick MarketDataTick) error
+	DeleteMarketDataTicks(ctx context.Context, db DBExecutor, retentionDays int) error
 }
 
 type pgMarketDataRepo struct{}
@@ -102,6 +103,23 @@ func (r *pgMarketDataRepo) InsertTick(ctx context.Context, db DBExecutor, tick M
 	_, err = db.Exec(ctx, insertQuery, exchangeID, instrumentID, tick.TickUnixAt, tick.Price)
 	if err != nil {
 		return fmt.Errorf("failed to insert market data tick: %w", err)
+	}
+
+	return nil
+}
+
+func (r *pgMarketDataRepo) DeleteMarketDataTicks(
+	ctx context.Context, db DBExecutor, retentionDays int,
+) error {
+	query := `
+		SELECT drop_chunks(
+			'trading.market_data_ticks',
+			older_than => (EXTRACT(EPOCH FROM NOW() - ($1 * INTERVAL '1 day')))::bigint
+		)
+	`
+	_, err := db.Exec(ctx, query, retentionDays)
+	if err != nil {
+		return fmt.Errorf("failed to drop market data chunks: %w", err)
 	}
 
 	return nil

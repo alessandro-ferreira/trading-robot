@@ -47,6 +47,15 @@ interval = "1m"         # Frequency of the check
 retry_attempts = 3      # Number of retries on failure
 retry_delay = "5s"      # Delay between retries
 
+# Cron Jobs Configuration
+[cron]
+
+[cron.market_data_cleanup]
+enabled = true
+schedule = "0 0 4 * * *"        # Daily at 04:00:00 (sec min hour dom mon dow)
+retention_days = 7              # Retain market data ticks for X days
+run_on_startup = false          # Whether to run once immediately upon startup
+
 # Global Risk Management Settings
 [risk]
 max_open_positions = 3

@@ -11,6 +11,9 @@ import (
 	"trading/robot/go-bot/internal/components/portfolio"
 	reconcil "trading/robot/go-bot/internal/components/reconciliation"
 	"trading/robot/go-bot/internal/config"
+	"trading/robot/go-bot/internal/database"
+	"trading/robot/go-bot/internal/database/repository"
+	"trading/robot/go-bot/internal/jobs"
 )
 
 // setupHealthMonitor configures a periodic health check for the specified exchanges.
@@ -134,4 +137,23 @@ func setupPositionSync(
 		},
 	)
 	bgManager.Add(task)
+}
+
+// setupCronJobs initializes and registers scheduled cron jobs.
+func setupCronJobs(
+	cfg *config.Config,
+	db *database.DB,
+	repo *repository.Container,
+	bgManager *background.Manager,
+) {
+	// Register the Market Data Cleanup Job if enabled in the configuration.
+	if cfg.Cron.MarketDataCleanup.Enabled {
+		mdCleanupJob := jobs.NewMarketDataCleanupJob(slog.Default(), db, repo, cfg.Cron.MarketDataCleanup)
+		bgManager.Add(mdCleanupJob.AsTask())
+		slog.Info(
+			"Registered market data cleanup cron job",
+			"schedule", cfg.Cron.MarketDataCleanup.Schedule,
+			"retention_days", cfg.Cron.MarketDataCleanup.RetentionDays,
+		)
+	}
 }

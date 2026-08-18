@@ -39,6 +39,7 @@ This service is the core of the trading robot, containing the primary business l
 │   │   ├── config/               # Configuration loading
 │   │   ├── database/             # Database connection and access logic
 │   │       └── repository        # Data access layer (Repository Pattern)
+│   │   ├── jobs                  # Scheduled background jobs
 │   │   ├── logger/               # Structured logging setup
 │   │   ├── orchestrator/         # Trading loop orchestrator
 │   │   ├── simulation/           # Backtesting and simulation components

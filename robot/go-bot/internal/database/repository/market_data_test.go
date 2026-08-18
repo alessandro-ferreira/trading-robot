@@ -175,3 +175,51 @@ func TestPgMarketDataRepo_InsertTick(t *testing.T) {
 		})
 	}
 }
+
+func TestPgMarketDataRepo_DeleteMarketDataTicks(t *testing.T) {
+	repo := NewMarketDataRepo()
+	retentionDays := 7
+
+	testCases := []struct {
+		name                string
+		setupMock           func(mockDB pgxmock.PgxPoolIface)
+		expectedErrContains string
+	}{
+		{
+			name: "Success",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectExec("SELECT drop_chunks").
+					WithArgs(retentionDays).
+					WillReturnResult(pgxmock.NewResult("SELECT", 1))
+			},
+		},
+		{
+			name: "Exec Error",
+			setupMock: func(mockDB pgxmock.PgxPoolIface) {
+				mockDB.ExpectExec("SELECT drop_chunks").
+					WithArgs(retentionDays).
+					WillReturnError(errors.New("drop_chunks failed"))
+			},
+			expectedErrContains: "failed to drop market data chunks",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDB, err := pgxmock.NewPool()
+			require.NoError(t, err)
+			defer mockDB.Close()
+
+			tc.setupMock(mockDB)
+			err = repo.DeleteMarketDataTicks(context.Background(), mockDB, retentionDays)
+
+			if tc.expectedErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrContains)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoError(t, mockDB.ExpectationsWereMet())
+		})
+	}
+}
