@@ -243,7 +243,7 @@ func (o *Orchestrator) signalBuy(
 	budgetAsset := parts[1]
 
 	// Check risk first using local data to avoid unnecessary exchange requests.
-	openCount := o.portfolio.GetActivePositionsCount()
+	openCount := o.portfolio.GetPositionsCount()
 
 	availableBudget := 0.0
 	if b, err := o.repo.Balances.GetBalance(ctx, o.db, ex, budgetAsset); err == nil {
@@ -286,7 +286,7 @@ func (o *Orchestrator) signalBuy(
 	if b, err := o.repo.Balances.GetBalance(ctx, o.db, ex, budgetAsset); err == nil {
 		availableBudget = b.Total
 	}
-	openCount = o.portfolio.GetActivePositionsCount()
+	openCount = o.portfolio.GetPositionsCount()
 	eval = o.risk.EvaluateEntry(openCount, price, availableBudget, sig.Risk())
 
 	if !eval.Allowed {

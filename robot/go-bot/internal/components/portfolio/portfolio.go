@@ -14,7 +14,7 @@ type Portfolio interface {
 	// --- Portfolio Management ---
 	LoadState(ctx context.Context) error
 	RefreshState(ctx context.Context, exchange, instrumentSymbol string) error
-	GetActivePositionsCount() int
+	GetPositionsCount() int
 	GetTotalValue(ctx context.Context) (map[string]float64, error)
 
 	// --- Position Operations (CRUD) ---
@@ -54,7 +54,7 @@ func (p *portfolio) LoadState(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	positions, err := p.repo.Positions.GetActivePositions(ctx, p.db, "", "")
+	positions, err := p.repo.Positions.GetPositions(ctx, p.db, "", "")
 	if err != nil {
 		return fmt.Errorf("load state: failed to fetch positions: %w", err)
 	}
@@ -81,8 +81,8 @@ func (p *portfolio) RefreshState(ctx context.Context, exchange, instrumentSymbol
 	return nil
 }
 
-// GetActivePositionsCount returns the number of currently active positions.
-func (p *portfolio) GetActivePositionsCount() int {
+// GetPositionsCount returns the number of currently active positions.
+func (p *portfolio) GetPositionsCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.positions)

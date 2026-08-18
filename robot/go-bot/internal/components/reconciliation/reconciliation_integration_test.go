@@ -72,7 +72,7 @@ func setupReconcilerIntegrationTest(
 	execSvc := execution.NewService(logger, db, client, repoContainer, clock)
 
 	// Ensure a clean state for positions to avoid interference from previous tests.
-	activePos, _ := repoContainer.Positions.GetActivePositions(ctx, db, "", "")
+	activePos, _ := repoContainer.Positions.GetPositions(ctx, db, "", "")
 	for _, p := range activePos {
 		_ = repoContainer.Positions.DeletePosition(ctx, db, p.ExchangeName, p.InstrumentSymbol)
 	}
@@ -196,6 +196,196 @@ func TestReconciler_Integration_NoSyncCanceledOrder(t *testing.T) {
 	// Verify no active position linked to this symbol.
 	_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
 	assert.Error(t, err)
+}
+
+// TestReconciler_Integration_SyncExpiredStopOrder verifies that when a stop order is expired/canceled
+// on the exchange, the reconciler updates the local order status and adjusts the position accordingly.
+func TestReconciler_Integration_SyncExpiredStopOrder(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "BTC/USDT"
+
+	// Create a filled buy order on the exchange to provide funds for the stop order
+	buyOrder, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, buyOrder.Status)
+
+	order, err := execSvc.CreateStopOrder(ctx, exchange, symbol, repository.OrderSideSell, buyOrder.Filled, 48000.0, 0)
+	require.NoError(t, err)
+
+	// Create a position with StopLossActive = true linked to the buy order
+	pos := repository.PositionData{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		OrderID:          sql.NullInt64{Int64: buyOrder.ID, Valid: true},
+		Side:             repository.PositionSideLong,
+		Quantity:         buyOrder.Filled,
+		EntryPrice:       50000.0,
+		HighestPrice:     50000.0,
+		StopLossActive:   true,
+		UnknownOrigin:    false,
+		Active:           true,
+	}
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos))
+
+	// Cancel the stop order on the exchange (simulating expiration / external cancel)
+	err = execSvc.CancelOrder(ctx, exchange, symbol, order.ExchangeOrderID.String)
+	require.NoError(t, err)
+
+	// Update local DB balance to simulate remaining partial-fill quantity (e.g. 0.0008)
+	remainingQty := buyOrder.Filled * 0.8
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "BTC",
+		Free:         remainingQty,
+		Used:         0,
+		Total:        remainingQty,
+	})
+	require.NoError(t, err)
+
+	// Run the reconciler
+	err = recon.SyncStopOrders(ctx, exchange, symbol)
+	require.NoError(t, err)
+
+	// Assert order status was synced to canceled
+	updatedOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID.String)
+	require.NoError(t, err)
+	assert.Equal(t, repository.OrderStatusCanceled, updatedOrder.Status)
+
+	// Assert position has StopLossActive = false and Quantity updated
+	updatedPos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	require.NoError(t, err)
+	assert.False(t, updatedPos.StopLossActive)
+	assert.Equal(t, remainingQty, updatedPos.Quantity)
+}
+
+// TestReconciler_Integration_SyncExecutedStopOrder verifies that when a stop order is executed
+// on the exchange, the reconciler updates the local order status and position accordingly.
+func TestReconciler_Integration_SyncExecutedStopOrder(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "BTC/USDT"
+
+	// Create a filled buy order on the exchange to provide funds for the stop order
+	buyOrder, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, buyOrder.Status)
+
+	order, err := execSvc.CreateStopOrder(ctx, exchange, symbol, repository.OrderSideSell, buyOrder.Filled, 48000.0, 0)
+	require.NoError(t, err)
+
+	// Create a position with StopLossActive = true linked to the buy order
+	pos := repository.PositionData{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		OrderID:          sql.NullInt64{Int64: buyOrder.ID, Valid: true},
+		Side:             repository.PositionSideLong,
+		Quantity:         buyOrder.Filled,
+		EntryPrice:       50000.0,
+		HighestPrice:     50000.0,
+		StopLossActive:   true,
+		UnknownOrigin:    false,
+		Active:           true,
+	}
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos))
+
+	// Fetch the executed stop order from the exchange until it is filled (simulate execution)
+	require.Eventually(t, func() bool {
+		_, err := execSvc.GetTicker(ctx, exchange, symbol)
+		require.NoError(t, err)
+
+		exchOrder, err := execSvc.GetOrder(ctx, exchange, symbol, order.ExchangeOrderID.String)
+		require.NoError(t, err)
+		return exchOrder.Status == repository.OrderStatusClosed
+	}, 250*time.Millisecond, 5*time.Millisecond, "Stop order should be executed on the exchange")
+
+	// Set DB balance to zero (simulating full execution and balance liquidation)
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "BTC",
+		Free:         0,
+		Used:         0,
+		Total:        0,
+	})
+	require.NoError(t, err)
+
+	// Make DB think the stop order is still open
+	order.Status = repository.OrderStatusOpen
+	_, err = repo.Orders.UpdateOrder(ctx, db, order)
+	require.NoError(t, err)
+
+	// Run the reconciler
+	err = recon.SyncStopOrders(ctx, exchange, symbol)
+	require.NoError(t, err)
+
+	// Assert order status was synced to closed
+	updatedOrder, err := repo.Orders.GetOrder(ctx, db, exchange, order.ExchangeOrderID.String)
+	require.NoError(t, err)
+	assert.Equal(t, repository.OrderStatusClosed, updatedOrder.Status)
+
+	// Position should still have original quantity and StopLossActive = true (SyncPositions will clean it)
+	currentPos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	require.NoError(t, err)
+	assert.True(t, currentPos.StopLossActive)
+	assert.Equal(t, buyOrder.Filled, currentPos.Quantity)
+}
+
+// TestReconciler_Integration_SyncMissingStopOrder verifies that when a stop order is missing on the exchange
+// but the position is active, SyncStopOrders should deactivate the stop loss and update the position quantity.
+func TestReconciler_Integration_SyncMissingStopOrder(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "BTC/USDT"
+
+	// Create a filled buy order on the exchange
+	buyOrder, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, buyOrder.Status)
+
+	// Create an active position with StopLossActive = true linked to the buy order
+	pos := repository.PositionData{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		OrderID:          sql.NullInt64{Int64: buyOrder.ID, Valid: true},
+		Side:             repository.PositionSideLong,
+		Quantity:         buyOrder.Filled,
+		EntryPrice:       50000.0,
+		HighestPrice:     50000.0,
+		StopLossActive:   true,
+		UnknownOrigin:    false,
+		Active:           true,
+	}
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos))
+
+	// Set wallet balance to non-zero (e.g. 0.00095 due to fees or dust)
+	remainingQty := buyOrder.Filled * 0.95
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "BTC",
+		Free:         remainingQty,
+		Used:         0,
+		Total:        remainingQty,
+	})
+	require.NoError(t, err)
+
+	// No stop orders exist in DB or gateway. Run SyncStopOrders.
+	err = recon.SyncStopOrders(ctx, exchange, symbol)
+	require.NoError(t, err)
+
+	// Position should have StopLossActive = false and Quantity updated to wallet balance
+	updatedPos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	require.NoError(t, err)
+	assert.False(t, updatedPos.StopLossActive)
+	assert.Equal(t, remainingQty, updatedPos.Quantity)
 }
 
 // TestReconciler_Integration_SyncExternalLiquidation verifies that a zero wallet balance closes an active position.

@@ -142,7 +142,9 @@ func main() {
 	bgManager := background.NewManager(slog.Default())
 
 	setupHealthMonitor(cfg, execService, bgManager)
+
 	setupOrderSync(cfg, recon, bgManager)
+	setupStopOrderSync(cfg, execService, pf, recon, bgManager)
 	setupPositionSync(cfg, execService, pf, recon, bgManager)
 
 	bgManager.Start(ctx)

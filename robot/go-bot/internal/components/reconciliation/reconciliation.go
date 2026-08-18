@@ -17,6 +17,7 @@ const limitOpenOrders = 100
 
 type Reconciler interface {
 	SyncOrders(ctx context.Context, exchange, instrumentSymbol string) error
+	SyncStopOrders(ctx context.Context, exchange, instrumentSymbol string) error
 	SyncPositions(ctx context.Context, exchange, instrumentSymbol string) error
 }
 
@@ -56,12 +57,12 @@ func (r *reconciler) SyncOrders(
 		log = log.With("symbol", instrumentSymbol)
 	}
 
-	// --- Resolve Vanished Buy Orders ---
-	// Fetch buy orders our DB thinks are new or open.
+	// --- Resolve Vanished Orders ---
+	// Fetch orders our DB thinks are new or open.
 	statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
-	side := []string{repository.OrderSideBuy}
+	types := []string{repository.OrderTypeLimit, repository.OrderTypeMarket}
 	dbOrders, err := r.repo.Orders.GetOrders(
-		ctx, r.db, exchange, instrumentSymbol, statuses, []string{}, side, limitOpenOrders,
+		ctx, r.db, exchange, instrumentSymbol, statuses, types, []string{}, limitOpenOrders,
 	)
 	if err != nil {
 		return fmt.Errorf("order sync: get buy open orders failed: %w", err)
@@ -83,7 +84,9 @@ func (r *reconciler) SyncOrders(
 			continue
 		}
 
-		if res.Status == repository.OrderStatusClosed {
+		// --- Handle filled buy orders ---
+		// If the order was filled, we need to create a position in the portfolio for it.
+		if res.Side == repository.OrderSideBuy && res.Status == repository.OrderStatusClosed {
 			fillPrice := res.AveragePrice.Float64
 			if fillPrice <= 0 {
 				fillPrice = res.Price.Float64
@@ -96,10 +99,28 @@ func (r *reconciler) SyncOrders(
 		}
 	}
 
-	// --- Resolve Vanished Sell Orders ---
+	return nil
+}
+
+// SyncStopOrders synchronizes stop orders from the exchange with the local database.
+// It handles non-persisted stop orders, status drift, and validates stop loss protection for active positions.
+func (r *reconciler) SyncStopOrders(
+	ctx context.Context, exchange, instrumentSymbol string,
+) error {
+	log := r.logger.With("exchange", exchange)
+	if instrumentSymbol != "" {
+		log = log.With("symbol", instrumentSymbol)
+	}
+
+	// Fetch active positions to verify stop loss protection.
+	dbPositions, err := r.repo.Positions.GetPositions(ctx, r.db, exchange, instrumentSymbol)
+	if err != nil {
+		return fmt.Errorf("stop order sync: db active positions fetch failed: %w", err)
+	}
+
 	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
 	if err != nil {
-		return fmt.Errorf("order sync: balance fetch failed: %w", err)
+		return fmt.Errorf("stop order sync: balance fetch failed: %w", err)
 	}
 
 	walletBalances := make(map[string]float64)
@@ -107,26 +128,66 @@ func (r *reconciler) SyncOrders(
 		walletBalances[b.AssetSymbol] = b.Total
 	}
 
-	// Fetch sell orders our DB thinks are new or open.
-	side = []string{repository.OrderSideSell}
-	dbOrders, err = r.repo.Orders.GetOrders(
-		ctx, r.db, exchange, instrumentSymbol, statuses, []string{}, side, limitOpenOrders,
+	// --- Resolve Vanished Stop Orders ---
+	// Fetch stop orders our DB thinks are new or open.
+	statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
+	types := []string{repository.OrderTypeStopLimit, repository.OrderTypeStopMarket}
+	side := []string{repository.OrderSideSell}
+	dbOrders, err := r.repo.Orders.GetOrders(
+		ctx, r.db, exchange, instrumentSymbol, statuses, types, side, limitOpenOrders,
 	)
 	if err != nil {
-		return fmt.Errorf("order sync: get sell open orders failed: %w", err)
+		return fmt.Errorf("stop order sync: get stop open orders failed: %w", err)
 	}
 
+	// Map open stop orders by instrument symbol and track active exchange status.
+	protectedPositions := make(map[string]bool)
 	for _, dbo := range dbOrders {
-		asset, _ := splitSymbol(dbo.InstrumentSymbol)
-		// If no balance left, fetch the individual status from the exchange to update the order in our database.
-		if utils.IsZeroEps(walletBalances[asset]) {
-			_, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID.String)
-			if err != nil {
-				log.Error(
-					"Order sync: failed to fetch individual sell order status",
-					"id", dbo.ExchangeOrderID, "error", err,
-				)
+		if !dbo.ExchangeOrderID.Valid {
+			continue // Skip orders without an exchange order ID.
+		}
+
+		res, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID.String)
+		if err != nil {
+			log.Error(
+				"Stop order sync: failed to fetch individual stop order status",
+				"id", dbo.ExchangeOrderID, "error", err,
+			)
+			continue
+		}
+
+		if res.Status == repository.OrderStatusNew || res.Status == repository.OrderStatusOpen {
+			protectedPositions[dbo.InstrumentSymbol] = true
+		}
+	}
+
+	// --- Handle missing stop orders for active positions ---
+	// For all active and known-origin positions, ensure their stop loss status aligns with open exchange stop orders.
+	for _, pos := range dbPositions {
+		if pos.UnknownOrigin || !pos.StopLossActive {
+			continue
+		}
+
+		if !protectedPositions[pos.InstrumentSymbol] {
+			asset, _ := splitSymbol(pos.InstrumentSymbol)
+			walletQty := walletBalances[asset]
+			// If the wallet balance is zero, we assume the position was externally liquidated and skip re-arming.
+			if utils.IsZeroEps(walletQty) {
 				continue
+			}
+
+			log.Warn(
+				"Stop order sync: active position without open stop order, resetting stop loss status",
+				"symbol", pos.InstrumentSymbol, "old_qty", pos.Quantity, "new_qty", walletQty,
+			)
+			pos.Quantity = walletQty
+			// Reset the stop loss active flag to allow re-arming in the orchestrator.
+			pos.StopLossActive = false
+			if err := r.pf.UpdatePosition(ctx, exchange, pos.InstrumentSymbol, pos); err != nil {
+				log.Error(
+					"Stop order sync: failed to update position for stop loss re-arm",
+					"symbol", pos.InstrumentSymbol, "error", err,
+				)
 			}
 		}
 	}
@@ -140,6 +201,9 @@ func (r *reconciler) SyncPositions(
 	ctx context.Context, exchange, instrumentSymbol string,
 ) error {
 	log := r.logger.With("exchange", exchange)
+	if instrumentSymbol != "" {
+		log = log.With("symbol", instrumentSymbol)
+	}
 
 	// Fetch liquid truth
 	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
@@ -153,7 +217,7 @@ func (r *reconciler) SyncPositions(
 	}
 
 	// Fetch all actives positions for the exchange to detect base asset collisions.
-	dbPositions, err := r.repo.Positions.GetActivePositions(ctx, r.db, exchange, "")
+	dbPositions, err := r.repo.Positions.GetPositions(ctx, r.db, exchange, instrumentSymbol)
 	if err != nil {
 		return fmt.Errorf("position sync: db fetch failed: %w", err)
 	}
@@ -206,6 +270,7 @@ func (r *reconciler) SyncPositions(
 				"symbol", posData.InstrumentSymbol, "old", posData.Quantity, "new", walletQty,
 			)
 			posData.Quantity = walletQty
+			posData.StopLossActive = false // Reset stop loss active flag to allow re-arming if needed.
 			err = r.pf.UpdatePosition(ctx, exchange, posData.InstrumentSymbol, posData)
 			if err != nil {
 				log.Error("Failed to update position for adjusting quantity", "error", err)

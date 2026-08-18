@@ -53,6 +53,9 @@ func (m *MockMarketDataRepo) GetMarketDataTicks(ctx context.Context, db reposito
 func (m *MockMarketDataRepo) InsertTick(ctx context.Context, db repository.DBExecutor, t repository.MarketDataTick) error {
 	return m.Called(ctx, db, t).Error(0)
 }
+func (m *MockMarketDataRepo) DeleteMarketDataTicks(ctx context.Context, db repository.DBExecutor, retentionDays int) error {
+	return m.Called(ctx, db, retentionDays).Error(0)
+}
 
 type MockOrdersRepo struct{ mock.Mock }
 
@@ -107,7 +110,7 @@ func (m *MockPortfolio) LoadState(ctx context.Context) error { return m.Called(c
 func (m *MockPortfolio) RefreshState(ctx context.Context, ex, sym string) error {
 	return m.Called(ctx, ex, sym).Error(0)
 }
-func (m *MockPortfolio) GetActivePositionsCount() int { return m.Called().Int(0) }
+func (m *MockPortfolio) GetPositionsCount() int { return m.Called().Int(0) }
 func (m *MockPortfolio) GetTotalValue(ctx context.Context) (map[string]float64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(map[string]float64), args.Error(1)
@@ -129,6 +132,9 @@ func (m *MockPortfolio) DeletePosition(ctx context.Context, ex, sym string) erro
 type MockReconciler struct{ mock.Mock }
 
 func (m *MockReconciler) SyncOrders(ctx context.Context, ex, sym string) error {
+	return m.Called(ctx, ex, sym).Error(0)
+}
+func (m *MockReconciler) SyncStopOrders(ctx context.Context, ex, sym string) error {
 	return m.Called(ctx, ex, sym).Error(0)
 }
 func (m *MockReconciler) SyncPositions(ctx context.Context, ex, sym string) error {

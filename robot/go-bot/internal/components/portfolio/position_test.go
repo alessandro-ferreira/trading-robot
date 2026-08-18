@@ -134,7 +134,7 @@ func TestPortfolio_CreatePosition(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				if tt.validateCount > 0 {
-					assert.Equal(t, tt.validateCount, p.GetActivePositionsCount())
+					assert.Equal(t, tt.validateCount, p.GetPositionsCount())
 				}
 			}
 		})
@@ -262,7 +262,7 @@ func TestPortfolio_DeletePosition(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.expectedErrContains)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, 0, p.GetActivePositionsCount())
+				assert.Equal(t, 0, p.GetPositionsCount())
 			}
 		})
 	}
@@ -303,7 +303,7 @@ func TestPortfolio_RefreshState(t *testing.T) {
 
 			err := p.RefreshState(context.Background(), exchange, symbol)
 			require.NoError(t, err)
-			assert.Equal(t, tt.validateCount, p.GetActivePositionsCount())
+			assert.Equal(t, tt.validateCount, p.GetPositionsCount())
 		})
 	}
 }

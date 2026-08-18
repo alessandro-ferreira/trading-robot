@@ -39,7 +39,7 @@ type PositionsRepo interface {
 	GetPosition(
 		ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
 	) (PositionData, error)
-	GetActivePositions(
+	GetPositions(
 		ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
 	) ([]PositionData, error)
 	UpsertPosition(ctx context.Context, db DBExecutor, pos PositionData) error
@@ -54,7 +54,7 @@ func NewPositionsRepo() PositionsRepo {
 	return &pgPositionsRepo{}
 }
 
-// GetPosition retrieves a specific position.
+// GetPosition retrieves a specific active position.
 func (r *pgPositionsRepo) GetPosition(
 	ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
 ) (PositionData, error) {
@@ -104,7 +104,7 @@ func (r *pgPositionsRepo) GetPosition(
 }
 
 // GetOpenPositions retrieves all active positions across all exchanges.
-func (r *pgPositionsRepo) GetActivePositions(
+func (r *pgPositionsRepo) GetPositions(
 	ctx context.Context, db DBExecutor, exchangeName, instrumentSymbol string,
 ) ([]PositionData, error) {
 	query := `

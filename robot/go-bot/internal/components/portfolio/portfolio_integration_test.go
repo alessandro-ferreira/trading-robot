@@ -70,10 +70,10 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 
 	// Initial State
 	t.Run("InitialState", func(t *testing.T) {
-		openPositions, err := repo.Positions.GetActivePositions(ctx, db, "", "")
+		openPositions, err := repo.Positions.GetPositions(ctx, db, "", "")
 		require.NoError(t, err)
 		assert.Empty(t, openPositions)
-		assert.Equal(t, 0, p.GetActivePositionsCount())
+		assert.Equal(t, 0, p.GetPositionsCount())
 	})
 
 	// Create Position (Unknown Origin - Adopting a ghost balance)
@@ -81,7 +81,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 		// No price, no orderID -> results in UnknownOrigin = true
 		err := p.CreatePosition(ctx, exchange, symbol, 0.5, 0, 0)
 		require.NoError(t, err)
-		assert.Equal(t, 1, p.GetActivePositionsCount())
+		assert.Equal(t, 1, p.GetPositionsCount())
 
 		pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
 		require.NoError(t, err)
@@ -133,10 +133,10 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 	t.Run("DeletePosition", func(t *testing.T) {
 		err := p.DeletePosition(ctx, exchange, symbol)
 		require.NoError(t, err)
-		assert.Equal(t, 0, p.GetActivePositionsCount())
+		assert.Equal(t, 0, p.GetPositionsCount())
 
 		// Verify soft delete
-		openPositions, _ := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
+		openPositions, _ := repo.Positions.GetPositions(ctx, db, exchange, symbol)
 		assert.Empty(t, openPositions)
 
 		_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
@@ -193,24 +193,24 @@ func TestPortfolio_Integration_StateManagement(t *testing.T) {
 	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos2))
 
 	// In-memory count is currently 0
-	assert.Equal(t, 0, p.GetActivePositionsCount())
+	assert.Equal(t, 0, p.GetPositionsCount())
 
 	// LoadState - Hydrate the in-memory map from DB
 	err := p.LoadState(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 2, p.GetActivePositionsCount())
+	assert.Equal(t, 2, p.GetPositionsCount())
 
 	// RefreshState (Simulate an external change: position closed in DB)
 	require.NoError(t, repo.Positions.DeletePosition(ctx, db, exchange, symbol1))
 
 	err = p.RefreshState(ctx, exchange, symbol1)
 	require.NoError(t, err)
-	assert.Equal(t, 1, p.GetActivePositionsCount(), "Map should have updated after refresh")
+	assert.Equal(t, 1, p.GetPositionsCount(), "Map should have updated after refresh")
 
 	// RefreshState (Simulate an external change: new position created in DB)
 	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos1))
 
 	err = p.RefreshState(ctx, exchange, symbol1)
 	require.NoError(t, err)
-	assert.Equal(t, 2, p.GetActivePositionsCount())
+	assert.Equal(t, 2, p.GetPositionsCount())
 }

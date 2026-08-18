@@ -272,6 +272,10 @@ func TestService_Integration_StopOrder(t *testing.T) {
 	exchange := "dummy"
 	symbol := "BTC/USDT"
 
+	// Create a buy order to seed the account with BTC for the stop order test
+	_, err := svc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.01, 0)
+	require.NoError(t, err)
+
 	// Execution
 	stopPrice := 35000.0
 	order, err := svc.CreateStopOrder(ctx, exchange, symbol, repository.OrderSideSell, 0.01, stopPrice, 0)

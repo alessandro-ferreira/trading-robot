@@ -152,9 +152,9 @@ func (s *service) GetBalance(
 		if err != nil {
 			// if assetSymbol is specified, we treat failure to persist as an error.
 			if assetSymbol != "" {
-				return nil, fmt.Errorf("failed to persist balance: %w", err)
+				return nil, fmt.Errorf("failed to persist balance %s: %w", symbol, err)
 			}
-			log.Warn("Failed to persist balance", "error", err)
+			log.Warn("Failed to persist balance", "asset", symbol, "error", err)
 			continue
 		}
 		balance.ID = id

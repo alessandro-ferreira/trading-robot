@@ -360,7 +360,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
 				// MaxOpenPositions is 3 in setupOrchestratorTest
-				mPf.On("GetActivePositionsCount").Return(5).Once()
+				mPf.On("GetPositionsCount").Return(5).Once()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 			},
@@ -372,7 +372,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Once()
+				mPf.On("GetPositionsCount").Return(0).Once()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).
@@ -386,7 +386,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Once()
+				mPf.On("GetPositionsCount").Return(0).Once()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).
@@ -400,7 +400,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Once()
+				mPf.On("GetPositionsCount").Return(0).Once()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{}, errors.New("db timeout")).Once()
 			},
@@ -412,7 +412,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Once()
+				mPf.On("GetPositionsCount").Return(0).Once()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).
@@ -428,13 +428,13 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Once() // First check ok
+				mPf.On("GetPositionsCount").Return(0).Once() // First check ok
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
-				mPf.On("GetActivePositionsCount").Return(5).Once() // Second check fails
+				mPf.On("GetPositionsCount").Return(5).Once() // Second check fails
 			},
 			expectedSignal: strategy.SignalBuy,
 		},
@@ -444,7 +444,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Twice()
+				mPf.On("GetPositionsCount").Return(0).Twice()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).
@@ -461,7 +461,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Twice()
+				mPf.On("GetPositionsCount").Return(0).Twice()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).
@@ -479,7 +479,7 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{}, pgx.ErrNoRows).Once()
-				mPf.On("GetActivePositionsCount").Return(0).Twice()
+				mPf.On("GetPositionsCount").Return(0).Twice()
 				mBal.On("GetBalance", mock.Anything, mock.Anything, "binance", "USDT").
 					Return(repository.BalanceData{Total: 1000.0}, nil).Twice()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideBuy}, 1).

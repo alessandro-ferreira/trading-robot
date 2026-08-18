@@ -115,7 +115,7 @@ func TestPgPositionsRepo_GetPosition(t *testing.T) {
 	}
 }
 
-func TestPgPositionsRepo_GetActivePositions(t *testing.T) {
+func TestPgPositionsRepo_GetPositions(t *testing.T) {
 	repo := NewPositionsRepo()
 	pos := getSamplePosition()
 	columns := positionColumns
@@ -183,7 +183,7 @@ func TestPgPositionsRepo_GetActivePositions(t *testing.T) {
 
 			tc.setupMock(mockDB)
 
-			result, err := repo.GetActivePositions(context.Background(), mockDB, tc.exchangeFilter, tc.symbolFilter)
+			result, err := repo.GetPositions(context.Background(), mockDB, tc.exchangeFilter, tc.symbolFilter)
 
 			if tc.expectedErrContains != "" {
 				require.Error(t, err)

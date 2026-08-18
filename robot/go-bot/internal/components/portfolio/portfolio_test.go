@@ -17,10 +17,10 @@ import (
 
 // MockPositionsRepo implements repository.PositionsRepo for testing
 type MockPositionsRepo struct {
-	GetPositionFn        func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) (repository.PositionData, error)
-	GetActivePositionsFn func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error)
-	UpsertPositionFn     func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error
-	DeletePositionFn     func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) error
+	GetPositionFn    func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) (repository.PositionData, error)
+	GetPositionsFn   func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error)
+	UpsertPositionFn func(ctx context.Context, db repository.DBExecutor, pos repository.PositionData) error
+	DeletePositionFn func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) error
 }
 
 func (m *MockPositionsRepo) GetPosition(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) (repository.PositionData, error) {
@@ -30,9 +30,9 @@ func (m *MockPositionsRepo) GetPosition(ctx context.Context, db repository.DBExe
 	return repository.PositionData{}, nil
 }
 
-func (m *MockPositionsRepo) GetActivePositions(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
-	if m.GetActivePositionsFn != nil {
-		return m.GetActivePositionsFn(ctx, db, exchangeName, instrumentSymbol)
+func (m *MockPositionsRepo) GetPositions(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
+	if m.GetPositionsFn != nil {
+		return m.GetPositionsFn(ctx, db, exchangeName, instrumentSymbol)
 	}
 	return []repository.PositionData{}, nil
 }
@@ -99,7 +99,7 @@ func TestPortfolio_LoadState(t *testing.T) {
 				}
 			},
 			setupPositions: func() {
-				mockRepo.GetActivePositionsFn = func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
+				mockRepo.GetPositionsFn = func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
 					return []repository.PositionData{
 						{ExchangeName: "binance", InstrumentSymbol: "BTC/USDT", Quantity: 1.5, EntryPrice: 40000.0, HighestPrice: 45000.0, Active: true},
 					}, nil
@@ -110,14 +110,14 @@ func TestPortfolio_LoadState(t *testing.T) {
 			expectedPositionsCount: 1,
 		},
 		{
-			name: "Returns error when GetActivePositions fails",
+			name: "Returns error when GetPositions fails",
 			setupBalances: func() {
 				mockBalances.GetAllBalancesFn = func(ctx context.Context, db repository.DBExecutor, exchange string) ([]repository.BalanceData, error) {
 					return []repository.BalanceData{}, nil
 				}
 			},
 			setupPositions: func() {
-				mockRepo.GetActivePositionsFn = func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
+				mockRepo.GetPositionsFn = func(ctx context.Context, db repository.DBExecutor, exchangeName, instrumentSymbol string) ([]repository.PositionData, error) {
 					return nil, errors.New("db position error")
 				}
 			},
@@ -138,7 +138,7 @@ func TestPortfolio_LoadState(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.expectedErrContains)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.expectedPositionsCount, p.GetActivePositionsCount())
+				assert.Equal(t, tt.expectedPositionsCount, p.GetPositionsCount())
 			}
 		})
 	}

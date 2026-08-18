@@ -70,6 +70,39 @@ func setupOrderSync(cfg *config.Config, recon reconcil.Reconciler, bgManager *ba
 	bgManager.Add(task)
 }
 
+// setupStopOrderSync validates stop orders with the exchanges and resets inactive stop losses.
+// Medium priority (5m) to detect expired or cancelled stop orders and allow orchestrator re-arming.
+func setupStopOrderSync(
+	cfg *config.Config,
+	exec execution.Service,
+	pf portfolio.Portfolio,
+	recon reconcil.Reconciler,
+	bgManager *background.Manager,
+) {
+	task := background.NewPeriodicTask(
+		"stop-order-sync", 5*time.Minute, false,
+		func(ctx context.Context) error {
+			for _, ex := range cfg.Exchanges {
+				slog.Info("Stop Order Sync: Starting sync for exchange", "exchange", ex.Name)
+				if _, err := exec.GetBalance(ctx, ex.Name, ""); err != nil {
+					slog.Error(
+						"Stop Order Sync: Failed to fetch balance",
+						"exchange", ex.Name, "error", err,
+					)
+				}
+
+				if err := recon.SyncStopOrders(ctx, ex.Name, ""); err != nil {
+					slog.Error("Stop Order Sync: Alignment failed", "exchange", ex.Name, "error", err)
+				}
+			}
+
+			// Final step: Load the aligned database state into the portfolio memory maps.
+			return pf.LoadState(ctx)
+		},
+	)
+	bgManager.Add(task)
+}
+
 // setupPositionSync (Position Pipe) aligns DB positions with Exchange balances.
 // High priority (1m) to detect external Stop Losses, liquidations, ghost balances, manual and untracked trades.
 func setupPositionSync(

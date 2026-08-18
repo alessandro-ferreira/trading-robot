@@ -99,7 +99,7 @@ func setupOrchestratorIntegrationTest(
 	}
 
 	// Ensure a clean state for positions to avoid interference from previous tests.
-	activePos, err := repoContainer.Positions.GetActivePositions(ctx, db, "", "")
+	activePos, err := repoContainer.Positions.GetPositions(ctx, db, "", "")
 	require.NoError(t, err)
 	for _, p := range activePos {
 		_ = repoContainer.Positions.DeletePosition(ctx, db, p.ExchangeName, p.InstrumentSymbol)
@@ -247,7 +247,7 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 
 	// Now, we wait for the price to drift enough to trigger the profit target and cause the orchestrator to execute a SELL.
 	require.Eventually(t, func() bool {
-		activePositions, err := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
+		activePositions, err := repo.Positions.GetPositions(ctx, db, exchange, symbol)
 		return err == nil && len(activePositions) == 0
 	}, 2*time.Second, 50*time.Millisecond, "Position should be closed after SELL signal")
 
@@ -506,7 +506,7 @@ func TestOrchestrator_Integration_MultiPairScaling(t *testing.T) {
 	// Verify all pairs are eventually processed and moved into positions.
 	seenActive := make(map[string]bool)
 	require.Eventually(t, func() bool {
-		activePos, err := repo.Positions.GetActivePositions(ctx, db, exchange, "")
+		activePos, err := repo.Positions.GetPositions(ctx, db, exchange, "")
 		if err == nil {
 			for _, p := range activePos {
 				seenActive[p.InstrumentSymbol] = true
@@ -673,7 +673,7 @@ func TestOrchestrator_Integration_OrderlyTermination(t *testing.T) {
 
 	// Wait for natural Profit Take exit
 	require.Eventually(t, func() bool {
-		pos, err := repo.Positions.GetActivePositions(ctx, db, exchange, symbol)
+		pos, err := repo.Positions.GetPositions(ctx, db, exchange, symbol)
 		require.NoError(t, err)
 		return len(pos) == 0
 	}, 2*time.Second, 50*time.Millisecond)

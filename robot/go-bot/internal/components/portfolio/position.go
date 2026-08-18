@@ -28,7 +28,7 @@ func (p *portfolio) CreatePosition(
 
 	key := makeKey(exchange, instrumentSymbol)
 
-	// Check for existing active position
+	// Check for existing position
 	existing, err := p.repo.Positions.GetPosition(ctx, p.db, exchange, instrumentSymbol)
 	if err == nil {
 		if existing.UnknownOrigin {
