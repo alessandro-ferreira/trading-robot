@@ -5,6 +5,7 @@ import threading
 import time
 
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, List, Optional
 
 from .base import (
@@ -36,6 +37,17 @@ class MercadoBitcoinExchange(Exchange):
     PATH_GET_ORDERS = "/accounts/{}/{}/orders"
 
     TIMEOUT_SECONDS = 10
+    STOP_MARKET_SLIPPAGE = 0.40
+    # Quantity precision from MB v4 /symbols output for SUPPORTED_ASSETS grouped by round-lot precision.
+    QUANTITY_DECIMALS_BY_ASSET = {
+        0: {"SHIB"},
+        3: {"ALGO", "ARB", "DOGE", "HBAR", "OP", "XLM"},
+        4: {"ADA", "APT", "DOT", "NEAR", "SUI", "TRX", "USDT", "XRP"},
+        5: {"AVAX", "LINK", "UNI"},
+        6: {"AAVE", "HYPE", "LTC", "SOL"},
+        7: {"BCH", "TAO", "ZEC"},
+        8: {"BTC", "ETH"},
+    }
 
     def __init__(self, cfg=None):
         super().__init__(cfg)
@@ -166,6 +178,13 @@ class MercadoBitcoinExchange(Exchange):
 
         return self._account_id
 
+    def _get_base_quote(self, symbol: str) -> tuple[str, str]:
+        """Returns the base and quote assets from a bot symbol."""
+        parts = symbol.split("/")
+        if len(parts) != 2 or not all(parts):
+            raise ExchangeError(f"Invalid symbol format for MercadoBitcoin: {symbol}")
+        return parts[0].upper(), parts[1].upper()
+
     def _normalize_symbol(self, symbol: str) -> str:
         """
         Converts a symbol like 'BTC/BRL' to 'BTC-BRL'.
@@ -173,10 +192,8 @@ class MercadoBitcoinExchange(Exchange):
         :param symbol: The symbol to normalize.
         :return: The normalized symbol string.
         """
-        parts = symbol.split("/")
-        if len(parts) != 2:
-            raise ExchangeError(f"Invalid symbol format for MercadoBitcoin: {symbol}")
-        return f"{parts[0]}-{parts[1]}"
+        base, quote = self._get_base_quote(symbol)
+        return f"{base}-{quote}"
 
     def _map_status(self, mb_status: Optional[str]) -> str:
         """Maps Mercado Bitcoin status to standard CCXT terms."""
@@ -207,19 +224,41 @@ class MercadoBitcoinExchange(Exchange):
     def _calculate_fees(self, response: Dict[str, Any], symbol: str) -> Dict[str, Any]:
         """Aggregates fees from executions and determines currency for Mercado Bitcoin."""
         executions = response.get("executions", [])
-        total_fee = sum(float(e.get("fee") or 0.0) for e in executions)
+        raw_fee = response.get("fee")
+        if not raw_fee and isinstance(response.get("info"), dict):
+            raw_fee = response["info"].get("fee")
+        total_fee = float(raw_fee or 0.0)
+        if total_fee == 0.0:
+            total_fee = sum(float(e.get("fee") or 0.0) for e in executions)
 
         # Determine currency based on side.
         # MB v4 typically: Buy fees in base asset, Sell fees in quote asset (BRL).
         side = response.get("side")
         fee_currency = ""
         if symbol and "/" in symbol:
-            base, quote = symbol.split("/")
+            base, quote = self._get_base_quote(symbol)
             fee_currency = base if side == "buy" else quote
         elif not symbol and response.get("instrument"):
-            fee_currency = response.get("instrument").split("-")[1]
+            _, quote = self._get_base_quote(response["instrument"].replace("-", "/", 1))
+            fee_currency = quote
 
         return {"fee": total_fee, "fee_currency": fee_currency}
+
+    def _format_quantity(self, amount: float, asset_or_symbol: str) -> str:
+        """Formats an order or balance quantity using the asset's supported precision."""
+        base_asset = asset_or_symbol.split("/", 1)[0].upper()
+        quantity_decimals = {
+            asset: decimals
+            for decimals, assets in self.QUANTITY_DECIMALS_BY_ASSET.items()
+            for asset in assets
+        }
+        if base_asset not in quantity_decimals:
+            return str(amount)
+        decimals = quantity_decimals[base_asset]
+
+        quantum = Decimal("1").scaleb(-decimals)
+        quantity = Decimal(str(amount)).quantize(quantum, rounding=ROUND_DOWN)
+        return format(quantity, f".{decimals}f")
 
     def _map_order(self, symbol: str, response: Dict[str, Any]) -> Dict[str, Any]:
         """Maps a Mercado Bitcoin order response to a standardized order format."""
@@ -303,9 +342,9 @@ class MercadoBitcoinExchange(Exchange):
 
         for b in balances:
             currency = b["symbol"].upper()
-            available = float(b["available"])
-            used = float(b["on_hold"])
-            total = float(b["total"])
+            available = float(self._format_quantity(b["available"], currency))
+            used = float(self._format_quantity(b["on_hold"], currency))
+            total = float(self._format_quantity(b["total"], currency))
 
             result["free"][currency] = available
             result["used"][currency] = used
@@ -337,9 +376,11 @@ class MercadoBitcoinExchange(Exchange):
         account_id = self._get_account_id()
         pair = self._normalize_symbol(symbol)
         path = self.PATH_PLACE_ORDER.format(account_id, pair)
-
-        # Format amount to string to avoid scientific notation and ensure precision
-        qty_str = "{:.8f}".format(amount).rstrip("0").rstrip(".")
+        qty_str = self._format_quantity(amount, symbol)
+        if Decimal(qty_str) <= 0:
+            raise ExchangeError(
+                f"Order quantity is too small for MercadoBitcoin: {amount}"
+            )
 
         payload = {
             "qty": qty_str,
@@ -392,7 +433,11 @@ class MercadoBitcoinExchange(Exchange):
 
         # MB V4 API literal is 'stoplimit'
         mb_type = "stoplimit"
-        qty_str = "{:.8f}".format(amount).rstrip("0").rstrip(".")
+        qty_str = self._format_quantity(amount, symbol)
+        if Decimal(qty_str) <= 0:
+            raise ExchangeError(
+                f"Order quantity is too small for MercadoBitcoin: {amount}"
+            )
 
         # If the bot requested a Market Stop (limit_price=0/None), we must
         # still provide a limitPrice for the 'stoplimit' type.
@@ -400,22 +445,29 @@ class MercadoBitcoinExchange(Exchange):
             effective_limit = float(limit_price)
         else:
             # To simulate a stop-market on an exchange that only supports stop-limit,
-            # we use a significant slippage margin (40%) to ensure execution.
-            slippage_percentage = 0.40
+            # we use a significant STOP_MARKET_SLIPPAGE 40% to ensure execution.
             if side == "sell":
-                effective_limit = float(stop_price) * (1.0 - slippage_percentage)
+                effective_limit = float(stop_price) * (1.0 - self.STOP_MARKET_SLIPPAGE)
             else:
-                effective_limit = float(stop_price) * (1.0 + slippage_percentage)
+                effective_limit = float(stop_price) * (1.0 + self.STOP_MARKET_SLIPPAGE)
 
-            # Rounding to the nearest integer to satisfy tick size requirements for BRL pairs.
-            effective_limit = round(effective_limit)
+        formatted_stop = float(f"{float(stop_price):.2f}")
+        formatted_limit = float(f"{effective_limit:.2f}")
+        if formatted_stop <= 0 or formatted_limit <= 0:
+            raise ExchangeError(
+                "Stop and limit prices must be positive for MercadoBitcoin"
+            )
+        if side == "sell" and formatted_limit >= formatted_stop:
+            raise ExchangeError("Sell stop-limit price must be below stop price")
+        if side == "buy" and formatted_limit <= formatted_stop:
+            raise ExchangeError("Buy stop-limit price must be above stop price")
 
         payload = {
             "qty": qty_str,
             "side": side,
             "type": mb_type,
-            "stopPrice": float(stop_price),
-            "limitPrice": effective_limit,
+            "stopPrice": float(f"{stop_price:.2f}"),
+            "limitPrice": float(f"{effective_limit:.2f}"),
         }
 
         logging.info(f"Creating stop order with payload: {payload}")

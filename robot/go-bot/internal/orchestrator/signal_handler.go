@@ -310,14 +310,28 @@ func (o *Orchestrator) signalBuy(
 		if fillPrice <= 0 {
 			fillPrice = order.Price.Float64
 		}
-		err = o.portfolio.CreatePosition(
-			ctx, ex, sym, order.Filled, fillPrice, order.ID,
-		)
+
+		err = o.portfolio.CreatePosition(ctx, ex, sym, order.Filled, fillPrice, order.ID)
 		if err != nil {
 			log.Error("failed to create position for filled order", "err", err)
+			return
+		}
+		log.Info("Buy order filled, position created", "qty", order.Filled, "price", fillPrice)
+
+		// Fetch balance from exchange to double check the correct filled quantity.
+		assetBalance, err := o.getBalance(ctx, log, ex, sym)
+		if err != nil {
+			log.Error("failed to fetch filled asset balance", "err", err)
+			return
+		} else if assetBalance.Total > 0 {
+			if err := o.portfolio.UpdatePosition(ctx, ex, sym, repository.PositionData{
+				Quantity: assetBalance.Total,
+			}); err != nil {
+				log.Error("failed to update position with filled asset balance", "err", err)
+				return
+			}
 		}
 
-		log.Info("Buy order filled, position created", "qty", order.Filled, "price", fillPrice)
 		sig.SetInPosition(true, fillPrice, fillPrice)
 	}
 }

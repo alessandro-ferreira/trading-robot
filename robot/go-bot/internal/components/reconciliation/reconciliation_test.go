@@ -203,6 +203,25 @@ func TestReconciler_SyncOrders(t *testing.T) {
 					ExchangeOrderID: sql.NullString{String: "closed-1", Valid: true}, InstrumentSymbol: "BTC/USDT", Side: repository.OrderSideBuy, Status: repository.OrderStatusClosed,
 					Filled: 1.0, Price: toNullFloat64(50000),
 				}, nil)
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0.999}}, nil)
+				mPf.On("CreatePosition", mock.Anything, "binance", "BTC/USDT", 1.0, 50000.0, int64(10)).Return(nil)
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", repository.PositionData{Quantity: 0.999}).Return(nil)
+			},
+		},
+		{
+			name:     "Investigation of Buy vanished order - error getting balance from exchange",
+			exchange: "binance",
+			symbol:   "BTC/USDT",
+			setup: func(mExec *MockExecutionService, mPf *MockPortfolio, mOrders *MockOrdersRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT",
+					[]string{"new", "open"}, []string{"limit", "market"}, []string{}, 100).Return([]repository.OrderData{
+					{ID: 10, ExchangeOrderID: sql.NullString{String: "closed-1", Valid: true}, InstrumentSymbol: "BTC/USDT", Status: "open"},
+				}, nil)
+				mExec.On("GetOrder", mock.Anything, "binance", "BTC/USDT", "closed-1").Return(repository.OrderData{
+					ExchangeOrderID: sql.NullString{String: "closed-1", Valid: true}, InstrumentSymbol: "BTC/USDT", Side: repository.OrderSideBuy, Status: repository.OrderStatusClosed,
+					Filled: 1.0, Price: toNullFloat64(50000),
+				}, nil)
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{}, errors.New("exchange error"))
 				mPf.On("CreatePosition", mock.Anything, "binance", "BTC/USDT", 1.0, 50000.0, int64(10)).Return(nil)
 			},
 		},

@@ -487,7 +487,9 @@ func TestOrchestrator_SignalBuy(t *testing.T) {
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
 				mExec.On("CreateOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideBuy, repository.OrderTypeMarket, mock.Anything, float64(0)).
 					Return(repository.OrderData{Status: repository.OrderStatusClosed, Filled: 0.001, AveragePrice: sql.NullFloat64{Float64: 100.2, Valid: true}}, nil).Once()
-				mPf.On("CreatePosition", mock.Anything, "binance", "BTC/USDT", 0.001, 100.2, mock.Anything).Return(nil).Once()
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0.00099}}, nil).Once()
+				mPf.On("CreatePosition", mock.Anything, "binance", "BTC/USDT", 0.001, 100.2, int64(0)).Return(nil).Once()
+				mPf.On("UpdatePosition", mock.Anything, "binance", "BTC/USDT", repository.PositionData{Quantity: 0.00099}).Return(nil).Once()
 			},
 			expectedSignal: strategy.SignalTrackingSellExit,
 		},

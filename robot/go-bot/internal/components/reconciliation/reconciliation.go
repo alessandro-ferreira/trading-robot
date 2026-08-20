@@ -91,10 +91,36 @@ func (r *reconciler) SyncOrders(
 			if fillPrice <= 0 {
 				fillPrice = res.Price.Float64
 			}
+
+			// Create the known-origin position before the balance lookup, which is
+			// an external request and can leave a filled order without a position.
 			if err := r.pf.CreatePosition(
 				ctx, exchange, res.InstrumentSymbol, res.Filled, fillPrice, dbo.ID,
 			); err != nil {
 				log.Error("Failed to create position for filled order", "error", err)
+				continue
+			}
+			log.Info(
+				"Order sync: created position for filled order",
+				"symbol", res.InstrumentSymbol, "qty", res.Filled, "price", fillPrice,
+			)
+
+			asset, _ := splitSymbol(res.InstrumentSymbol)
+			balances, err := r.exec.GetBalance(ctx, exchange, asset)
+			if err != nil || len(balances) == 0 {
+				// The position already reflects the exchange-reported fill. A later
+				// position sync can correct it when the balance is available.
+				if err != nil {
+					log.Error("Failed to fetch filled asset balance", "asset", asset, "error", err)
+				} else {
+					log.Error("Filled asset balance not found to create position", "asset", asset)
+				}
+			} else if balances[0].Total > 0 {
+				if err := r.pf.UpdatePosition(ctx, exchange, res.InstrumentSymbol, repository.PositionData{
+					Quantity: balances[0].Total,
+				}); err != nil {
+					log.Error("Failed to update position with filled asset balance", "asset", asset, "error", err)
+				}
 			}
 		}
 	}
@@ -222,7 +248,7 @@ func (r *reconciler) SyncPositions(
 		return fmt.Errorf("position sync: db fetch failed: %w", err)
 	}
 
-	// Group existing positions by asset symbol (e.g., BTC/USDT and BTC/EURO both share a BTC balance).
+	// Group by base asset to detect unsupported concurrent or external positions that share wallet balance.
 	positionsByAsset := make(map[string][]repository.PositionData)
 	for _, p := range dbPositions {
 		asset, _ := splitSymbol(p.InstrumentSymbol)

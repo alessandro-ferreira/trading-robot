@@ -194,6 +194,55 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(balance["used"]["BTC"], 0.1)
 
     @patch("requests.request")
+    @patch("requests.post")
+    def test_fetch_balance_truncates_known_assets_and_preserves_unknown_assets(
+        self, mock_post, mock_request
+    ):
+        """Verify balances use executable precision while unknown assets remain unchanged."""
+        auth_resp = MagicMock()
+        auth_resp.status_code = http.client.OK
+        auth_resp.json.return_value = {"access_token": "t", "expiration": 3600}
+        mock_post.return_value = auth_resp
+
+        accounts_resp = MagicMock()
+        accounts_resp.status_code = http.client.OK
+        accounts_resp.json.return_value = [{"id": "acc_123"}]
+
+        balances_resp = MagicMock()
+        balances_resp.status_code = http.client.OK
+        balances_resp.json.return_value = [
+            {
+                "symbol": "XLM",
+                "available": "26.65675789",
+                "on_hold": "0.00075789",
+                "total": "26.65751578",
+            },
+            {
+                "symbol": "BTC",
+                "available": "0.123456789",
+                "on_hold": "0.000000009",
+                "total": "0.123456798",
+            },
+            {
+                "symbol": "UNKNOWN",
+                "available": "1.23456789",
+                "on_hold": "0.00000001",
+                "total": "1.23456790",
+            },
+        ]
+        mock_request.side_effect = [accounts_resp, balances_resp]
+
+        balance = self.exchange.fetch_balance()
+
+        self.assertEqual(balance["free"]["XLM"], 26.656)
+        self.assertEqual(balance["used"]["XLM"], 0.0)
+        self.assertEqual(balance["total"]["XLM"], 26.657)
+        self.assertEqual(balance["free"]["BTC"], 0.12345678)
+        self.assertEqual(balance["used"]["BTC"], 0.0)
+        self.assertEqual(balance["total"]["BTC"], 0.12345679)
+        self.assertEqual(balance["total"]["UNKNOWN"], 1.2345679)
+
+    @patch("requests.request")
     def test_create_order_success(self, mock_request):
         """Verify limit order creation with correct payload formatting."""
         # Pre-set account ID and token to skip auth/account calls
@@ -227,12 +276,12 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "POST")
         self.assertIn("/accounts/acc_123/BTC-BRL/orders", args[1])
-        self.assertEqual(kwargs["json"]["qty"], "0.1")
+        self.assertEqual(kwargs["json"]["qty"], "0.10000000")
         self.assertEqual(kwargs["json"]["limitPrice"], 100000.0)
 
     @patch("requests.request")
     def test_create_order_market_success(self, mock_request):
-        """Verify market order omits limitPrice."""
+        """Verify market order formatting uses XLM's MercadoBitcoin lot size."""
         self.exchange._account_id = "acc_123"
         self.exchange._token = "mock_token"
         self.exchange._token_expiry = 9999999999
@@ -248,13 +297,37 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         }
         mock_request.return_value = mock_response
 
-        order = self.exchange.create_order("BTC/BRL", OrderType.MARKET, "sell", 0.1)
+        order = self.exchange.create_order(
+            "XLM/BRL", OrderType.MARKET, "sell", 26.65675789
+        )
 
         self.assertEqual(order["id"], "ord_market")
         args, kwargs = mock_request.call_args
         payload = kwargs["json"]
         self.assertEqual(payload["type"], "market")
+        self.assertEqual(payload["qty"], "26.656")
         self.assertNotIn("limitPrice", payload)
+
+    def test_format_quantity_for_all_supported_mercadobitcoin_assets(self):
+        amount = 1.23456789
+
+        expected_by_decimals = {
+            0: "1",
+            3: "1.234",
+            4: "1.2345",
+            5: "1.23456",
+            6: "1.234567",
+            7: "1.2345678",
+            8: "1.23456789",
+        }
+        for decimals, assets in self.exchange.QUANTITY_DECIMALS_BY_ASSET.items():
+            expected = expected_by_decimals[decimals]
+            for asset in assets:
+                with self.subTest(asset=asset, decimals=decimals):
+                    self.assertEqual(
+                        self.exchange._format_quantity(amount, f"{asset}/BRL"),
+                        expected,
+                    )
 
     def test_create_order_missing_price_for_limit(self):
         """Verify client-side validation for missing limit prices."""
