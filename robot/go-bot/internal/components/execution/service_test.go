@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +22,35 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/utils"
 )
+
+func TestService_RecordGuardReleasesCancelledProbe(t *testing.T) {
+	mockSrv := &mockExchangeServer{}
+	client, cleanup := setupTest(t, mockSrv)
+	defer cleanup()
+
+	container := &repository.Container{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(logger, nil, client, container, utils.NewSystemClock()).(*service)
+
+	method := guardGetTicker
+	exchange := "binance"
+	symbol := "BTC/USDT"
+
+	for range 5 {
+		svc.guard.Record(method, exchange, symbol, errors.New("gateway failure"))
+	}
+
+	state := svc.guard.states[guardKey(method, exchange, symbol)]
+	state.blockedUntil = time.Now().Add(-time.Second)
+	require.NoError(t, svc.guard.Allow(method, exchange, symbol))
+
+	svc.recordGuard(method, exchange, symbol, context.Canceled)
+
+	state = svc.guard.states[guardKey(method, exchange, symbol)]
+	assert.Equal(t, 1, state.penaltyLevel)
+	assert.False(t, state.probeActive)
+	assert.NoError(t, svc.guard.Allow(method, exchange, symbol))
+}
 
 // MockMarketDataRepo is a mock implementation of repository.MarketDataRepo
 type MockMarketDataRepo struct {
@@ -434,6 +464,36 @@ func TestService_CreateOrder(t *testing.T) {
 			mockRepo.AssertExpectations(t)
 		})
 	}
+}
+
+func TestService_CreateOrderBlockedBeforePersistence(t *testing.T) {
+	mockSrv := &mockExchangeServer{
+		createOrderResponse: &pb.OrderResponse{Id: "must-not-be-created"},
+	}
+	client, cleanup := setupTest(t, mockSrv)
+	defer cleanup()
+
+	mockRepo := new(MockOrdersRepo)
+	container := &repository.Container{Orders: mockRepo}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(logger, nil, client, container, utils.NewSystemClock()).(*service)
+
+	openGuardKey(t, svc.guard, guardCreateOrder, "binance", "BTC/USDT")
+
+	resp, err := svc.CreateOrder(
+		context.Background(),
+		"binance",
+		"BTC/USDT",
+		repository.OrderSideBuy,
+		repository.OrderTypeMarket,
+		1.5,
+		0,
+	)
+
+	var guardErr *GuardError
+	require.ErrorAs(t, err, &guardErr)
+	assert.Empty(t, resp)
+	mockRepo.AssertNotCalled(t, "CreateOrder", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestService_CreateStopOrder(t *testing.T) {

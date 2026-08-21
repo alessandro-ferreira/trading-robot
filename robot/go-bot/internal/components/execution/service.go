@@ -51,6 +51,7 @@ type service struct {
 	client Client
 	repo   *repository.Container
 	clock  utils.Clock
+	guard  *Guard
 }
 
 // NewService creates a new execution Service.
@@ -67,19 +68,34 @@ func NewService(
 		client: client,
 		repo:   repo,
 		clock:  clock,
+		guard:  NewGuard(),
 	}
+}
+
+// recordGuard records gateway outcomes and releases probes when the request is
+// cancelled locally before the gateway returns a result.
+func (s *service) recordGuard(method, exchange, symbol string, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		s.guard.Release(method, exchange, symbol)
+		return
+	}
+	s.guard.Record(method, exchange, symbol, err)
 }
 
 // GetTicker fetches the current ticker for a given symbol on a specific exchange.
 func (s *service) GetTicker(
 	ctx context.Context, exchange, instrumentSymbol string,
 ) (repository.MarketDataTick, error) {
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+	if err := s.guard.Allow(guardGetTicker, exchange, instrumentSymbol); err != nil {
+		return repository.MarketDataTick{}, err
+	}
 
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	log.Debug("Fetching ticker from exchange")
 
 	// Fetch from Exchange via gRPC
 	resp, err := s.client.GetTicker(ctx, exchange, instrumentSymbol)
+	s.recordGuard(guardGetTicker, exchange, instrumentSymbol, err)
 	if err != nil {
 		return repository.MarketDataTick{}, fmt.Errorf("failed to fetch ticker from gateway: %w", err)
 	}
@@ -105,15 +121,19 @@ func (s *service) GetTicker(
 func (s *service) GetBalance(
 	ctx context.Context, exchange, assetSymbol string,
 ) ([]repository.BalanceData, error) {
+	if err := s.guard.Allow(guardGetBalance, exchange, assetSymbol); err != nil {
+		return nil, err
+	}
+
 	log := s.logger.With("exchange", exchange)
 	if assetSymbol != "" {
 		log = log.With("symbol", assetSymbol)
 	}
-
 	log.Info("Fetching balances from exchange")
 
 	// Fetch from Exchange via gRPC.
 	resp, err := s.client.GetBalance(ctx, exchange)
+	s.recordGuard(guardGetBalance, exchange, assetSymbol, err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch balances from gateway: %w", err)
 	}
@@ -172,8 +192,11 @@ func (s *service) GetBalance(
 func (s *service) CreateOrder(
 	ctx context.Context, exchange, instrumentSymbol, side, orderType string, amount, price float64,
 ) (repository.OrderData, error) {
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+	if err := s.guard.Allow(guardCreateOrder, exchange, instrumentSymbol); err != nil {
+		return repository.OrderData{}, err
+	}
 
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	log.Info("Creating order", "side", side, "type", orderType, "amount", amount, "price", price)
 
 	// Persist to database first with status='new' and no exchange_order_id.
@@ -209,6 +232,7 @@ func (s *service) CreateOrder(
 	}
 
 	resp, err := s.client.CreateOrder(ctx, req)
+	s.recordGuard(guardCreateOrder, exchange, instrumentSymbol, err)
 	if err != nil {
 		log.Warn(
 			"Failed to create order on exchange, orphaned order persisted", "internal_id", id, "error", err,
@@ -236,6 +260,10 @@ func (s *service) CreateOrder(
 func (s *service) CreateStopOrder(
 	ctx context.Context, exchange, instrumentSymbol, side string, amount, stopPrice, limitPrice float64,
 ) (repository.OrderData, error) {
+	if err := s.guard.Allow(guardCreateStopOrder, exchange, instrumentSymbol); err != nil {
+		return repository.OrderData{}, err
+	}
+
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
 	orderType := repository.OrderTypeStopMarket
@@ -259,6 +287,7 @@ func (s *service) CreateStopOrder(
 	}
 
 	resp, err := s.client.CreateStopOrder(ctx, req)
+	s.recordGuard(guardCreateStopOrder, exchange, instrumentSymbol, err)
 	if err != nil {
 		return repository.OrderData{}, fmt.Errorf("failed to create stop order on gateway: %w", err)
 	}
@@ -304,19 +333,27 @@ func (s *service) CreateStopOrder(
 func (s *service) CancelOrder(
 	ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
 ) error {
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+	if err := s.guard.Allow(guardCancelOrder, exchange, instrumentSymbol); err != nil {
+		return err
+	}
 
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	log.Info("Canceling order", "exchange_order_id", exchangeOrderID)
 
 	// Cancel on Exchange
 	_, err := s.client.CancelOrder(ctx, exchange, instrumentSymbol, exchangeOrderID)
+	s.recordGuard(guardCancelOrder, exchange, instrumentSymbol, err)
 	if err != nil {
 		return fmt.Errorf("failed to cancel order on gateway: %w", err)
+	}
+	if err := s.guard.Allow(guardGetOrder, exchange, instrumentSymbol); err != nil {
+		return err
 	}
 
 	// Fetch latest order state from Exchange to ensure we have correct fill amounts
 	//    Cancellation might result in a final fill or partial fill state.
 	orderResp, err := s.client.GetOrder(ctx, exchange, instrumentSymbol, exchangeOrderID)
+	s.recordGuard(guardGetOrder, exchange, instrumentSymbol, err)
 	if err != nil {
 		return fmt.Errorf("failed to fetch order %s details after cancellation: %w", exchangeOrderID, err)
 	}
@@ -347,11 +384,15 @@ func (s *service) GetOrder(
 	ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
 ) (repository.OrderData, error) {
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+	if err := s.guard.Allow(guardGetOrder, exchange, instrumentSymbol); err != nil {
+		return repository.OrderData{}, err
+	}
 
 	log.Info("Fetching order from exchange", "exchange_order_id", exchangeOrderID)
 
 	// Fetch latest order state from Exchange
 	orderResp, err := s.client.GetOrder(ctx, exchange, instrumentSymbol, exchangeOrderID)
+	s.recordGuard(guardGetOrder, exchange, instrumentSymbol, err)
 	if err != nil {
 		return repository.OrderData{}, fmt.Errorf("failed to fetch order from gateway: %w", err)
 	}
@@ -381,10 +422,14 @@ func (s *service) GetOrders(
 	ctx context.Context, exchange, instrumentSymbol string, limit int, updatedb bool,
 ) ([]repository.OrderData, error) {
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+	if err := s.guard.Allow(guardGetOrders, exchange, instrumentSymbol); err != nil {
+		return nil, err
+	}
 
 	log.Info("Fetching orders from exchange", "limit", limit)
 
 	resp, err := s.client.GetOrders(ctx, exchange, instrumentSymbol, limit)
+	s.recordGuard(guardGetOrders, exchange, instrumentSymbol, err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch orders from gateway: %w", err)
 	}
@@ -422,11 +467,15 @@ func (s *service) GetOrders(
 func (s *service) GetOpenOrders(
 	ctx context.Context, exchange, instrumentSymbol string, limit int, updatedb bool,
 ) ([]repository.OrderData, error) {
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+	if err := s.guard.Allow(guardGetOpenOrders, exchange, instrumentSymbol); err != nil {
+		return nil, err
+	}
 
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	log.Info("Fetching open orders from exchange", "limit", limit)
 
 	resp, err := s.client.GetOpenOrders(ctx, exchange, instrumentSymbol, limit)
+	s.recordGuard(guardGetOpenOrders, exchange, instrumentSymbol, err)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch open orders from gateway: %w", err)
 	}
