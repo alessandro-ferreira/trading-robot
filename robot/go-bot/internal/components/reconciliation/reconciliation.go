@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/portfolio"
@@ -13,7 +15,7 @@ import (
 	"trading/robot/go-bot/internal/utils"
 )
 
-const limitOpenOrders = 100
+const limitOpenOrders = 1000 // Set a high limit to ensure we fetch all open orders for reconciliation.
 
 type Reconciler interface {
 	SyncOrders(ctx context.Context, exchange, instrumentSymbol string) error
@@ -97,7 +99,7 @@ func (r *reconciler) SyncOrders(
 			if err := r.pf.CreatePosition(
 				ctx, exchange, res.InstrumentSymbol, res.Filled, fillPrice, dbo.ID,
 			); err != nil {
-				log.Error("Failed to create position for filled order", "error", err)
+				log.Error("Order sync: Failed to create position for filled order", "error", err)
 				continue
 			}
 			log.Info(
@@ -111,15 +113,15 @@ func (r *reconciler) SyncOrders(
 				// The position already reflects the exchange-reported fill. A later
 				// position sync can correct it when the balance is available.
 				if err != nil {
-					log.Error("Failed to fetch filled asset balance", "asset", asset, "error", err)
+					log.Error("Order sync: Failed to fetch balance", "asset", asset, "error", err)
 				} else {
-					log.Error("Filled asset balance not found to create position", "asset", asset)
+					log.Error("Order sync: Asset balance not found", "asset", asset)
 				}
 			} else if balances[0].Total > 0 {
 				if err := r.pf.UpdatePosition(ctx, exchange, res.InstrumentSymbol, repository.PositionData{
 					Quantity: balances[0].Total,
 				}); err != nil {
-					log.Error("Failed to update position with filled asset balance", "asset", asset, "error", err)
+					log.Error("Order sync: Failed to update position with balance", "asset", asset, "error", err)
 				}
 			}
 		}
@@ -128,8 +130,8 @@ func (r *reconciler) SyncOrders(
 	return nil
 }
 
-// SyncStopOrders synchronizes stop orders from the exchange with the local database.
-// It handles non-persisted stop orders, status drift, and validates stop loss protection for active positions.
+// SyncStopOrders synchronizes stop orders from the exchange. It handles non-persisted stop orders, status drift,
+// cancels stop orders without active positions, and validates stop loss protection for active positions.
 func (r *reconciler) SyncStopOrders(
 	ctx context.Context, exchange, instrumentSymbol string,
 ) error {
@@ -143,12 +145,15 @@ func (r *reconciler) SyncStopOrders(
 	if err != nil {
 		return fmt.Errorf("stop order sync: db active positions fetch failed: %w", err)
 	}
+	positionsBySymbol := make(map[string]repository.PositionData)
+	for _, pos := range dbPositions {
+		positionsBySymbol[pos.InstrumentSymbol] = pos
+	}
 
 	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
 	if err != nil {
 		return fmt.Errorf("stop order sync: balance fetch failed: %w", err)
 	}
-
 	walletBalances := make(map[string]float64)
 	for _, b := range balances {
 		walletBalances[b.AssetSymbol] = b.Total
@@ -173,6 +178,8 @@ func (r *reconciler) SyncStopOrders(
 			continue // Skip orders without an exchange order ID.
 		}
 
+		// Fetch the individual status from the exchange to determine if it was executed or canceled.
+		// Execution service GetOrder handles DB synchronization of the order record.
 		res, err := r.exec.GetOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID.String)
 		if err != nil {
 			log.Error(
@@ -182,8 +189,45 @@ func (r *reconciler) SyncStopOrders(
 			continue
 		}
 
-		if res.Status == repository.OrderStatusNew || res.Status == repository.OrderStatusOpen {
-			protectedPositions[dbo.InstrumentSymbol] = true
+		if res.Status != repository.OrderStatusNew && res.Status != repository.OrderStatusOpen {
+			continue
+		}
+		protectedPositions[dbo.InstrumentSymbol] = true
+
+		// --- Handle stop orders without active positions ---
+		// Check if the stop order is linked to an active position. If not, cancel it.
+		latestCreatedOrder := dbo.ID
+		_, exists := positionsBySymbol[dbo.InstrumentSymbol]
+		if exists {
+			latestOrders, err := r.repo.Orders.GetOrders(
+				ctx, r.db, exchange, dbo.InstrumentSymbol, []string{}, []string{}, []string{}, 1,
+			)
+			if err != nil {
+				log.Error(
+					"Stop order sync: failed to fetch latest order for instrument",
+					"symbol", dbo.InstrumentSymbol, "error", err,
+				)
+				continue
+			}
+			// A newer buy order and position was created after this stop order, which can happen after a partial
+			// fill leaves a very low remaining quantity (dust) and causes its position to be deleted locally.
+			if latestOrders[0].ID != latestCreatedOrder {
+				latestCreatedOrder = latestOrders[0].ID
+			}
+		}
+
+		if !exists || latestCreatedOrder != dbo.ID {
+			log.Warn(
+				"Stop order sync: stop order is not linked to a valid active position, canceling",
+				"symbol", dbo.InstrumentSymbol, "order_id", dbo.ExchangeOrderID.String,
+			)
+			if err := r.exec.CancelOrder(ctx, exchange, dbo.InstrumentSymbol, dbo.ExchangeOrderID.String); err != nil {
+				log.Error(
+					"Stop order sync: failed to cancel stop order",
+					"symbol", dbo.InstrumentSymbol, "order_id", dbo.ExchangeOrderID.String, "error", err,
+				)
+			}
+			protectedPositions[dbo.InstrumentSymbol] = false
 		}
 	}
 
@@ -197,7 +241,7 @@ func (r *reconciler) SyncStopOrders(
 		if !protectedPositions[pos.InstrumentSymbol] {
 			asset, _ := splitSymbol(pos.InstrumentSymbol)
 			walletQty := walletBalances[asset]
-			// If the wallet balance is zero, we assume the position was externally liquidated and skip re-arming.
+			// If the wallet balance is zero, the position will be closed in the next position sync.
 			if utils.IsZeroEps(walletQty) {
 				continue
 			}
@@ -231,133 +275,188 @@ func (r *reconciler) SyncPositions(
 		log = log.With("symbol", instrumentSymbol)
 	}
 
-	// Fetch liquid truth
-	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
-	if err != nil {
-		return fmt.Errorf("position sync: balance fetch failed: %w", err)
-	}
-
-	walletBalances := make(map[string]float64)
-	for _, b := range balances {
-		walletBalances[b.AssetSymbol] = b.Total
-	}
-
 	// Fetch all actives positions for the exchange to detect base asset collisions.
 	dbPositions, err := r.repo.Positions.GetPositions(ctx, r.db, exchange, instrumentSymbol)
 	if err != nil {
 		return fmt.Errorf("position sync: db fetch failed: %w", err)
 	}
-
-	// Group by base asset to detect unsupported concurrent or external positions that share wallet balance.
 	positionsByAsset := make(map[string][]repository.PositionData)
 	for _, p := range dbPositions {
 		asset, _ := splitSymbol(p.InstrumentSymbol)
 		positionsByAsset[asset] = append(positionsByAsset[asset], p)
 	}
+	positionPrices := r.fetchTickers(ctx, exchange, positionSymbols(dbPositions))
 
-	// --- Handle external events such as stop losses or quantity drift due to fees ---
+	balances, err := r.repo.Balances.GetAllBalances(ctx, r.db, exchange)
+	if err != nil {
+		return fmt.Errorf("position sync: balance fetch failed: %w", err)
+	}
+	walletBalances := make(map[string]float64)
+	for _, b := range balances {
+		walletBalances[b.AssetSymbol] = b.Total
+	}
+
+	// --- Handle external events such as stop losses execution or quantity drift due to fees ---
 	// Validate DB existing positions against exchange wallet balances.
-	for asset, positions := range positionsByAsset {
+	for _, posData := range dbPositions {
+		asset, _ := splitSymbol(posData.InstrumentSymbol)
 		walletQty := walletBalances[asset]
-		var positionQty float64
-		for _, p := range positions {
-			positionQty += p.Quantity
-		}
 
-		if utils.IsZeroEps(walletQty) {
-			// If the wallet balance is zero, all associated trading positions must be closed.
-			for _, p := range positions {
+		tick, ok := positionPrices[posData.InstrumentSymbol]
+		// If the wallet balance is zero or below the retention threshold, we close the position in the DB.
+		if utils.IsZeroEps(walletQty) || (ok && portfolio.BelowPositionThreshold(walletQty, tick.Price)) {
+
+			if !utils.IsZeroEps(walletQty) && tick.Price < posData.EntryPrice*0.50 {
 				log.Warn(
-					"Reconciliation: Closing position (External liquidation detected)",
-					"symbol", p.InstrumentSymbol,
-				)
-				if err := r.pf.DeletePosition(ctx, exchange, p.InstrumentSymbol); err != nil {
-					log.Error(
-						"Failed to close position in DB",
-						"symbol", p.InstrumentSymbol, "error", err,
-					)
-				}
-			}
-
-		} else if !utils.IsEqualEps(positionQty, walletQty) {
-			// If the total quantity drifted, we can only auto-correct if there is exactly one position for this base asset.
-			// We snap to the exchange truth. This naturally reconciles deductions for trading fees or minor 'dust' remains.
-			if len(positions) != 1 {
-				log.Error(
-					"Reconciliation: Ambiguous quantity drift detected for multi-pair asset",
-					"asset", asset, "wallet_qty", walletQty, "position_qty", positionQty,
+					"Position sync: Ignoring price for position removal check due to untrusted ticker",
+					"symbol", posData.InstrumentSymbol, "ticker_price", tick.Price,
 				)
 				continue
 			}
 
-			posData := positions[0]
 			log.Warn(
-				"Reconciliation: Adjusting position quantity",
+				"Position sync: Deleting position due to zero or below-retention balance",
+				"symbol", posData.InstrumentSymbol, "qty", walletQty,
+			)
+			if err := r.pf.DeletePosition(ctx, exchange, posData.InstrumentSymbol); err != nil {
+				log.Error(
+					"Position sync: Failed to delete position in DB",
+					"symbol", posData.InstrumentSymbol, "error", err,
+				)
+			}
+			continue
+		}
+
+		if !utils.IsEqualEps(posData.Quantity, walletQty) {
+			// If the total quantity drifted, we can only auto-correct if there is exactly one position for this base asset.
+			// We snap to the exchange truth. This naturally reconciles deductions for trading fees or minor 'dust' remains.
+			if len(positionsByAsset[asset]) != 1 {
+				log.Error(
+					"Position sync: Ambiguous quantity drift detected for multi-pair asset",
+					"asset", asset, "wallet_qty", walletQty, "position_qty", posData.Quantity,
+				)
+				continue
+			}
+
+			log.Warn(
+				"Position sync: Adjusting position quantity",
 				"symbol", posData.InstrumentSymbol, "old", posData.Quantity, "new", walletQty,
 			)
 			posData.Quantity = walletQty
 			posData.StopLossActive = false // Reset stop loss active flag to allow re-arming if needed.
 			err = r.pf.UpdatePosition(ctx, exchange, posData.InstrumentSymbol, posData)
 			if err != nil {
-				log.Error("Failed to update position for adjusting quantity", "error", err)
+				log.Error("Position sync: Failed to update position for adjusting quantity", "error", err)
 			}
 		}
 	}
 
 	// --- Handle adoptions of ghost balances or manual and untracked trades. ----
-	// Validate exchange wallet balances against DB existing positions.
+	// Select active trading instruments with a non-zero wallet balance and no existing position.
 	var instruments []string
-	if instrumentSymbol != "" {
-		instruments = append(instruments, instrumentSymbol)
-	} else {
-		statuses := []string{
-			repository.StrategyEnabled,
-			repository.StrategyPendingDisabled,
+	pairs, err := r.repo.Strategies.GetStrategyPairs(ctx, r.db, []string{
+		repository.StrategyEnabled,
+		repository.StrategyPendingDisabled,
+	})
+	if err != nil {
+		return fmt.Errorf("position sync: strategy pairs fetch failed: %w", err)
+	}
+
+	for _, p := range pairs {
+		if p.ExchangeName != exchange {
+			continue
 		}
-		pairs, err := r.repo.Strategies.GetStrategyPairs(ctx, r.db, statuses)
-		if err == nil {
-			for _, p := range pairs {
-				if p.ExchangeName == exchange {
-					instruments = append(instruments, p.InstrumentSymbol)
-				}
-			}
+		asset, _ := splitSymbol(p.InstrumentSymbol)
+		if p.InstrumentSymbol != instrumentSymbol && instrumentSymbol != "" {
+			continue
+		}
+
+		walletQty := walletBalances[asset]
+		_, existsPosition := positionsByAsset[asset]
+		if !utils.IsZeroEps(walletQty) && !existsPosition {
+			instruments = append(instruments, p.InstrumentSymbol)
 		}
 	}
 
-	for _, iSymbol := range instruments {
-		// If there are buy open orders in DB, no need to adopt, the position will be created when the order is filled.
+	instrumentPrices := r.fetchTickers(ctx, exchange, instruments)
+	for _, symbol := range instruments {
+		asset, _ := splitSymbol(symbol)
+		walletQty := walletBalances[asset]
+		tick, ok := instrumentPrices[symbol]
+		// If the wallet balance is not above the activation threshold, we don't try to adopt it as a ghost position.
+		if !ok || !portfolio.AbovePositionThreshold(walletQty, tick.Price) {
+			continue
+		}
+
 		statuses := []string{repository.OrderStatusNew, repository.OrderStatusOpen}
 		sides := []string{repository.OrderSideBuy}
 		openOrders, err := r.repo.Orders.GetOrders(
-			ctx, r.db, exchange, iSymbol, statuses, []string{}, sides, 1,
+			ctx, r.db, exchange, symbol, statuses, []string{}, sides, 1,
 		)
 		if err != nil {
-			log.Error("Failed querying buy open orders", "symbol", iSymbol, "error", err)
+			log.Error("Position sync: Failed querying buy open orders", "symbol", symbol, "error", err)
 			continue
 		}
+		// If there are buy open orders in DB, no need to adopt, the position will be created when the order is filled.
 		if len(openOrders) > 0 {
 			continue
 		}
 
-		asset, _ := splitSymbol(iSymbol)
-		walletQty := walletBalances[asset]
-		_, existsPosition := positionsByAsset[asset]
-
-		// If we have a wallet balance but no open order or position in the DB, we adopt it as a unlinked position.
-		// Since we removed automated promotion through trade sync, they should be corrected manually by the user.
-		if !utils.IsZeroEps(walletQty) && !existsPosition {
-			log.Warn(
-				"Reconciliation: Adopting ghost balance as unlinked position",
-				"symbol", iSymbol, "qty", walletQty,
-			)
-			err = r.pf.CreatePosition(ctx, exchange, iSymbol, walletQty, 0, 0)
-			if err != nil {
-				log.Error("Failed to create position for ghost balance", "error", err)
-			}
+		log.Warn(
+			"Position sync: Adopting ghost balance as unlinked position", "symbol", symbol, "qty", walletQty,
+		)
+		err = r.pf.CreatePosition(ctx, exchange, symbol, walletQty, tick.Price, 0)
+		if err != nil {
+			log.Error("Failed to create position for ghost balance", "error", err)
 		}
 	}
 
 	return nil
+}
+
+// fetchTickers fetches in parallel the latest market data for a list of symbols from the exchange.
+func (r *reconciler) fetchTickers(
+	ctx context.Context, exchange string, symbols []string,
+) map[string]repository.MarketDataTick {
+	tickerCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	prices := make(map[string]repository.MarketDataTick, len(symbols))
+	done := make(chan struct{})
+	for _, symbol := range symbols {
+		wg.Add(1)
+		go func(symbol string) {
+			defer wg.Done()
+			tick, err := r.exec.GetTicker(tickerCtx, exchange, symbol)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			prices[symbol] = tick
+			mu.Unlock()
+		}(symbol)
+	}
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-tickerCtx.Done():
+	}
+	return prices
+}
+
+func positionSymbols(positions []repository.PositionData) []string {
+	symbols := make([]string, 0, len(positions))
+	for _, pos := range positions {
+		symbols = append(symbols, pos.InstrumentSymbol)
+	}
+	return symbols
 }
 
 func splitSymbol(symbol string) (string, string) {

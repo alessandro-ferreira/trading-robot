@@ -37,7 +37,7 @@ class MercadoBitcoinExchange(Exchange):
     PATH_GET_ORDERS = "/accounts/{}/{}/orders"
 
     TIMEOUT_SECONDS = 10
-    STOP_MARKET_SLIPPAGE = 0.40
+    STOP_MARKET_SLIPPAGE = 0.02
     # Quantity precision from MB v4 /symbols output for SUPPORTED_ASSETS grouped by round-lot precision.
     QUANTITY_DECIMALS_BY_ASSET = {
         0: {"SHIB"},
@@ -439,13 +439,11 @@ class MercadoBitcoinExchange(Exchange):
                 f"Order quantity is too small for MercadoBitcoin: {amount}"
             )
 
-        # If the bot requested a Market Stop (limit_price=0/None), we must
-        # still provide a limitPrice for the 'stoplimit' type.
         if limit_price and limit_price > 0:
             effective_limit = float(limit_price)
         else:
-            # To simulate a stop-market on an exchange that only supports stop-limit,
-            # we use a significant STOP_MARKET_SLIPPAGE 40% to ensure execution.
+            # Since MercadoBitcoin does not support stop-market orders, we define
+            # the limit price based on the stop price and a small slippage factor.
             if side == "sell":
                 effective_limit = float(stop_price) * (1.0 - self.STOP_MARKET_SLIPPAGE)
             else:

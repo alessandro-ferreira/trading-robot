@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"trading/robot/go-bot/internal/components/portfolio"
 	"trading/robot/go-bot/internal/components/signal_generator"
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/strategy"
-	"trading/robot/go-bot/internal/utils"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -167,7 +167,7 @@ func (o *Orchestrator) processSignal(ctx context.Context, sig *signal_generator.
 	case strategy.SignalSell:
 		o.signalSell(ctx, log, sig, price)
 	case strategy.SignalWaitingSellFill:
-		o.signalWaitingSellFill(ctx, log, sig)
+		o.signalWaitingSellFill(ctx, log, sig, price)
 	case strategy.SignalInvalid:
 		o.signalInvalid(ctx, log, sig)
 	default:
@@ -274,7 +274,7 @@ func (o *Orchestrator) signalBuy(
 		_ = sig.RetrySignal(strategy.SignalBuy)
 		return
 	}
-	if !utils.IsZeroEps(balance.Total) {
+	if portfolio.AbovePositionThreshold(balance.Total, price) {
 		log.Warn(
 			"buy skipped: existent balance, proceeding to avoid duplication", "balance", balance.Total,
 		)
@@ -390,7 +390,7 @@ func (o *Orchestrator) signalWaitingBuyFill(
 	if err != nil {
 		return
 	}
-	if !utils.IsZeroEps(balance.Total) {
+	if portfolio.AbovePositionThreshold(balance.Total, price) {
 		log.Warn("positive balance detected but no local position, waiting for reconciliation")
 		return
 	}
@@ -507,27 +507,22 @@ func (o *Orchestrator) signalSell(
 		return
 	}
 
-	// Request balance from exchange, if gone, delete position and set strategy to IDLE.
 	balance, err := o.getBalance(ctx, log, ex, sym)
 	if err != nil {
 		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
-	if utils.IsZeroEps(balance.Total) {
-		log.Info("exchange balance is zero, closing local position and setting strategy to idle")
-		_ = o.portfolio.DeletePosition(ctx, ex, sym)
-		sig.SetInPosition(false, 0, 0)
-		return
-	}
 
 	stopOrder, err := o.getStopLossOrder(ctx, log, ex, sym)
 	if err != nil {
+		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
 	if stopOrder.ID != 0 {
-		// If we have a stop order placed and the sell signal was triggered by a stop loss, we use the stop order.
+		// If we have a stop order placed with valid balance still available to be sold,
+		// and the sell signal was triggered by a stop loss, we use that stop order.
 		isStopLoss := price <= pos.EntryPrice
-		if isStopLoss {
+		if isStopLoss && !portfolio.BelowPositionThreshold(balance.Total, price) {
 			log.Info("stop loss order already exists on exchange, waiting for fill")
 			return
 		}
@@ -544,10 +539,17 @@ func (o *Orchestrator) signalSell(
 		}
 	}
 
+	// If the balance is below the position threshold, we close the local position and set the strategy to idle.
+	if portfolio.BelowPositionThreshold(balance.Total, price) {
+		log.Info("balance below position threshold, closing local position and setting strategy to idle")
+		_ = o.portfolio.DeletePosition(ctx, ex, sym)
+		sig.SetInPosition(false, 0, 0)
+		return
+	}
+
 	log.Info("placing market sell order", "qty", pos.Quantity)
 	order, err := o.exec.CreateOrder(
-		ctx, ex, sym, repository.OrderSideSell,
-		repository.OrderTypeMarket, pos.Quantity, 0,
+		ctx, ex, sym, repository.OrderSideSell, repository.OrderTypeMarket, balance.Total, 0,
 	)
 	if err != nil {
 		log.Error("market sell order failed", "err", err)
@@ -571,6 +573,7 @@ func (o *Orchestrator) signalWaitingSellFill(
 	ctx context.Context,
 	log *slog.Logger,
 	sig *signal_generator.SignalGenerator,
+	price float64,
 ) {
 	ex := sig.Exchange()
 	sym := sig.InstrumentSymbol()
@@ -610,10 +613,31 @@ func (o *Orchestrator) signalWaitingSellFill(
 	if err != nil {
 		return
 	}
-	if utils.IsZeroEps(balance.Total) {
-		log.Info("exchange balance is zero, closing local position and setting strategy to idle")
+	if portfolio.BelowPositionThreshold(balance.Total, price) {
+		log.Info("balance below position threshold, closing local position and setting strategy to idle")
 		_ = o.portfolio.DeletePosition(ctx, ex, sym)
 		sig.SetInPosition(false, 0, 0)
+		return
+	}
+
+	stopOrder, err := o.getStopLossOrder(ctx, log, ex, sym)
+	if err != nil {
+		return
+	}
+	if stopOrder.ID != 0 {
+		// If the stop loss order still didn't fully execute after orchestrator interval,
+		// we don't expect it anymore, we cancel it for placing a new market sell order.
+		log.Warn(
+			"stop loss order still open after orch interval, canceling for placing a market sell order",
+			"order_id", stopOrder.ExchangeOrderID.String,
+		)
+
+		if err := o.exec.CancelOrder(ctx, ex, sym, stopOrder.ExchangeOrderID.String); err != nil {
+			log.Error("failed to cancel stop loss order not fully executed", "err", err)
+			return
+		}
+
+		_ = sig.RetrySignal(strategy.SignalSell)
 		return
 	}
 

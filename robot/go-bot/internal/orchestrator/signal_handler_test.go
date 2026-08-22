@@ -571,7 +571,8 @@ func TestOrchestrator_SignalWaitingBuyFill(t *testing.T) {
 			expectedSignal: strategy.SignalBuy,
 		},
 		{
-			name: "Wait if balance exists but no local position",
+			name:  "Wait if balance exists but no local position",
+			price: 100.0,
 			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mOrders *MockOrdersRepo) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{}, nil).Once()
@@ -761,12 +762,14 @@ func TestOrchestrator_SignalSell(t *testing.T) {
 			expectedSignal: strategy.SignalSell,
 		},
 		{
-			name: "Delete position if balance zero",
+			name:  "Delete position if balance value is below threshold",
+			price: 10,
 			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mOrders *MockOrdersRepo, sig *signal_generator.SignalGenerator) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true, Quantity: 1.0}, nil).Once()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideSell}, 1).Return([]repository.OrderData{}, nil).Once()
-				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0}}, nil).Once()
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0.05}}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10, true).Return([]repository.OrderData{}, nil).Once()
 				mPf.On("DeletePosition", mock.Anything, "binance", "BTC/USDT").Return(nil).Once()
 			},
 			expectedSignal: strategy.SignalSearchingBuyEntry,
@@ -784,16 +787,16 @@ func TestOrchestrator_SignalSell(t *testing.T) {
 			expectedSignal: strategy.SignalWaitingSellFill,
 		},
 		{
-			name:  "Cancel stop loss and market sell on profit take",
+			name:  "Cancel stop loss and market sell using current balance",
 			price: 51000,
 			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mOrders *MockOrdersRepo, sig *signal_generator.SignalGenerator) {
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).Return([]repository.OrderData{}, nil).Once()
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true, Quantity: 1.0, EntryPrice: 50000}, nil).Once()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideSell}, 1).Return([]repository.OrderData{}, nil).Once()
-				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 1.0}}, nil).Once()
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 0.75}}, nil).Once()
 				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10, true).Return([]repository.OrderData{{ID: 1, Side: repository.OrderSideSell, OrderType: repository.OrderTypeStopMarket, ExchangeOrderID: sql.NullString{String: "sl-1", Valid: true}}}, nil).Once()
 				mExec.On("CancelOrder", mock.Anything, "binance", "BTC/USDT", "sl-1").Return(nil).Once()
-				mExec.On("CreateOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideSell, repository.OrderTypeMarket, 1.0, float64(0)).Return(repository.OrderData{Status: repository.OrderStatusClosed}, nil).Once()
+				mExec.On("CreateOrder", mock.Anything, "binance", "BTC/USDT", repository.OrderSideSell, repository.OrderTypeMarket, 0.75, float64(0)).Return(repository.OrderData{Status: repository.OrderStatusClosed}, nil).Once()
 				mPf.On("DeletePosition", mock.Anything, "binance", "BTC/USDT").Return(nil).Once()
 			},
 			expectedSignal: strategy.SignalSearchingBuyEntry,
@@ -903,8 +906,33 @@ func TestOrchestrator_SignalWaitingSellFill(t *testing.T) {
 				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true, Quantity: 1.0}, nil).Once()
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideSell}, 1).Return([]repository.OrderData{}, nil).Once()
 				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 1.0}}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10, true).Return([]repository.OrderData{}, nil).Once()
 			},
 			expectedSignal: strategy.SignalSell,
+		},
+		{
+			name: "Recovery - Cancel stale stop order",
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mOrders *MockOrdersRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).Return([]repository.OrderData{}, nil).Once()
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true, Quantity: 1.0}, nil).Once()
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideSell}, 1).Return([]repository.OrderData{}, nil).Once()
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 1.0}}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10, true).Return([]repository.OrderData{{ID: 1, Side: repository.OrderSideSell, OrderType: repository.OrderTypeStopMarket, ExchangeOrderID: sql.NullString{String: "sl-1", Valid: true}}}, nil).Once()
+				mExec.On("CancelOrder", mock.Anything, "binance", "BTC/USDT", "sl-1").Return(nil).Once()
+			},
+			expectedSignal: strategy.SignalSell,
+		},
+		{
+			name: "Recovery - Stale stop cancellation error",
+			setup: func(mPf *MockPortfolio, mExec *MockExecutionService, mOrders *MockOrdersRepo) {
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).Return([]repository.OrderData{}, nil).Once()
+				mPf.On("GetPosition", mock.Anything, "binance", "BTC/USDT").Return(repository.PositionData{Active: true, Quantity: 1.0}, nil).Once()
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew, repository.OrderStatusOpen}, []string{repository.OrderTypeMarket}, []string{repository.OrderSideSell}, 1).Return([]repository.OrderData{}, nil).Once()
+				mExec.On("GetBalance", mock.Anything, "binance", "BTC").Return([]repository.BalanceData{{Total: 1.0}}, nil).Once()
+				mExec.On("GetOpenOrders", mock.Anything, "binance", "BTC/USDT", 10, true).Return([]repository.OrderData{{ID: 1, Side: repository.OrderSideSell, OrderType: repository.OrderTypeStopMarket, ExchangeOrderID: sql.NullString{String: "sl-1", Valid: true}}}, nil).Once()
+				mExec.On("CancelOrder", mock.Anything, "binance", "BTC/USDT", "sl-1").Return(errors.New("rpc error")).Once()
+			},
+			expectedSignal: strategy.SignalWaitingSellFill,
 		},
 	}
 
@@ -914,7 +942,7 @@ func TestOrchestrator_SignalWaitingSellFill(t *testing.T) {
 			sig := initTestSignalGenerator(t, orch, strategy.SignalWaitingSellFill)
 			mOrders := repo.Orders.(*MockOrdersRepo)
 			tt.setup(mPf, mExec, mOrders)
-			orch.signalWaitingSellFill(context.Background(), orch.logger, sig)
+			orch.signalWaitingSellFill(context.Background(), orch.logger, sig, 100.0)
 
 			// Verification price must be consistent with history (SignalWaitingSellFill ends at 94.0)
 			s, _ := sig.GetSignal(99.4, time.Now().Unix())

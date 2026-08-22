@@ -336,6 +336,61 @@ func TestReconciler_Integration_SyncExecutedStopOrder(t *testing.T) {
 	assert.Equal(t, buyOrder.Filled, currentPos.Quantity)
 }
 
+// TestReconciler_Integration_CancelStaleStopOrder verifies that a stop order owned by an older order is canceled.
+func TestReconciler_Integration_CancelStaleStopOrder(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "BTC/USDT"
+
+	// Create a filled buy order, stop order, and active position.
+	firstBuy, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, firstBuy.Status)
+
+	stopOrder, err := execSvc.CreateStopOrder(ctx, exchange, symbol, repository.OrderSideSell, firstBuy.Filled, 1.0, 0)
+	require.NoError(t, err)
+
+	position := repository.PositionData{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		OrderID:          sql.NullInt64{Int64: firstBuy.ID, Valid: true},
+		Side:             repository.PositionSideLong,
+		Quantity:         firstBuy.Filled,
+		EntryPrice:       50000,
+		HighestPrice:     50000,
+		StopLossActive:   true,
+		Active:           true,
+	}
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, position))
+
+	// Create a newer buy order so the existing stop belongs to the previous position lifecycle.
+	secondBuy, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, secondBuy.Status)
+
+	// Set the wallet balance and reconcile stop orders.
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "BTC",
+		Free:         firstBuy.Filled + secondBuy.Filled,
+		Total:        firstBuy.Filled + secondBuy.Filled,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, recon.SyncStopOrders(ctx, exchange, symbol))
+
+	// Verify the stale stop was canceled and position protection was reset.
+	updatedStop, err := repo.Orders.GetOrder(ctx, db, exchange, stopOrder.ExchangeOrderID.String)
+	require.NoError(t, err)
+	assert.Equal(t, repository.OrderStatusCanceled, updatedStop.Status)
+	updatedPosition, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	require.NoError(t, err)
+	assert.False(t, updatedPosition.StopLossActive)
+}
+
 // TestReconciler_Integration_SyncMissingStopOrder verifies that when a stop order is missing on the exchange
 // but the position is active, SyncStopOrders should deactivate the stop loss and update the position quantity.
 func TestReconciler_Integration_SyncMissingStopOrder(t *testing.T) {
@@ -433,56 +488,147 @@ func TestReconciler_Integration_SyncExternalLiquidation(t *testing.T) {
 
 // TestReconciler_Integration_FixFeeDustDrift verifies a single active position is snapped to wallet truth.
 func TestReconciler_Integration_FixFeeDustDrift(t *testing.T) {
-	recon, _, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
 	exchange := "dummy"
 	symbol := "LTC/USDT"
 
-	quantity := 0.02
-	price := 80.0
-	// Create a single position slightly out of sync with wallet (fee/dust drift)
+	// Create a single position slightly out of sync with wallet (fee/dust drift).
+	ticker, err := execSvc.GetTicker(ctx, exchange, symbol)
+	require.NoError(t, err)
+	quantity := (10 * portfolio.PositionDeletionThreshold) / ticker.Price
 	pos := repository.PositionData{
 		ExchangeName:     exchange,
 		InstrumentSymbol: symbol,
 		Side:             repository.PositionSideLong,
 		Quantity:         quantity,
-		EntryPrice:       price,
-		HighestPrice:     price,
+		EntryPrice:       ticker.Price,
+		HighestPrice:     ticker.Price,
 		UnknownOrigin:    true,
 	}
 	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, pos))
 
 	// Verify the position was created matching the price and quantity
-	pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	pos, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
 	require.NoError(t, err)
 	assert.Equal(t, quantity, pos.Quantity)
-	assert.Equal(t, price, pos.EntryPrice)
-	assert.Equal(t, price, pos.HighestPrice)
+	assert.Equal(t, ticker.Price, pos.EntryPrice)
+	assert.Equal(t, ticker.Price, pos.HighestPrice)
 	assert.True(t, pos.UnknownOrigin)
 
+	// Set the wallet balance to simulate a small drift due to fees/dust
+	walletQuantity := quantity * 0.95
 	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
 		ExchangeName: exchange,
 		AssetSymbol:  "LTC",
-		Free:         0.01,
+		Free:         walletQuantity,
 		Used:         0,
-		Total:        0.01,
+		Total:        walletQuantity,
 	})
 	require.NoError(t, err)
 
 	// Reconcile positions which should correct small drifts
 	err = recon.SyncPositions(ctx, exchange, "")
+	require.NoError(t, err)
 
 	// Verify the position quantity is adjusted to the wallet truth
 	updated, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
 	require.NoError(t, err)
-	assert.Equal(t, 0.01, updated.Quantity)
+	assert.Equal(t, walletQuantity, updated.Quantity)
+}
+
+// TestReconciler_Integration_DeleteDustPosition verifies that a position below the retention value is removed.
+func TestReconciler_Integration_DeleteDustPosition(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "LTC/USDT"
+
+	// Create a known-origin position linked to a filled buy order.
+	ticker, err := execSvc.GetTicker(ctx, exchange, symbol)
+	require.NoError(t, err)
+	buyOrder, err := execSvc.CreateOrder(ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 0.001, 0)
+	require.NoError(t, err)
+	require.Equal(t, repository.OrderStatusClosed, buyOrder.Status)
+	position := repository.PositionData{
+		ExchangeName:     exchange,
+		InstrumentSymbol: symbol,
+		OrderID:          sql.NullInt64{Int64: buyOrder.ID, Valid: true},
+		Side:             repository.PositionSideLong,
+		Quantity:         buyOrder.Filled,
+		EntryPrice:       ticker.Price,
+		HighestPrice:     ticker.Price,
+		UnknownOrigin:    false,
+		Active:           true,
+	}
+	require.NoError(t, repo.Positions.UpsertPosition(ctx, db, position))
+
+	require.NoError(t, recon.SyncPositions(ctx, exchange, ""))
+	// Verify the over-retention position was not removed.
+	_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	require.NoError(t, err)
+
+	// Set the wallet value below the retention threshold.
+	walletQuantity := (portfolio.PositionDeletionThreshold / ticker.Price) * 0.5
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "LTC",
+		Free:         walletQuantity,
+		Total:        walletQuantity,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, recon.SyncPositions(ctx, exchange, ""))
+	// Verify the below-retention position was removed.
+	_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	assert.Error(t, err)
+}
+
+// TestReconciler_Integration_SkipGhostBelowActivation verifies that a ghost balance below activation is ignored.
+func TestReconciler_Integration_SkipGhostBelowActivation(t *testing.T) {
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	exchange := "dummy"
+	symbol := "LTC/USDT"
+
+	// Enable a strategy for the ghost balance's instrument.
+	err := repo.Strategies.UpsertEnabledStrategy(ctx, db, exchange, symbol, repository.StrategyMomentumProfit, "integration-test", repository.StrategyMomentum{
+		WindowSeconds:   5,
+		Windows:         []repository.MomentumWindow{{LookbackSeconds: 1, Threshold: 0.01 * 0.01}},
+		RequireAll:      true,
+		StopLossPct:     1 * 0.01,
+		ProfitTargetPct: sql.NullFloat64{Float64: 0.5 * 0.01, Valid: true},
+	})
+	require.NoError(t, err)
+
+	// Set a wallet balance below the activation threshold and reconcile positions.
+	ticker, err := execSvc.GetTicker(ctx, exchange, symbol)
+	require.NoError(t, err)
+	walletQuantity := (portfolio.PositionCreationThreshold - 0.01) / ticker.Price
+	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
+		ExchangeName: exchange,
+		AssetSymbol:  "LTC",
+		Free:         walletQuantity,
+		Total:        walletQuantity,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, recon.SyncPositions(ctx, exchange, ""))
+
+	// Verify the below-activation ghost balance was ignored.
+	_, err = repo.Positions.GetPosition(ctx, db, exchange, symbol)
+	assert.Error(t, err)
 }
 
 // TestReconciler_Integration_AdoptGhostBalance verifies a matched enabled strategy and wallet balance are adopted as a ghost position.
 func TestReconciler_Integration_AdoptGhostBalance(t *testing.T) {
-	recon, _, db, repo, cleanup := setupReconcilerIntegrationTest(t)
+	recon, execSvc, db, repo, cleanup := setupReconcilerIntegrationTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -499,12 +645,16 @@ func TestReconciler_Integration_AdoptGhostBalance(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// Set a wallet balance above the activation threshold and reconcile positions.
+	ticker, err := execSvc.GetTicker(ctx, exchange, symbol)
+	require.NoError(t, err)
+	walletQuantity := (portfolio.PositionCreationThreshold + 0.01) / ticker.Price
 	_, err = repo.Balances.UpsertBalance(ctx, db, repository.BalanceData{
 		ExchangeName: exchange,
 		AssetSymbol:  "LTC",
-		Free:         2.0,
+		Free:         walletQuantity,
 		Used:         0,
-		Total:        2.0,
+		Total:        walletQuantity,
 	})
 	require.NoError(t, err)
 
@@ -516,5 +666,5 @@ func TestReconciler_Integration_AdoptGhostBalance(t *testing.T) {
 	pos, err := repo.Positions.GetPosition(ctx, db, exchange, symbol)
 	require.NoError(t, err)
 	assert.True(t, pos.UnknownOrigin)
-	assert.Equal(t, 2.0, pos.Quantity)
+	assert.Equal(t, walletQuantity, pos.Quantity)
 }

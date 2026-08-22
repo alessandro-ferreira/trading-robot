@@ -394,7 +394,9 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         args, kwargs = mock_request.call_args
         payload = kwargs["json"]
         self.assertEqual(payload["stopPrice"], 100000.0)
-        self.assertEqual(payload["limitPrice"], 60000)
+        self.assertEqual(
+            payload["limitPrice"], 100000.0 * (1.0 - self.exchange.STOP_MARKET_SLIPPAGE)
+        )
         self.assertEqual(order["price"], 100000.0)
         self.assertEqual(order["clientOrderId"], "c_123")
 

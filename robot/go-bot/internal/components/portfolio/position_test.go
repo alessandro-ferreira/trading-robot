@@ -18,6 +18,44 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 )
 
+func TestAbovePositionThreshold(t *testing.T) {
+	tests := []struct {
+		name     string
+		quantity float64
+		price    float64
+		want     bool
+	}{
+		{name: "above activation", quantity: 1, price: PositionCreationThreshold + 1, want: true},
+		{name: "at activation", quantity: 1, price: PositionCreationThreshold, want: false},
+		{name: "below activation", quantity: 1, price: PositionCreationThreshold - 1, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, AbovePositionThreshold(tt.quantity, tt.price))
+		})
+	}
+}
+
+func TestBelowPositionThreshold(t *testing.T) {
+	tests := []struct {
+		name     string
+		quantity float64
+		price    float64
+		want     bool
+	}{
+		{name: "below deactivation", quantity: 1, price: PositionDeletionThreshold - 1, want: true},
+		{name: "at deactivation", quantity: 1, price: PositionDeletionThreshold, want: false},
+		{name: "above deactivation", quantity: 1, price: PositionDeletionThreshold + 1, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, BelowPositionThreshold(tt.quantity, tt.price))
+		})
+	}
+}
+
 func TestPortfolio_GetPosition(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	exchange := "binance"
