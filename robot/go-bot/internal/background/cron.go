@@ -26,7 +26,9 @@ func NewCronTask(name, spec string, runOnce bool, job func(context.Context) erro
 		spec:    spec,
 		job:     job,
 		runOnce: runOnce,
-		parser:  cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
+		parser: cron.NewParser(
+			cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+		),
 	}
 }
 
@@ -36,16 +38,19 @@ func (t *CronTask) Name() string {
 
 func (t *CronTask) Run(ctx context.Context) {
 	if t.runOnce {
-		if err := t.job(ctx); err != nil {
+		if err := runWithContextTimeout(ctx, t.job); err != nil {
 			slog.Error("Cron task failed (initial run)", "task", t.name, "error", err)
 		}
 	}
 
-	c := cron.New(cron.WithParser(t.parser))
+	c := cron.New(
+		cron.WithParser(t.parser),
+		cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)),
+	)
 
 	// Wrap the job to pass the context
 	_, err := c.AddFunc(t.spec, func() {
-		if err := t.job(ctx); err != nil {
+		if err := runWithContextTimeout(ctx, t.job); err != nil {
 			slog.Error("Cron task failed", "task", t.name, "error", err)
 		}
 	})

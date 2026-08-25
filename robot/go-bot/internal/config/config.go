@@ -42,12 +42,17 @@ type GRPCConfig struct {
 
 // DatabaseConfig holds the database connection parameters.
 type DatabaseConfig struct {
-	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
-	User     string `toml:"user"`
-	Password string `toml:"password"`
-	DBName   string `toml:"dbname"`
-	SSLMode  string `toml:"sslmode"`
+	Host                   string        `toml:"host"`
+	Port                   int           `toml:"port"`
+	User                   string        `toml:"user"`
+	Password               string        `toml:"password"`
+	DBName                 string        `toml:"dbname"`
+	SSLMode                string        `toml:"sslmode"`
+	MaxConns               int           `toml:"max_conns"`
+	ConnectTimeout         time.Duration `toml:"connect_timeout"`
+	StatementTimeout       time.Duration `toml:"statement_timeout"`
+	LockTimeout            time.Duration `toml:"lock_timeout"`
+	IdleInTxSessionTimeout time.Duration `toml:"idle_in_tx_session_timeout"`
 }
 
 // LogConfig holds the logging configuration.

@@ -19,6 +19,10 @@ import (
 	"trading/robot/go-bot/internal/utils"
 )
 
+// Orchestrator context timeout is a last-resort safeguard against unexpected hangs.
+// Normal operation should rely on the more specific timeouts of each underlying operation.
+const orchestratorContextTimeout = 5 * time.Minute
+
 // Orchestrator coordinates the trading loop across multiple markets.
 type Orchestrator struct {
 	logger    *slog.Logger
@@ -253,7 +257,13 @@ func (o *Orchestrator) runWorker(ctx context.Context, sig *signal_generator.Sign
 				return
 			}
 
-			o.processSignal(ctx, sig)
+			// Run the trading loop for this signal generator with a context timeout to prevent hangs.
+			cycleCtx, cancel := context.WithTimeout(ctx, orchestratorContextTimeout)
+			o.processSignal(cycleCtx, sig)
+			if err := cycleCtx.Err(); err != nil {
+				o.logger.Error("Worker loop cycle failed", "pair", sig.Name(), "error", err)
+			}
+			cancel()
 		}
 	}
 }

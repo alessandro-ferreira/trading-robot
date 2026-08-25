@@ -18,6 +18,11 @@ user = "testuser"
 password = "testpassword"
 dbname = "testdb"
 sslmode = "disable"
+max_conns = 20
+connect_timeout = "2s"
+statement_timeout = "5s"
+lock_timeout = "3s"
+idle_in_tx_session_timeout = "2m"
 
 [go_log]
 level = "info"

@@ -17,7 +17,9 @@ type PeriodicTask struct {
 // NewPeriodicTask creates a new periodic task.
 // If runOnce is true, the job will be executed immediately upon starting,
 // in addition to running on the schedule.
-func NewPeriodicTask(name string, interval time.Duration, runOnce bool, job func(context.Context) error) *PeriodicTask {
+func NewPeriodicTask(
+	name string, interval time.Duration, runOnce bool, job func(context.Context) error,
+) *PeriodicTask {
 	return &PeriodicTask{
 		name:     name,
 		interval: interval,
@@ -34,7 +36,7 @@ func (t *PeriodicTask) Name() string {
 // Run starts the ticker and executes the job periodically.
 func (t *PeriodicTask) Run(ctx context.Context) {
 	if t.runOnce {
-		if err := t.job(ctx); err != nil {
+		if err := runWithContextTimeout(ctx, t.job); err != nil {
 			slog.Error("Periodic task failed (initial run)", "task", t.name, "error", err)
 		}
 	}
@@ -47,7 +49,7 @@ func (t *PeriodicTask) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := t.job(ctx); err != nil {
+			if err := runWithContextTimeout(ctx, t.job); err != nil {
 				slog.Error("Periodic task failed", "task", t.name, "error", err)
 			}
 		}
