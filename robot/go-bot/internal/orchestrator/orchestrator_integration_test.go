@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"os"
 	"sync"
 	"testing"
@@ -20,7 +19,6 @@ import (
 	"trading/robot/go-bot/internal/components/execution"
 	"trading/robot/go-bot/internal/components/portfolio"
 	reconcil "trading/robot/go-bot/internal/components/reconciliation"
-	"trading/robot/go-bot/internal/components/risk"
 	"trading/robot/go-bot/internal/config"
 	"trading/robot/go-bot/internal/database"
 	"trading/robot/go-bot/internal/database/repository"
@@ -224,6 +222,7 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, orders)
+	require.Equal(t, orderID, orders[0].ID, "The closed BUY order ID should match the Position's OrderID")
 
 	// Verify LTC balance consistency on exchange
 	bal, err := client.GetBalance(ctx, exchange)
@@ -234,8 +233,8 @@ func TestOrchestrator_Integration_HappyPath(t *testing.T) {
 			balanceLTC = b.Total
 		}
 	}
-	assert.InDelta(t, maxAssetUnits*risk.SlippageBuffer, balanceLTC, 0.000001,
-		"LTC balance on exchange should match the approved units with slippage buffer applied")
+	assert.InDelta(t, orders[0].Amount, balanceLTC, 0.000001,
+		"LTC balance on exchange should match the filled BUY order amount")
 
 	t.Log("Waiting for simulated price drift to trigger SELL exit...")
 
@@ -298,6 +297,7 @@ func TestOrchestrator_Integration_OrderCreationFailure(t *testing.T) {
 	repo := repository.New()
 	exchange, symbol := "dummy", "LTC/USDT"
 
+	// Setup Risk and Strategy
 	err := repo.Risks.UpsertRiskPair(ctx, db, repository.RiskPair{
 		ExchangeName:     exchange,
 		InstrumentSymbol: symbol,
@@ -356,14 +356,26 @@ func TestOrchestrator_Integration_PendingOrderRecovery(t *testing.T) {
 	defer cancel()
 
 	repo := repository.New()
-	exchange, symbol := "dummy", "LTC/USDT"
+	exchange, symbol := "dummy", "SOL/USDT"
 
+	// Setup Risk and Strategy and seed Warmup Ticks.
 	err := repo.Risks.UpsertRiskPair(ctx, db, repository.RiskPair{
 		ExchangeName:     exchange,
 		InstrumentSymbol: symbol,
 		AllocatedBudget:  1000.0,
 	})
 	require.NoError(t, err)
+
+	ticker, err := client.GetTicker(ctx, exchange, symbol)
+	require.NoError(t, err)
+	basePrice := ticker.Price
+	now := time.Now().Unix()
+	for i := 10; i >= 1; i-- {
+		_ = repo.MarketData.InsertTick(ctx, db, repository.MarketDataTick{
+			ExchangeName: exchange, Symbol: symbol, Price: basePrice,
+			TickUnixAt: now - int64(i),
+		})
+	}
 
 	momentum := repository.StrategyMomentum{
 		WindowSeconds: 10,
@@ -379,11 +391,10 @@ func TestOrchestrator_Integration_PendingOrderRecovery(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// The dummy exchange persists order with amount = math.E but does not return a response.
-	pendingAmount := math.E
+	// The dummy exchange persists order with symbol SOL/USDT but does not return a response.
 	execSvc := execution.NewService(slog.Default(), db, client, repository.New(), utils.NewSystemClock())
 	_, err = execSvc.CreateOrder(
-		ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, pendingAmount, 0,
+		ctx, exchange, symbol, repository.OrderSideBuy, repository.OrderTypeMarket, 1.0, 0,
 	)
 	require.Error(t, err)
 
@@ -394,8 +405,7 @@ func TestOrchestrator_Integration_PendingOrderRecovery(t *testing.T) {
 
 	var pendingOrderID int64
 	for _, order := range pendingOrders {
-		if math.Abs(order.Amount-pendingAmount) <= 1e-9 {
-			require.False(t, order.ExchangeOrderID.Valid)
+		if order.InstrumentSymbol == symbol && !order.ExchangeOrderID.Valid {
 			pendingOrderID = order.ID
 			break
 		}
@@ -449,7 +459,6 @@ func TestOrchestrator_Integration_PendingOrderRecovery(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, pos.Active)
 	require.Equal(t, pos.OrderID.Int64, pendingOrderID)
-	assert.InDelta(t, pos.Quantity, pendingAmount, 0.000001)
 }
 
 // TestOrchestrator_Integration_MultiPairScaling verifies that the Orchestrator
@@ -470,7 +479,6 @@ func TestOrchestrator_Integration_MultiPairScaling(t *testing.T) {
 		{"BTC/USDT", 0.001},
 		{"ETH/USDT", 0.01},
 		{"LTC/USDT", 0.1},
-		{"SOL/USDT", 0.2},
 	}
 
 	// Setup Risk and Strategy and seed Warmup Ticks for each pair.

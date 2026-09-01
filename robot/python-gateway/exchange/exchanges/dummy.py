@@ -1,4 +1,3 @@
-import math
 import time
 
 from datetime import datetime, timezone
@@ -13,7 +12,7 @@ class DummyExchange(Exchange):
     """
 
     AGING_LIMIT = 5
-    CREATE_ORDER_ERROR_AMOUNT = math.e
+    CREATE_ORDER_ERROR_SYMBOL = "SOL/USDT"
 
     def __init__(self, cfg=None):
         super().__init__(cfg)
@@ -233,9 +232,7 @@ class DummyExchange(Exchange):
             self._execute_trade(order_id)
 
         # Simulate a scenario where the order is created but the response is not received by the client.
-        if math.isclose(
-            amount, self.CREATE_ORDER_ERROR_AMOUNT, rel_tol=0.0, abs_tol=1e-9
-        ):
+        if symbol == self.CREATE_ORDER_ERROR_SYMBOL:
             raise ExchangeError("Order created but response not delivered.")
 
         return order

@@ -196,6 +196,9 @@ func (s *service) CreateOrder(
 		return repository.OrderData{}, err
 	}
 
+	// Format the order amount based on the instrument's precision to avoid exchange rejections.
+	amount = s.formatOrderAmount(ctx, exchange, instrumentSymbol, amount)
+
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	log.Info("Creating order", "side", side, "type", orderType, "amount", amount, "price", price)
 
@@ -270,6 +273,9 @@ func (s *service) CreateStopOrder(
 	if limitPrice > 0 {
 		orderType = repository.OrderTypeStopLimit
 	}
+
+	// Format the order amount based on the instrument's precision to avoid exchange rejections.
+	amount = s.formatOrderAmount(ctx, exchange, instrumentSymbol, amount)
 
 	log.Info(
 		"Creating stop order", "side", side, "type", orderType, "amount", amount, "stop_price", stopPrice,
@@ -565,4 +571,36 @@ func (s *service) updateOrderResponse(
 
 	orderData.ID = id
 	return orderData, nil
+}
+
+// formatOrderAmount truncates the order amount to the instrument's amount precision.
+func (s *service) formatOrderAmount(
+	ctx context.Context, exchange, instrumentSymbol string, amount float64,
+) float64 {
+	if s.repo == nil || s.repo.Instruments == nil {
+		s.logger.Warn(
+			"Unable to format order amount: repository or InstrumentsRepo is nil",
+			"exchange", exchange, "symbol", instrumentSymbol,
+		)
+		return amount
+	}
+
+	instrument, err := s.repo.Instruments.GetInstrument(ctx, s.db, exchange, instrumentSymbol)
+	if err != nil {
+		s.logger.Warn(
+			"Unable to format order amount: failed to fetch instrument metadata",
+			"exchange", exchange, "symbol", instrumentSymbol, "error", err,
+		)
+		return amount
+	}
+	if instrument.AmountPrecision < 0 {
+		return amount
+	}
+
+	precisionFactor := math.Pow10(instrument.AmountPrecision)
+	if math.IsInf(precisionFactor, 0) || precisionFactor == 0 {
+		return amount
+	}
+
+	return math.Trunc(amount*precisionFactor) / precisionFactor
 }

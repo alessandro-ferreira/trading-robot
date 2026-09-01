@@ -310,6 +310,17 @@ type MockOrdersRepo struct {
 	mock.Mock
 }
 
+type MockInstrumentsRepo struct {
+	mock.Mock
+}
+
+func (m *MockInstrumentsRepo) GetInstrument(
+	ctx context.Context, db repository.DBExecutor, exchange, symbol string,
+) (repository.InstrumentData, error) {
+	args := m.Called(ctx, db, exchange, symbol)
+	return args.Get(0).(repository.InstrumentData), args.Error(1)
+}
+
 func (m *MockOrdersRepo) GetOrder(ctx context.Context, db repository.DBExecutor, exchangeName, exchangeOrderID string) (repository.OrderData, error) {
 	args := m.Called(ctx, db, exchangeName, exchangeOrderID)
 	return args.Get(0).(repository.OrderData), args.Error(1)
@@ -1107,6 +1118,83 @@ func TestService_GetOpenOrders(t *testing.T) {
 			}
 
 			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_CreateOrderFormatsAmountUsingInstrumentPrecision(t *testing.T) {
+	testCases := []struct {
+		name            string
+		inputAmount     float64
+		amountPrecision int
+		expectedAmount  float64
+	}{
+		{
+			name:            "Positive precision truncates amount",
+			inputAmount:     1.123456789,
+			amountPrecision: 8,
+			expectedAmount:  1.12345678,
+		},
+		{
+			name:            "Zero decimal places",
+			inputAmount:     1.6,
+			amountPrecision: 0,
+			expectedAmount:  1,
+		},
+		{
+			name:            "Negative precision preserves amount",
+			inputAmount:     1.23456,
+			amountPrecision: -1,
+			expectedAmount:  1.23456,
+		},
+		{
+			name:            "Precision factor overflow preserves amount",
+			inputAmount:     1.23456,
+			amountPrecision: 309,
+			expectedAmount:  1.23456,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			mockSrv := &mockExchangeServer{
+				createOrderResponse: &pb.OrderResponse{
+					Id:     "order-precision",
+					Symbol: "BTC/USDT",
+					Side:   repository.OrderSideBuy,
+					Type:   repository.OrderTypeMarket,
+					Status: repository.OrderStatusOpen,
+				},
+			}
+			client, cleanup := setupTest(t, mockSrv)
+			defer cleanup()
+
+			mockOrders := new(MockOrdersRepo)
+			var persistedOrder repository.OrderData
+			mockOrders.On("CreateOrder", mock.Anything, mock.Anything, mock.Anything).
+				Run(func(args mock.Arguments) {
+					persistedOrder = args.Get(2).(repository.OrderData)
+				}).Return(int64(1), nil).Once()
+			mockOrders.On("UpdateOrder", mock.Anything, mock.Anything, mock.Anything).
+				Return(int64(1), nil).Once()
+
+			mockInstruments := new(MockInstrumentsRepo)
+			mockInstruments.On("GetInstrument", mock.Anything, mock.Anything, "binance", "BTC/USDT").
+				Return(repository.InstrumentData{AmountPrecision: testCase.amountPrecision}, nil)
+
+			container := &repository.Container{Orders: mockOrders, Instruments: mockInstruments}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(logger, nil, client, container, utils.NewSystemClock())
+
+			_, err := svc.CreateOrder(
+				context.Background(), "binance", "BTC/USDT", repository.OrderSideBuy,
+				repository.OrderTypeMarket, testCase.inputAmount, 0,
+			)
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.expectedAmount, persistedOrder.Amount)
+			mockOrders.AssertExpectations(t)
+			mockInstruments.AssertExpectations(t)
 		})
 	}
 }

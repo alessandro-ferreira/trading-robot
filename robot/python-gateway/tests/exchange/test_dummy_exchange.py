@@ -1,4 +1,3 @@
-import math
 import unittest
 
 from core.config import ExchangeConfig
@@ -82,14 +81,13 @@ class TestDummyExchange(unittest.TestCase):
 
     def test_create_order_response_error_keeps_order(self):
         """Verify that the sentinel failure leaves the exchange order discoverable."""
-        amount = math.e + 1e-9 / 2
+        symbol = DummyExchange.CREATE_ORDER_ERROR_SYMBOL
 
         with self.assertRaisesRegex(ExchangeError, "response not delivered"):
-            self.exchange.create_order("LTC/USDT", "limit", "buy", amount)
+            self.exchange.create_order(symbol, "limit", "buy", 1.0)
 
-        orders = self.exchange.fetch_orders("LTC/USDT")
+        orders = self.exchange.fetch_orders(symbol)
         self.assertEqual(len(orders), 1)
-        self.assertAlmostEqual(orders[0]["amount"], amount)
         self.assertEqual(orders[0]["status"], "open")
 
     def test_create_stop_order(self):

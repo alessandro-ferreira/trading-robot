@@ -22,22 +22,24 @@ type DBExecutor interface {
 // Container holds all the repositories for the application.
 // This allows services to access any repository through a single dependency.
 type Container struct {
-	Balances   BalancesRepo
-	Orders     OrdersRepo
-	Positions  PositionsRepo
-	MarketData MarketDataRepo
-	Strategies StrategiesRepo
-	Risks      RisksRepo
+	Balances    BalancesRepo
+	Instruments InstrumentsRepo
+	Orders      OrdersRepo
+	Positions   PositionsRepo
+	MarketData  MarketDataRepo
+	Strategies  StrategiesRepo
+	Risks       RisksRepo
 }
 
 // New creates a new repository container.
 func New() *Container {
 	return &Container{
-		Balances:   NewBalancesRepo(),
-		Orders:     NewOrdersRepo(),
-		Positions:  NewPositionsRepo(),
-		MarketData: NewMarketDataRepo(),
-		Strategies: NewStrategiesRepo(),
-		Risks:      NewRisksRepo(),
+		Balances:    NewBalancesRepo(),
+		Instruments: NewInstrumentsRepo(),
+		Orders:      NewOrdersRepo(),
+		Positions:   NewPositionsRepo(),
+		MarketData:  NewMarketDataRepo(),
+		Strategies:  NewStrategiesRepo(),
+		Risks:       NewRisksRepo(),
 	}
 }
