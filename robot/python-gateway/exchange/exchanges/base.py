@@ -134,6 +134,7 @@ class Exchange(ABC):
         type: str,
         side: str,
         amount: float,
+        client_order_id: str,
         price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
@@ -142,6 +143,7 @@ class Exchange(ABC):
         :param type: The order type ('market' or 'limit').
         :param side: The order side ('buy' or 'sell').
         :param amount: The amount of base currency to trade.
+        :param client_order_id: The client order ID.
         :param price: The price per unit (required for limit orders).
         :return: A dictionary containing the order details.
         """
@@ -152,6 +154,7 @@ class Exchange(ABC):
         symbol: str,
         side: str,
         amount: float,
+        client_order_id: str,
         stop_price: float,
         limit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
@@ -160,6 +163,7 @@ class Exchange(ABC):
         :param symbol: The symbol to trade (e.g., 'BTC/USDT').
         :param side: The order side ('buy' or 'sell').
         :param amount: The amount of base currency to trade.
+        :param client_order_id: The client order ID.
         :param stop_price: The price that triggers the order.
         :param limit_price: The execution price (optional, makes it a stop-limit).
         """

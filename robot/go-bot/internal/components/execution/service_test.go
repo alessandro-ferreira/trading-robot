@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -371,6 +372,7 @@ func TestService_CreateOrder(t *testing.T) {
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
 				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
 					return !o.ExchangeOrderID.Valid &&
+						o.ClientOrderID != "" && strings.HasPrefix(o.ClientOrderID, ClientOrderIDPrefix) &&
 						o.InstrumentSymbol == "BTC/USDT" &&
 						o.Status == repository.OrderStatusNew &&
 						o.Amount == 1.5 &&
@@ -530,7 +532,8 @@ func TestService_CreateStopOrder(t *testing.T) {
 			},
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
 				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
-					return o.ExchangeOrderID.Valid && o.ExchangeOrderID.String == "stop-123" &&
+					return o.ClientOrderID != "" && strings.HasPrefix(o.ClientOrderID, ClientOrderIDPrefix) &&
+						o.ExchangeOrderID.Valid && o.ExchangeOrderID.String == "stop-123" &&
 						o.OrderType == repository.OrderTypeStopMarket &&
 						o.Price.Float64 == 50000.0 &&
 						!o.Fee.Valid
@@ -551,7 +554,8 @@ func TestService_CreateStopOrder(t *testing.T) {
 			},
 			setupRepoMock: func(mockRepo *MockOrdersRepo) {
 				mockRepo.On("CreateOrder", mock.Anything, mock.Anything, mock.MatchedBy(func(o repository.OrderData) bool {
-					return o.ExchangeOrderID.Valid && o.ExchangeOrderID.String == "stop-limit-123" &&
+					return o.ClientOrderID != "" && strings.HasPrefix(o.ClientOrderID, ClientOrderIDPrefix) &&
+						o.ExchangeOrderID.Valid && o.ExchangeOrderID.String == "stop-limit-123" &&
 						o.OrderType == repository.OrderTypeStopLimit &&
 						o.Price.Float64 == 50000.0
 				})).Return(int64(2), nil)
@@ -1122,7 +1126,7 @@ func TestService_GetOpenOrders(t *testing.T) {
 	}
 }
 
-func TestService_CreateOrderFormatsAmountUsingInstrumentPrecision(t *testing.T) {
+func TestService_CreateOrderFormatsAmount(t *testing.T) {
 	testCases := []struct {
 		name            string
 		inputAmount     float64

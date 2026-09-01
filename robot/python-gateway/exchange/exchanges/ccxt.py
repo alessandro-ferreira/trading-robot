@@ -65,18 +65,22 @@ class CCXTExchange(Exchange):
         type: str,
         side: str,
         amount: float,
+        client_order_id: str,
         price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Creates a new order via CCXT."""
         if not self._ccxt:
             raise ExchangeError("Underlying exchange not available")
-        return self._ccxt.create_order(symbol, type, side, amount, price)
+
+        params = {"clientOrderId": client_order_id}
+        return self._ccxt.create_order(symbol, type, side, amount, price, params)
 
     def create_stop_order(
         self,
         symbol: str,
         side: str,
         amount: float,
+        client_order_id: str,
         stop_price: float,
         limit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
@@ -88,6 +92,7 @@ class CCXTExchange(Exchange):
         # We provide both 'triggerPrice' and 'stopPrice' to maximize compatibility
         # across older and newer exchange implementations.
         params = {"triggerPrice": stop_price, "stopPrice": stop_price}
+        params["clientOrderId"] = client_order_id
 
         # CCXT requires base types for the request; the trigger intent is handled via params.
         request_type = OrderType.LIMIT if limit_price is not None else OrderType.MARKET

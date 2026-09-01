@@ -90,6 +90,7 @@ message CreateOrderRequest {
   string type = 4; // "limit" or "market"
   double amount = 5;
   optional double price = 6;
+  string client_order_id = 7;
 }
 
 // CreateStopOrderRequest is the message sent to the CreateStopOrder RPC.
@@ -100,6 +101,7 @@ message CreateStopOrderRequest {
   double amount = 4;
   double stop_price = 5;
   optional double limit_price = 6; // If provided, creates a STOP_LIMIT; otherwise STOP_MARKET
+  string client_order_id = 7;
 }
 
 // OrderResponse is the message returned from order-related RPCs.

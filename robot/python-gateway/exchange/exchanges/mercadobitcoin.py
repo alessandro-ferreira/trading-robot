@@ -279,8 +279,8 @@ class MercadoBitcoinExchange(Exchange):
 
         return {
             "id": response.get("id"),
-            "clientOrderId": response.get("clientOrderId")
-            or response.get("externalId"),
+            "clientOrderId": response.get("externalId")
+            or response.get("clientOrderId"),
             "symbol": symbol,
             "type": self._map_type(response.get("type")),
             "side": response.get("side"),
@@ -358,6 +358,7 @@ class MercadoBitcoinExchange(Exchange):
         type: str,
         side: str,
         amount: float,
+        client_order_id: str,
         price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
@@ -367,6 +368,7 @@ class MercadoBitcoinExchange(Exchange):
         :param type: 'market' or 'limit'.
         :param side: 'buy' or 'sell'.
         :param amount: Amount of base currency.
+        :param client_order_id: The client order ID.
         :param price: Price per unit (required for limit orders).
         :return: A dictionary containing the order details.
         """
@@ -386,6 +388,7 @@ class MercadoBitcoinExchange(Exchange):
             "qty": qty_str,
             "side": side,
             "type": type,
+            "externalId": client_order_id,
         }
 
         if type == OrderType.LIMIT:
@@ -419,6 +422,7 @@ class MercadoBitcoinExchange(Exchange):
         symbol: str,
         side: str,
         amount: float,
+        client_order_id: str,
         stop_price: float,
         limit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
@@ -466,6 +470,7 @@ class MercadoBitcoinExchange(Exchange):
             "type": mb_type,
             "stopPrice": float(f"{stop_price:.2f}"),
             "limitPrice": float(f"{effective_limit:.2f}"),
+            "externalId": client_order_id,
         }
 
         logging.info(f"Creating stop order with payload: {payload}")

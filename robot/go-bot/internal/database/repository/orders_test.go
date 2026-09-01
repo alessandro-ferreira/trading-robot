@@ -32,7 +32,7 @@ func getSampleOrder() OrderData {
 		ExchangeName:      "dummy",
 		InstrumentSymbol:  "BTC/USDT",
 		ExchangeOrderID:   sql.NullString{String: fmt.Sprintf("order-%d", r.Intn(10000)), Valid: true},
-		ClientOrderID:     sql.NullString{String: fmt.Sprintf("client-%d", r.Intn(10000)), Valid: true},
+		ClientOrderID:     fmt.Sprintf("client-%d", r.Intn(10000)),
 		Side:              OrderSideBuy,
 		OrderType:         OrderTypeMarket,
 		Price:             sql.NullFloat64{Float64: r.Float64() * 50000, Valid: true},
@@ -85,7 +85,6 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			name: "Success_WithNulls",
 			setupMock: func(mockDB pgxmock.PgxPoolIface) {
 				oNull := getSampleOrder()
-				oNull.ClientOrderID = sql.NullString{Valid: false}
 				oNull.Price = sql.NullFloat64{Valid: false}
 				oNull.AveragePrice = sql.NullFloat64{Valid: false}
 				oNull.ErrorMessage = sql.NullString{Valid: false}
@@ -98,7 +97,6 @@ func TestPgOrdersRepo_GetOrder(t *testing.T) {
 			},
 			assertResult: func(t *testing.T, result OrderData, err error) {
 				require.NoError(t, err)
-				assert.False(t, result.ClientOrderID.Valid)
 				assert.False(t, result.Price.Valid)
 				assert.False(t, result.ExchangeTimestamp.Valid)
 			},
@@ -336,7 +334,6 @@ func TestPgOrdersRepo_CreateOrder(t *testing.T) {
 		{
 			name: "Success_AllNulls",
 			orderModifier: func(o OrderData) OrderData {
-				o.ClientOrderID = sql.NullString{}
 				o.Price = sql.NullFloat64{}
 				o.AveragePrice = sql.NullFloat64{}
 				o.ErrorMessage = sql.NullString{}
@@ -429,7 +426,7 @@ func TestPgOrdersRepo_UpdateOrder(t *testing.T) {
 	b := getSampleOrder()
 	updateArgs := []any{
 		b.Filled, b.Remaining, b.AveragePrice, b.Fee, b.FeeAssetSymbol, b.Cost, b.Status,
-		b.ErrorMessage, b.ExchangeTimestamp, b.ExchangeOrderID, b.ClientOrderID, DefaultUser, b.ID, b.ExchangeName,
+		b.ErrorMessage, b.ExchangeTimestamp, b.ExchangeOrderID, DefaultUser, b.ID, b.ExchangeName,
 	}
 
 	testCases := []struct {

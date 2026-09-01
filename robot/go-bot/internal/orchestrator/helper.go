@@ -82,11 +82,15 @@ func (o *Orchestrator) checkPendingOrder(
 			return fmt.Errorf("failed to fetch orders from exchange: %w", err)
 		}
 
-		for _, order := range exchangeOrders {
-			if dbOrder.Side == order.Side &&
-				utils.IsEqualEps(dbOrder.Amount, order.Amount) {
+		for _, exchOrder := range exchangeOrders {
+			matchClientId := dbOrder.ClientOrderID != "" &&
+				dbOrder.ClientOrderID == exchOrder.ClientOrderID
+			matchFallback := exchOrder.ClientOrderID == "" && dbOrder.Side == exchOrder.Side &&
+				utils.IsEqualEps(dbOrder.Amount, exchOrder.Amount)
+
+			if matchClientId || matchFallback {
 				// If the order matches the pending order, attempt to link it to the exchange order.
-				dbOrder.ExchangeOrderID = order.ExchangeOrderID
+				dbOrder.ExchangeOrderID = exchOrder.ExchangeOrderID
 				_, err = o.repo.Orders.UpdateOrder(ctx, o.db, dbOrder)
 				if err != nil {
 					// If the exchange order ID is already associated with another active order,

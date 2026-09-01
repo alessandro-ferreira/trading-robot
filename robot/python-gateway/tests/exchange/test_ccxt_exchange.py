@@ -110,9 +110,11 @@ class TestCCXTExchange(unittest.TestCase):
     def test_create_order_limit(self):
         """Tests creating a limit order with all parameters."""
         self.mock_ccxt.create_order.return_value = {"id": "123"}
-        order = self.exchange.create_order("BTC/USDT", "limit", "buy", 0.1, 50000.0)
+        order = self.exchange.create_order(
+            "BTC/USDT", "limit", "buy", 0.1, "client-123", 50000.0
+        )
         self.mock_ccxt.create_order.assert_called_with(
-            "BTC/USDT", "limit", "buy", 0.1, 50000.0
+            "BTC/USDT", "limit", "buy", 0.1, 50000.0, {"clientOrderId": "client-123"}
         )
         self.assertEqual(order["id"], "123")
 
@@ -120,13 +122,15 @@ class TestCCXTExchange(unittest.TestCase):
         """Tests create_order raises Underlying ccxt exchange not available."""
         with self.assertRaises(ExchangeError):
             self.non_ccxt_exchange.create_order(
-                "BTC/USDT", "limit", "buy", 0.1, 50000.0
+                "BTC/USDT", "limit", "buy", 0.1, "client-123", 50000.0
             )
 
     def test_create_stop_order_market(self):
         """Tests creating a stop market order via CCXT."""
         self.mock_ccxt.create_order.return_value = {"id": "stop-123"}
-        order = self.exchange.create_stop_order("BTC/USDT", "sell", 0.1, 40000.0)
+        order = self.exchange.create_stop_order(
+            "BTC/USDT", "sell", 0.1, "client-123", 40000.0
+        )
 
         self.mock_ccxt.create_order.assert_called_with(
             "BTC/USDT",
@@ -134,7 +138,11 @@ class TestCCXTExchange(unittest.TestCase):
             "sell",
             0.1,
             None,
-            {"triggerPrice": 40000.0, "stopPrice": 40000.0},
+            {
+                "triggerPrice": 40000.0,
+                "stopPrice": 40000.0,
+                "clientOrderId": "client-123",
+            },
         )
         self.assertEqual(order["id"], "stop-123")
 
@@ -142,7 +150,7 @@ class TestCCXTExchange(unittest.TestCase):
         """Tests creating a stop limit order via CCXT."""
         self.mock_ccxt.create_order.return_value = {"id": "stop-limit-123"}
         order = self.exchange.create_stop_order(
-            "BTC/USDT", "sell", 0.1, 40000.0, 39500.0
+            "BTC/USDT", "sell", 0.1, "client-123", 40000.0, 39500.0
         )
 
         self.mock_ccxt.create_order.assert_called_with(
@@ -151,14 +159,20 @@ class TestCCXTExchange(unittest.TestCase):
             "sell",
             0.1,
             39500.0,
-            {"triggerPrice": 40000.0, "stopPrice": 40000.0},
+            {
+                "triggerPrice": 40000.0,
+                "stopPrice": 40000.0,
+                "clientOrderId": "client-123",
+            },
         )
         self.assertEqual(order["id"], "stop-limit-123")
 
     def test_create_stop_order_not_available(self):
         """Tests create_stop_order raises Underlying ccxt exchange not available."""
         with self.assertRaises(ExchangeError):
-            self.non_ccxt_exchange.create_stop_order("BTC/USDT", "sell", 0.1, 40000.0)
+            self.non_ccxt_exchange.create_stop_order(
+                "BTC/USDT", "sell", 0.1, "client-123", 40000.0
+            )
 
     def test_cancel_order(self):
         """Tests canceling an order via CCXT."""

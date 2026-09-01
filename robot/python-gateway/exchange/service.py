@@ -119,6 +119,10 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Type is required")
         if not request.amount or request.amount <= 0:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Amount must be positive")
+        if not request.client_order_id or request.client_order_id.strip() == "":
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Client order ID is required"
+            )
 
         exchange = utils.get_exchange(self.factory, request, context)
         order = None
@@ -128,6 +132,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 type=request.type,
                 side=request.side,
                 amount=request.amount,
+                client_order_id=request.client_order_id,
                 price=request.price if request.HasField("price") else None,
             )
         except Exception as e:
@@ -161,6 +166,10 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT, "Stop price must be positive"
             )
+        if not request.client_order_id or request.client_order_id.strip() == "":
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Client order ID is required"
+            )
 
         exchange = utils.get_exchange(self.factory, request, context)
         order = None
@@ -169,6 +178,7 @@ class ExchangeService(exchange_pb2_grpc.ExchangeServiceServicer):
                 symbol=request.symbol,
                 side=request.side,
                 amount=request.amount,
+                client_order_id=request.client_order_id,
                 stop_price=request.stop_price,
                 limit_price=request.limit_price
                 if request.HasField("limit_price")

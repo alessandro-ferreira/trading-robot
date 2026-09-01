@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11v1/exchange.proto\x12\x02v1\"\r\n\x0bPingRequest\"\x1f\n\x0cPingResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\"4\n\x10GetTickerRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\"/\n\x0eTickerResponse\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05price\x18\x02 \x01(\x01\"%\n\x11GetBalanceRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\"I\n\rBalanceObject\x12\r\n\x05\x61sset\x18\x01 \x01(\t\x12\x0c\n\x04\x66ree\x18\x02 \x01(\x01\x12\x0c\n\x04used\x18\x03 \x01(\x01\x12\r\n\x05total\x18\x04 \x01(\x01\"6\n\x0f\x42\x61lanceResponse\x12#\n\x08\x62\x61lances\x18\x01 \x03(\x0b\x32\x11.v1.BalanceObject\"\x80\x01\n\x12\x43reateOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0e\n\x06\x61mount\x18\x05 \x01(\x01\x12\x12\n\x05price\x18\x06 \x01(\x01H\x00\x88\x01\x01\x42\x08\n\x06_price\"\x96\x01\n\x16\x43reateStopOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0e\n\x06\x61mount\x18\x04 \x01(\x01\x12\x12\n\nstop_price\x18\x05 \x01(\x01\x12\x18\n\x0blimit_price\x18\x06 \x01(\x01H\x00\x88\x01\x01\x42\x0e\n\x0c_limit_price\"\x87\x02\n\rOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0e\n\x06\x61mount\x18\x05 \x01(\x01\x12\r\n\x05price\x18\x06 \x01(\x01\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x0e\n\x06\x66illed\x18\x08 \x01(\x01\x12\x11\n\tremaining\x18\t \x01(\x01\x12\x0c\n\x04\x63ost\x18\n \x01(\x01\x12\x0f\n\x07\x61verage\x18\x0b \x01(\x01\x12\x17\n\x0f\x63lient_order_id\x18\x0c \x01(\t\x12\x11\n\ttimestamp\x18\r \x01(\x03\x12\x0b\n\x03\x66\x65\x65\x18\x0e \x01(\x01\x12\x14\n\x0c\x66\x65\x65_currency\x18\x0f \x01(\t\"B\n\x12\x43\x61ncelOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\"1\n\x13\x43\x61ncelOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"?\n\x0fGetOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\"R\n\x10GetOrdersRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x12\n\x05limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x42\x08\n\x06_limit\"3\n\x0eOrdersResponse\x12!\n\x06orders\x18\x01 \x03(\x0b\x32\x11.v1.OrderResponse\"V\n\x14GetOpenOrdersRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x12\n\x05limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x42\x08\n\x06_limit\"7\n\x12OpenOrdersResponse\x12!\n\x06orders\x18\x01 \x03(\x0b\x32\x11.v1.OrderResponse\"\x13\n\x11ResetStateRequest\"$\n\x12ResetStateResponse\x12\x0e\n\x06status\x18\x01 \x01(\t2\xe8\x04\n\x0f\x45xchangeService\x12+\n\x04Ping\x12\x0f.v1.PingRequest\x1a\x10.v1.PingResponse\"\x00\x12\x37\n\tGetTicker\x12\x14.v1.GetTickerRequest\x1a\x12.v1.TickerResponse\"\x00\x12:\n\nGetBalance\x12\x15.v1.GetBalanceRequest\x1a\x13.v1.BalanceResponse\"\x00\x12:\n\x0b\x43reateOrder\x12\x16.v1.CreateOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12\x42\n\x0f\x43reateStopOrder\x12\x1a.v1.CreateStopOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12@\n\x0b\x43\x61ncelOrder\x12\x16.v1.CancelOrderRequest\x1a\x17.v1.CancelOrderResponse\"\x00\x12\x34\n\x08GetOrder\x12\x13.v1.GetOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12\x37\n\tGetOrders\x12\x14.v1.GetOrdersRequest\x1a\x12.v1.OrdersResponse\"\x00\x12\x43\n\rGetOpenOrders\x12\x18.v1.GetOpenOrdersRequest\x1a\x16.v1.OpenOrdersResponse\"\x00\x12=\n\nResetState\x12\x15.v1.ResetStateRequest\x1a\x16.v1.ResetStateResponse\"\x00\x42\x15Z\x13go-bot/gen/go/v1;v1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11v1/exchange.proto\x12\x02v1\"\r\n\x0bPingRequest\"\x1f\n\x0cPingResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\"4\n\x10GetTickerRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\"/\n\x0eTickerResponse\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05price\x18\x02 \x01(\x01\"%\n\x11GetBalanceRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\"I\n\rBalanceObject\x12\r\n\x05\x61sset\x18\x01 \x01(\t\x12\x0c\n\x04\x66ree\x18\x02 \x01(\x01\x12\x0c\n\x04used\x18\x03 \x01(\x01\x12\r\n\x05total\x18\x04 \x01(\x01\"6\n\x0f\x42\x61lanceResponse\x12#\n\x08\x62\x61lances\x18\x01 \x03(\x0b\x32\x11.v1.BalanceObject\"\x99\x01\n\x12\x43reateOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0e\n\x06\x61mount\x18\x05 \x01(\x01\x12\x12\n\x05price\x18\x06 \x01(\x01H\x00\x88\x01\x01\x12\x17\n\x0f\x63lient_order_id\x18\x07 \x01(\tB\x08\n\x06_price\"\xaf\x01\n\x16\x43reateStopOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0e\n\x06\x61mount\x18\x04 \x01(\x01\x12\x12\n\nstop_price\x18\x05 \x01(\x01\x12\x18\n\x0blimit_price\x18\x06 \x01(\x01H\x00\x88\x01\x01\x12\x17\n\x0f\x63lient_order_id\x18\x07 \x01(\tB\x0e\n\x0c_limit_price\"\x87\x02\n\rOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x0c\n\x04type\x18\x04 \x01(\t\x12\x0e\n\x06\x61mount\x18\x05 \x01(\x01\x12\r\n\x05price\x18\x06 \x01(\x01\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x0e\n\x06\x66illed\x18\x08 \x01(\x01\x12\x11\n\tremaining\x18\t \x01(\x01\x12\x0c\n\x04\x63ost\x18\n \x01(\x01\x12\x0f\n\x07\x61verage\x18\x0b \x01(\x01\x12\x17\n\x0f\x63lient_order_id\x18\x0c \x01(\t\x12\x11\n\ttimestamp\x18\r \x01(\x03\x12\x0b\n\x03\x66\x65\x65\x18\x0e \x01(\x01\x12\x14\n\x0c\x66\x65\x65_currency\x18\x0f \x01(\t\"B\n\x12\x43\x61ncelOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\"1\n\x13\x43\x61ncelOrderResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"?\n\x0fGetOrderRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\t\x12\x0e\n\x06symbol\x18\x03 \x01(\t\"R\n\x10GetOrdersRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x12\n\x05limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x42\x08\n\x06_limit\"3\n\x0eOrdersResponse\x12!\n\x06orders\x18\x01 \x03(\x0b\x32\x11.v1.OrderResponse\"V\n\x14GetOpenOrdersRequest\x12\x10\n\x08\x65xchange\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x12\n\x05limit\x18\x03 \x01(\x05H\x00\x88\x01\x01\x42\x08\n\x06_limit\"7\n\x12OpenOrdersResponse\x12!\n\x06orders\x18\x01 \x03(\x0b\x32\x11.v1.OrderResponse\"\x13\n\x11ResetStateRequest\"$\n\x12ResetStateResponse\x12\x0e\n\x06status\x18\x01 \x01(\t2\xe8\x04\n\x0f\x45xchangeService\x12+\n\x04Ping\x12\x0f.v1.PingRequest\x1a\x10.v1.PingResponse\"\x00\x12\x37\n\tGetTicker\x12\x14.v1.GetTickerRequest\x1a\x12.v1.TickerResponse\"\x00\x12:\n\nGetBalance\x12\x15.v1.GetBalanceRequest\x1a\x13.v1.BalanceResponse\"\x00\x12:\n\x0b\x43reateOrder\x12\x16.v1.CreateOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12\x42\n\x0f\x43reateStopOrder\x12\x1a.v1.CreateStopOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12@\n\x0b\x43\x61ncelOrder\x12\x16.v1.CancelOrderRequest\x1a\x17.v1.CancelOrderResponse\"\x00\x12\x34\n\x08GetOrder\x12\x13.v1.GetOrderRequest\x1a\x11.v1.OrderResponse\"\x00\x12\x37\n\tGetOrders\x12\x14.v1.GetOrdersRequest\x1a\x12.v1.OrdersResponse\"\x00\x12\x43\n\rGetOpenOrders\x12\x18.v1.GetOpenOrdersRequest\x1a\x16.v1.OpenOrdersResponse\"\x00\x12=\n\nResetState\x12\x15.v1.ResetStateRequest\x1a\x16.v1.ResetStateResponse\"\x00\x42\x15Z\x13go-bot/gen/go/v1;v1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -47,29 +47,29 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_BALANCERESPONSE']._serialized_start=290
   _globals['_BALANCERESPONSE']._serialized_end=344
   _globals['_CREATEORDERREQUEST']._serialized_start=347
-  _globals['_CREATEORDERREQUEST']._serialized_end=475
-  _globals['_CREATESTOPORDERREQUEST']._serialized_start=478
-  _globals['_CREATESTOPORDERREQUEST']._serialized_end=628
-  _globals['_ORDERRESPONSE']._serialized_start=631
-  _globals['_ORDERRESPONSE']._serialized_end=894
-  _globals['_CANCELORDERREQUEST']._serialized_start=896
-  _globals['_CANCELORDERREQUEST']._serialized_end=962
-  _globals['_CANCELORDERRESPONSE']._serialized_start=964
-  _globals['_CANCELORDERRESPONSE']._serialized_end=1013
-  _globals['_GETORDERREQUEST']._serialized_start=1015
-  _globals['_GETORDERREQUEST']._serialized_end=1078
-  _globals['_GETORDERSREQUEST']._serialized_start=1080
-  _globals['_GETORDERSREQUEST']._serialized_end=1162
-  _globals['_ORDERSRESPONSE']._serialized_start=1164
-  _globals['_ORDERSRESPONSE']._serialized_end=1215
-  _globals['_GETOPENORDERSREQUEST']._serialized_start=1217
-  _globals['_GETOPENORDERSREQUEST']._serialized_end=1303
-  _globals['_OPENORDERSRESPONSE']._serialized_start=1305
-  _globals['_OPENORDERSRESPONSE']._serialized_end=1360
-  _globals['_RESETSTATEREQUEST']._serialized_start=1362
-  _globals['_RESETSTATEREQUEST']._serialized_end=1381
-  _globals['_RESETSTATERESPONSE']._serialized_start=1383
-  _globals['_RESETSTATERESPONSE']._serialized_end=1419
-  _globals['_EXCHANGESERVICE']._serialized_start=1422
-  _globals['_EXCHANGESERVICE']._serialized_end=2038
+  _globals['_CREATEORDERREQUEST']._serialized_end=500
+  _globals['_CREATESTOPORDERREQUEST']._serialized_start=503
+  _globals['_CREATESTOPORDERREQUEST']._serialized_end=678
+  _globals['_ORDERRESPONSE']._serialized_start=681
+  _globals['_ORDERRESPONSE']._serialized_end=944
+  _globals['_CANCELORDERREQUEST']._serialized_start=946
+  _globals['_CANCELORDERREQUEST']._serialized_end=1012
+  _globals['_CANCELORDERRESPONSE']._serialized_start=1014
+  _globals['_CANCELORDERRESPONSE']._serialized_end=1063
+  _globals['_GETORDERREQUEST']._serialized_start=1065
+  _globals['_GETORDERREQUEST']._serialized_end=1128
+  _globals['_GETORDERSREQUEST']._serialized_start=1130
+  _globals['_GETORDERSREQUEST']._serialized_end=1212
+  _globals['_ORDERSRESPONSE']._serialized_start=1214
+  _globals['_ORDERSRESPONSE']._serialized_end=1265
+  _globals['_GETOPENORDERSREQUEST']._serialized_start=1267
+  _globals['_GETOPENORDERSREQUEST']._serialized_end=1353
+  _globals['_OPENORDERSRESPONSE']._serialized_start=1355
+  _globals['_OPENORDERSRESPONSE']._serialized_end=1410
+  _globals['_RESETSTATEREQUEST']._serialized_start=1412
+  _globals['_RESETSTATEREQUEST']._serialized_end=1431
+  _globals['_RESETSTATERESPONSE']._serialized_start=1433
+  _globals['_RESETSTATERESPONSE']._serialized_end=1469
+  _globals['_EXCHANGESERVICE']._serialized_start=1472
+  _globals['_EXCHANGESERVICE']._serialized_end=2088
 # @@protoc_insertion_point(module_scope)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	pb "trading/robot/go-bot/gen/go/v1"
@@ -14,8 +15,11 @@ import (
 	"trading/robot/go-bot/internal/database/repository"
 	"trading/robot/go-bot/internal/utils"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+const ClientOrderIDPrefix = "rb"
 
 // Service defines the interface for trade execution and order management.
 type Service interface {
@@ -89,8 +93,8 @@ func (s *service) GetTicker(
 	if err := s.guard.Allow(guardGetTicker, exchange, instrumentSymbol); err != nil {
 		return repository.MarketDataTick{}, err
 	}
-
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
 	log.Debug("Fetching ticker from exchange")
 
 	// Fetch from Exchange via gRPC
@@ -124,11 +128,11 @@ func (s *service) GetBalance(
 	if err := s.guard.Allow(guardGetBalance, exchange, assetSymbol); err != nil {
 		return nil, err
 	}
-
 	log := s.logger.With("exchange", exchange)
 	if assetSymbol != "" {
 		log = log.With("symbol", assetSymbol)
 	}
+
 	log.Info("Fetching balances from exchange")
 
 	// Fetch from Exchange via gRPC.
@@ -195,18 +199,25 @@ func (s *service) CreateOrder(
 	if err := s.guard.Allow(guardCreateOrder, exchange, instrumentSymbol); err != nil {
 		return repository.OrderData{}, err
 	}
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
 	// Format the order amount based on the instrument's precision to avoid exchange rejections.
 	amount = s.formatOrderAmount(ctx, exchange, instrumentSymbol, amount)
 
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
-	log.Info("Creating order", "side", side, "type", orderType, "amount", amount, "price", price)
+	// Generate a unique client order ID for this order.
+	clientOrderID := s.generateClientOrderID(ClientOrderIDPrefix)
+
+	log.Info(
+		"Creating order", "side", side, "type", orderType, "amount", amount,
+		"price", price, "client_order_id", clientOrderID,
+	)
 
 	// Persist to database first with status='new' and no exchange_order_id.
 	// If the exchange call fails, the orphaned order will be reconciled later.
 	orderData := repository.OrderData{
 		ExchangeName:     exchange,
 		InstrumentSymbol: instrumentSymbol,
+		ClientOrderID:    clientOrderID,
 		Side:             side,
 		OrderType:        orderType,
 		Amount:           amount,
@@ -224,11 +235,12 @@ func (s *service) CreateOrder(
 
 	// Send to exchange
 	req := &pb.CreateOrderRequest{
-		Exchange: exchange,
-		Symbol:   instrumentSymbol,
-		Side:     side,
-		Type:     orderType,
-		Amount:   amount,
+		Exchange:      exchange,
+		Symbol:        instrumentSymbol,
+		Side:          side,
+		Type:          orderType,
+		Amount:        amount,
+		ClientOrderId: clientOrderID,
 	}
 	if price > 0 {
 		req.Price = &price
@@ -247,6 +259,7 @@ func (s *service) CreateOrder(
 
 	updateData := s.mapOrderResponse(exchange, resp)
 	updateData.ID = id
+	updateData.ClientOrderID = clientOrderID
 	updateData, err = s.updateOrderResponse(ctx, updateData)
 	if err != nil {
 		return updateData, fmt.Errorf(
@@ -266,7 +279,6 @@ func (s *service) CreateStopOrder(
 	if err := s.guard.Allow(guardCreateStopOrder, exchange, instrumentSymbol); err != nil {
 		return repository.OrderData{}, err
 	}
-
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
 	orderType := repository.OrderTypeStopMarket
@@ -277,16 +289,21 @@ func (s *service) CreateStopOrder(
 	// Format the order amount based on the instrument's precision to avoid exchange rejections.
 	amount = s.formatOrderAmount(ctx, exchange, instrumentSymbol, amount)
 
+	// Generate a unique client order ID for this order.
+	clientOrderID := s.generateClientOrderID(ClientOrderIDPrefix)
+
 	log.Info(
-		"Creating stop order", "side", side, "type", orderType, "amount", amount, "stop_price", stopPrice,
+		"Creating stop order", "side", side, "type", orderType, "amount", amount,
+		"stop_price", stopPrice, "client_order_id", clientOrderID,
 	)
 
 	req := &pb.CreateStopOrderRequest{
-		Exchange:  exchange,
-		Symbol:    instrumentSymbol,
-		Side:      side,
-		Amount:    amount,
-		StopPrice: stopPrice,
+		Exchange:      exchange,
+		Symbol:        instrumentSymbol,
+		Side:          side,
+		Amount:        amount,
+		StopPrice:     stopPrice,
+		ClientOrderId: clientOrderID,
 	}
 	if limitPrice > 0 {
 		req.LimitPrice = &limitPrice
@@ -305,6 +322,7 @@ func (s *service) CreateStopOrder(
 		ExchangeName:     exchange,
 		InstrumentSymbol: instrumentSymbol,
 		ExchangeOrderID:  sql.NullString{String: resp.Id, Valid: resp.Id != ""},
+		ClientOrderID:    clientOrderID,
 		Side:             side,
 		OrderType:        orderType,
 		Amount:           amount,
@@ -342,8 +360,8 @@ func (s *service) CancelOrder(
 	if err := s.guard.Allow(guardCancelOrder, exchange, instrumentSymbol); err != nil {
 		return err
 	}
-
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
 	log.Info("Canceling order", "exchange_order_id", exchangeOrderID)
 
 	// Cancel on Exchange
@@ -389,10 +407,10 @@ func (s *service) CancelOrder(
 func (s *service) GetOrder(
 	ctx context.Context, exchange, instrumentSymbol, exchangeOrderID string,
 ) (repository.OrderData, error) {
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	if err := s.guard.Allow(guardGetOrder, exchange, instrumentSymbol); err != nil {
 		return repository.OrderData{}, err
 	}
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
 	log.Info("Fetching order from exchange", "exchange_order_id", exchangeOrderID)
 
@@ -427,10 +445,10 @@ func (s *service) GetOrder(
 func (s *service) GetOrders(
 	ctx context.Context, exchange, instrumentSymbol string, limit int, updatedb bool,
 ) ([]repository.OrderData, error) {
-	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 	if err := s.guard.Allow(guardGetOrders, exchange, instrumentSymbol); err != nil {
 		return nil, err
 	}
+	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
 
 	log.Info("Fetching orders from exchange", "limit", limit)
 
@@ -476,8 +494,8 @@ func (s *service) GetOpenOrders(
 	if err := s.guard.Allow(guardGetOpenOrders, exchange, instrumentSymbol); err != nil {
 		return nil, err
 	}
-
 	log := s.logger.With("exchange", exchange, "symbol", instrumentSymbol)
+
 	log.Info("Fetching open orders from exchange", "limit", limit)
 
 	resp, err := s.client.GetOpenOrders(ctx, exchange, instrumentSymbol, limit)
@@ -526,20 +544,17 @@ func (s *service) mapOrderResponse(
 			String: orderResp.Id,
 			Valid:  orderResp.Id != "",
 		},
-		ClientOrderID: sql.NullString{
-			String: orderResp.ClientOrderId,
-			Valid:  orderResp.ClientOrderId != "",
-		},
-		Side:         orderResp.Side,
-		OrderType:    orderResp.Type,
-		Price:        sql.NullFloat64{Float64: orderResp.Price, Valid: orderResp.Price > 0},
-		Amount:       orderResp.Amount,
-		Filled:       orderResp.Filled,
-		Remaining:    orderResp.Remaining,
-		AveragePrice: sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
-		Cost:         orderResp.Cost,
-		Status:       orderResp.Status,
-		Fee:          sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.FeeCurrency != ""},
+		ClientOrderID: orderResp.ClientOrderId,
+		Side:          orderResp.Side,
+		OrderType:     orderResp.Type,
+		Price:         sql.NullFloat64{Float64: orderResp.Price, Valid: orderResp.Price > 0},
+		Amount:        orderResp.Amount,
+		Filled:        orderResp.Filled,
+		Remaining:     orderResp.Remaining,
+		AveragePrice:  sql.NullFloat64{Float64: orderResp.Average, Valid: orderResp.Average > 0},
+		Cost:          orderResp.Cost,
+		Status:        orderResp.Status,
+		Fee:           sql.NullFloat64{Float64: orderResp.Fee, Valid: orderResp.FeeCurrency != ""},
 		FeeAssetSymbol: sql.NullString{
 			String: orderResp.FeeCurrency,
 			Valid:  orderResp.FeeCurrency != "",
@@ -571,6 +586,18 @@ func (s *service) updateOrderResponse(
 
 	orderData.ID = id
 	return orderData, nil
+}
+
+// Generate a unique client order ID with an optional prefix with at most 6 characters.
+func (s *service) generateClientOrderID(prefix string) string {
+	id := strings.ReplaceAll(uuid.New().String(), "-", "")[:24]
+
+	if prefix != "" && len(prefix) <= 6 {
+		prefix = prefix + "-"
+	}
+	clientOrderID := prefix + id
+
+	return clientOrderID
 }
 
 // formatOrderAmount truncates the order amount to the instrument's amount precision.

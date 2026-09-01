@@ -66,11 +66,12 @@ func TestClient_Integration(t *testing.T) {
 
 	// Test CreateOrder (Market Buy) - Executes immediately in DummyExchange
 	marketOrderReq := &pb.CreateOrderRequest{
-		Exchange: "dummy",
-		Symbol:   symbol,
-		Side:     repository.OrderSideBuy,
-		Type:     repository.OrderTypeMarket,
-		Amount:   0.1,
+		Exchange:      "dummy",
+		Symbol:        symbol,
+		Side:          repository.OrderSideBuy,
+		Type:          repository.OrderTypeMarket,
+		Amount:        0.1,
+		ClientOrderId: "client-order-1",
 	}
 	marketResp, err := client.CreateOrder(ctx, marketOrderReq)
 	require.NoError(t, err)
@@ -80,12 +81,13 @@ func TestClient_Integration(t *testing.T) {
 	// Test CreateOrder (Limit Buy) - Stays open in DummyExchange
 	price := 30000.0
 	createOrderReq := &pb.CreateOrderRequest{
-		Exchange: "dummy",
-		Symbol:   symbol,
-		Side:     repository.OrderSideBuy,
-		Type:     repository.OrderTypeLimit,
-		Amount:   0.01,
-		Price:    &price,
+		Exchange:      "dummy",
+		Symbol:        symbol,
+		Side:          repository.OrderSideBuy,
+		Type:          repository.OrderTypeLimit,
+		Amount:        0.01,
+		Price:         &price,
+		ClientOrderId: "client-order-2",
 	}
 	orderResp, err := client.CreateOrder(ctx, createOrderReq)
 	require.NoError(t, err, "CreateOrder should not error")
@@ -113,11 +115,12 @@ func TestClient_Integration(t *testing.T) {
 	// Test CreateStopOrder
 	stopPrice := 25000.0
 	stopOrderReq := &pb.CreateStopOrderRequest{
-		Exchange:  "dummy",
-		Symbol:    symbol,
-		Side:      repository.OrderSideSell,
-		Amount:    0.05,
-		StopPrice: stopPrice,
+		Exchange:      "dummy",
+		Symbol:        symbol,
+		Side:          repository.OrderSideSell,
+		Amount:        0.05,
+		StopPrice:     stopPrice,
+		ClientOrderId: "client-order-3",
 	}
 	stopResp, err := client.CreateStopOrder(ctx, stopOrderReq)
 	require.NoError(t, err)

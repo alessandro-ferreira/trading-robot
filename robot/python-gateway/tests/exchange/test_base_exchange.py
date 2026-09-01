@@ -3,7 +3,6 @@ import unittest
 from exchange.exchanges.base import (
     Exchange,
     ExchangeConfig,
-    OrderType,
     ExchangeError,
     ExchangeNetworkError,
     AuthenticationError,
@@ -29,9 +28,9 @@ class TestExchangeBase(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             ex.fetch_balance()
         with self.assertRaises(NotImplementedError):
-            ex.create_order("BTC/USDT", OrderType.LIMIT, "buy", 1.0, 50000.0)
+            ex.create_order("BTC/USDT", "limit", "buy", 1.0, "client_order_id", 50000.0)
         with self.assertRaises(NotImplementedError):
-            ex.create_stop_order("BTC/USDT", "sell", 1.0, 40000.0)
+            ex.create_stop_order("BTC/USDT", "sell", 1.0, "client_order_id", 40000.0)
         with self.assertRaises(NotImplementedError):
             ex.cancel_order("order_id", "BTC/USDT")
         with self.assertRaises(NotImplementedError):

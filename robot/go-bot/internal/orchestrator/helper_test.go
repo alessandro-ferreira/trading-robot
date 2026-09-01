@@ -103,10 +103,10 @@ func TestOrchestrator_CheckPendingOrder(t *testing.T) {
 			expectedErr: "failed to fetch pending orders from database: db error",
 		},
 		{
-			name: "Link matching exchange order",
+			name: "Link matching exchange order by client ID",
 			setup: func(mExec *MockExecutionService, mOrders *MockOrdersRepo, cancel context.CancelFunc) {
-				pendingOrder := repository.OrderData{ID: 1, Side: repository.OrderSideBuy, Amount: 1.5, Status: repository.OrderStatusNew}
-				exchangeOrder := repository.OrderData{Side: repository.OrderSideBuy, Amount: 1.5, ExchangeOrderID: sql.NullString{String: "exchange-1", Valid: true}}
+				pendingOrder := repository.OrderData{ID: 1, Side: repository.OrderSideBuy, Amount: 1.5, Status: repository.OrderStatusNew, ClientOrderID: "client-1"}
+				exchangeOrder := repository.OrderData{Side: repository.OrderSideBuy, Amount: 1.4, ClientOrderID: "client-1", ExchangeOrderID: sql.NullString{String: "exchange-1", Valid: true}}
 				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).
 					Return([]repository.OrderData{pendingOrder}, nil).Once()
 				mExec.On("GetOrders", mock.Anything, "binance", "BTC/USDT", 10, false).
@@ -114,6 +114,30 @@ func TestOrchestrator_CheckPendingOrder(t *testing.T) {
 				updatedOrder := pendingOrder
 				updatedOrder.ExchangeOrderID = exchangeOrder.ExchangeOrderID
 				mOrders.On("UpdateOrder", mock.Anything, mock.Anything, updatedOrder).Return(int64(1), nil).Once()
+			},
+		},
+		{
+			name: "Fallback when exchange client ID is empty",
+			setup: func(mExec *MockExecutionService, mOrders *MockOrdersRepo, cancel context.CancelFunc) {
+				pendingOrder := repository.OrderData{ID: 1, Side: repository.OrderSideBuy, Amount: 1.5, Status: repository.OrderStatusNew, ClientOrderID: "client-1"}
+				exchangeOrder := repository.OrderData{Side: repository.OrderSideBuy, Amount: 1.5, ExchangeOrderID: sql.NullString{String: "exchange-1", Valid: true}}
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).Return([]repository.OrderData{pendingOrder}, nil).Once()
+				mExec.On("GetOrders", mock.Anything, "binance", "BTC/USDT", 10, false).Return([]repository.OrderData{exchangeOrder}, nil).Once()
+				updatedOrder := pendingOrder
+				updatedOrder.ExchangeOrderID = exchangeOrder.ExchangeOrderID
+				mOrders.On("UpdateOrder", mock.Anything, mock.Anything, updatedOrder).Return(int64(1), nil).Once()
+			},
+		},
+		{
+			name: "Do not fallback when client IDs differ",
+			setup: func(mExec *MockExecutionService, mOrders *MockOrdersRepo, cancel context.CancelFunc) {
+				pendingOrder := repository.OrderData{ID: 1, Side: repository.OrderSideBuy, Amount: 1.5, Status: repository.OrderStatusNew, ClientOrderID: "client-1"}
+				exchangeOrder := repository.OrderData{Side: repository.OrderSideBuy, Amount: 1.5, ClientOrderID: "client-other", ExchangeOrderID: sql.NullString{String: "exchange-1", Valid: true}}
+				mOrders.On("GetOrders", mock.Anything, mock.Anything, "binance", "BTC/USDT", []string{repository.OrderStatusNew}, []string{}, []string{}, 1).Return([]repository.OrderData{pendingOrder}, nil).Once()
+				mExec.On("GetOrders", mock.Anything, "binance", "BTC/USDT", 10, false).Return([]repository.OrderData{exchangeOrder}, nil).Once()
+				rejectedOrder := pendingOrder
+				rejectedOrder.Status = repository.OrderStatusRejected
+				mOrders.On("UpdateOrder", mock.Anything, mock.Anything, rejectedOrder).Return(int64(1), nil).Once()
 			},
 		},
 		{

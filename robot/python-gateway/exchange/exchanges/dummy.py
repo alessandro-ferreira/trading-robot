@@ -173,6 +173,7 @@ class DummyExchange(Exchange):
         type: str,
         side: str,
         amount: float,
+        client_order_id: str,
         price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Simulates creating an order with balance validation and fund locking."""
@@ -206,7 +207,7 @@ class DummyExchange(Exchange):
 
         order = {
             "id": order_id,
-            "clientOrderId": f"dummy-client-{timestamp}-{self._order_id_counter}",
+            "clientOrderId": client_order_id,
             "timestamp": timestamp,
             "datetime": self._get_datetime(timestamp),
             "symbol": symbol,
@@ -242,6 +243,7 @@ class DummyExchange(Exchange):
         symbol: str,
         side: str,
         amount: float,
+        client_order_id: str,
         stop_price: float,
         limit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
@@ -267,7 +269,7 @@ class DummyExchange(Exchange):
 
         order = {
             "id": order_id,
-            "clientOrderId": f"dummy-client-{timestamp}-{self._order_id_counter}",
+            "clientOrderId": client_order_id,
             "timestamp": timestamp,
             "datetime": self._get_datetime(timestamp),
             "symbol": symbol,

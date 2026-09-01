@@ -291,6 +291,7 @@ class TestExchangeService(unittest.TestCase):
             side="buy",
             type="limit",
             amount=1.0,
+            client_order_id="client-123",
             price=50000.0,
         )
         response = self.service.CreateOrder(request, self.context)
@@ -315,6 +316,7 @@ class TestExchangeService(unittest.TestCase):
                     side="buy",
                     type="limit",
                     amount=1.0,
+                    client_order_id="client-123",
                     price=50000.0,
                 )
                 setattr(request, field, value)
@@ -330,6 +332,23 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.create_order.assert_not_called()
         self.context.abort.side_effect = None
 
+    def test_create_order_requires_client_order_id(self):
+        request = exchange_pb2.CreateOrderRequest(
+            exchange="binance",
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            amount=1.0,
+            price=50000.0,
+        )
+        self.context.abort.side_effect = Exception("Client order ID is required")
+        with self.assertRaises(Exception):
+            self.service.CreateOrder(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT, "Client order ID is required"
+        )
+        self.context.abort.side_effect = None
+
     def test_create_order_internal_error(self):
         """Verify create order internal error handling."""
         self.mock_exchange.create_order.side_effect = Exception("Internal error")
@@ -340,6 +359,7 @@ class TestExchangeService(unittest.TestCase):
             side="buy",
             type="limit",
             amount=1.0,
+            client_order_id="client-123",
             price=50000.0,
         )
         with self.assertRaises(Exception) as cm:
@@ -358,6 +378,7 @@ class TestExchangeService(unittest.TestCase):
             side="buy",
             type="limit",
             amount=1.0,
+            client_order_id="client-123",
             price=50000.0,
         )
         with self.assertRaises(Exception):
@@ -378,6 +399,7 @@ class TestExchangeService(unittest.TestCase):
             side="buy",
             type="limit",
             amount=0.0001,
+            client_order_id="client-123",
             price=50000.0,
         )
         with self.assertRaises(Exception):
@@ -398,6 +420,7 @@ class TestExchangeService(unittest.TestCase):
             type="limit",
             amount=1.0,
             price=-1.0,
+            client_order_id="client-123",
         )
         with self.assertRaises(Exception):
             self.service.CreateOrder(request, self.context)
@@ -417,6 +440,7 @@ class TestExchangeService(unittest.TestCase):
             symbol="BTC/USDT",
             side="sell",
             amount=0.1,
+            client_order_id="client-123",
             stop_price=40000.0,
         )
         response = self.service.CreateStopOrder(request, self.context)
@@ -425,6 +449,7 @@ class TestExchangeService(unittest.TestCase):
             symbol="BTC/USDT",
             side="sell",
             amount=0.1,
+            client_order_id="client-123",
             stop_price=40000.0,
             limit_price=None,
         )
@@ -443,6 +468,7 @@ class TestExchangeService(unittest.TestCase):
                     symbol="BTC/USDT",
                     side="sell",
                     amount=1.0,
+                    client_order_id="client-123",
                     stop_price=40000.0,
                 )
                 setattr(request, field, value)
@@ -458,6 +484,22 @@ class TestExchangeService(unittest.TestCase):
         self.mock_exchange.create_stop_order.assert_not_called()
         self.context.abort.side_effect = None
 
+    def test_create_stop_order_requires_client_order_id(self):
+        request = exchange_pb2.CreateStopOrderRequest(
+            exchange="binance",
+            symbol="BTC/USDT",
+            side="sell",
+            amount=1.0,
+            stop_price=40000.0,
+        )
+        self.context.abort.side_effect = Exception("Client order ID is required")
+        with self.assertRaises(Exception):
+            self.service.CreateStopOrder(request, self.context)
+        self.context.abort.assert_called_with(
+            grpc.StatusCode.INVALID_ARGUMENT, "Client order ID is required"
+        )
+        self.context.abort.side_effect = None
+
     def test_create_stop_order_insufficient_funds(self):
         """Verify mapping of InsufficientFundsError in CreateStopOrder."""
         self.mock_exchange.create_stop_order.side_effect = InsufficientFundsError(
@@ -469,6 +511,7 @@ class TestExchangeService(unittest.TestCase):
             symbol="BTC/USDT",
             side="sell",
             amount=1.0,
+            client_order_id="client-123",
             stop_price=50000.0,
         )
         with self.assertRaises(Exception):

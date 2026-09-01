@@ -57,36 +57,40 @@ class BalanceResponse(_message.Message):
     def __init__(self, balances: _Optional[_Iterable[_Union[BalanceObject, _Mapping]]] = ...) -> None: ...
 
 class CreateOrderRequest(_message.Message):
-    __slots__ = ("exchange", "symbol", "side", "type", "amount", "price")
+    __slots__ = ("exchange", "symbol", "side", "type", "amount", "price", "client_order_id")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     SIDE_FIELD_NUMBER: _ClassVar[int]
     TYPE_FIELD_NUMBER: _ClassVar[int]
     AMOUNT_FIELD_NUMBER: _ClassVar[int]
     PRICE_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ORDER_ID_FIELD_NUMBER: _ClassVar[int]
     exchange: str
     symbol: str
     side: str
     type: str
     amount: float
     price: float
-    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ...) -> None: ...
+    client_order_id: str
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., type: _Optional[str] = ..., amount: _Optional[float] = ..., price: _Optional[float] = ..., client_order_id: _Optional[str] = ...) -> None: ...
 
 class CreateStopOrderRequest(_message.Message):
-    __slots__ = ("exchange", "symbol", "side", "amount", "stop_price", "limit_price")
+    __slots__ = ("exchange", "symbol", "side", "amount", "stop_price", "limit_price", "client_order_id")
     EXCHANGE_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
     SIDE_FIELD_NUMBER: _ClassVar[int]
     AMOUNT_FIELD_NUMBER: _ClassVar[int]
     STOP_PRICE_FIELD_NUMBER: _ClassVar[int]
     LIMIT_PRICE_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ORDER_ID_FIELD_NUMBER: _ClassVar[int]
     exchange: str
     symbol: str
     side: str
     amount: float
     stop_price: float
     limit_price: float
-    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., amount: _Optional[float] = ..., stop_price: _Optional[float] = ..., limit_price: _Optional[float] = ...) -> None: ...
+    client_order_id: str
+    def __init__(self, exchange: _Optional[str] = ..., symbol: _Optional[str] = ..., side: _Optional[str] = ..., amount: _Optional[float] = ..., stop_price: _Optional[float] = ..., limit_price: _Optional[float] = ..., client_order_id: _Optional[str] = ...) -> None: ...
 
 class OrderResponse(_message.Message):
     __slots__ = ("id", "symbol", "side", "type", "amount", "price", "status", "filled", "remaining", "cost", "average", "client_order_id", "timestamp", "fee", "fee_currency")

@@ -242,17 +242,18 @@ func (sc *SimulatedClient) CreateOrder(
 	sc.orderCounter++
 
 	resp := &pb.OrderResponse{
-		Id:          orderId,
-		Symbol:      req.Symbol,
-		Side:        req.Side,
-		Type:        req.Type,
-		Amount:      amount,
-		Price:       price,
-		Status:      repository.OrderStatusClosed,
-		Filled:      amount,
-		Cost:        cost,
-		Fee:         req.Amount * price * exchangeTaxRate,
-		FeeCurrency: BudgetAsset,
+		Id:            orderId,
+		Symbol:        req.Symbol,
+		Side:          req.Side,
+		Type:          req.Type,
+		Amount:        amount,
+		Price:         price,
+		ClientOrderId: req.ClientOrderId,
+		Status:        repository.OrderStatusClosed,
+		Filled:        amount,
+		Cost:          cost,
+		Fee:           req.Amount * price * exchangeTaxRate,
+		FeeCurrency:   BudgetAsset,
 		// We adjust to milliseconds to match typical exchange API formats.
 		Timestamp: sc.priceHistory[idx].UnixTimestamp * 1000,
 	}
@@ -273,17 +274,18 @@ func (sc *SimulatedClient) CreateStopOrder(
 	}
 
 	resp := &pb.OrderResponse{
-		Id:          orderId,
-		Symbol:      req.Symbol,
-		Side:        req.Side,
-		Type:        repository.OrderTypeStopMarket,
-		Amount:      req.Amount,
-		Price:       req.StopPrice,
-		Status:      repository.OrderStatusOpen,
-		Filled:      req.Amount,
-		Cost:        req.Amount * req.StopPrice * (1 - exchangeTaxRate),
-		Fee:         req.Amount * req.StopPrice * exchangeTaxRate,
-		FeeCurrency: BudgetAsset,
+		Id:            orderId,
+		Symbol:        req.Symbol,
+		Side:          req.Side,
+		Type:          repository.OrderTypeStopMarket,
+		Amount:        req.Amount,
+		Price:         req.StopPrice,
+		ClientOrderId: req.ClientOrderId,
+		Status:        repository.OrderStatusOpen,
+		Filled:        req.Amount,
+		Cost:          req.Amount * req.StopPrice * (1 - exchangeTaxRate),
+		Fee:           req.Amount * req.StopPrice * exchangeTaxRate,
+		FeeCurrency:   BudgetAsset,
 		// We adjust to milliseconds to match typical exchange API formats.
 		Timestamp: sc.priceHistory[sc.historyIndex-1].UnixTimestamp * 1000,
 	}

@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/BurntSushi/toml v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/pashagolub/pgxmock/v3 v3.4.0
 	github.com/robfig/cron/v3 v3.0.1

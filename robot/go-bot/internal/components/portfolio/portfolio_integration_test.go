@@ -100,6 +100,7 @@ func TestPortfolio_Integration_Lifecycle(t *testing.T) {
 			Side:             repository.OrderSideBuy,
 			OrderType:        repository.OrderTypeLimit,
 			Status:           repository.OrderStatusClosed,
+			ClientOrderID:    "client-order-1001",
 		})
 		require.NoError(t, err)
 

@@ -264,7 +264,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_request.return_value = mock_response
 
         order = self.exchange.create_order(
-            "BTC/BRL", OrderType.LIMIT, "buy", 0.1, 100000.0
+            "BTC/BRL", OrderType.LIMIT, "buy", 0.1, "client-123", 100000.0
         )
 
         self.assertEqual(order["id"], "ord_123")
@@ -278,6 +278,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertIn("/accounts/acc_123/BTC-BRL/orders", args[1])
         self.assertEqual(kwargs["json"]["qty"], "0.10000000")
         self.assertEqual(kwargs["json"]["limitPrice"], 100000.0)
+        self.assertEqual(kwargs["json"]["externalId"], "client-123")
 
     @patch("requests.request")
     def test_create_order_market_success(self, mock_request):
@@ -298,7 +299,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_request.return_value = mock_response
 
         order = self.exchange.create_order(
-            "XLM/BRL", OrderType.MARKET, "sell", 26.65675789
+            "XLM/BRL", OrderType.MARKET, "sell", 26.65675789, "client-123"
         )
 
         self.assertEqual(order["id"], "ord_market")
@@ -307,6 +308,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         self.assertEqual(payload["type"], "market")
         self.assertEqual(payload["qty"], "26.656")
         self.assertNotIn("limitPrice", payload)
+        self.assertEqual(payload["externalId"], "client-123")
 
     def test_format_quantity_for_all_supported_mercadobitcoin_assets(self):
         amount = 1.23456789
@@ -332,7 +334,9 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
     def test_create_order_missing_price_for_limit(self):
         """Verify client-side validation for missing limit prices."""
         with self.assertRaises(ExchangeError) as cm:
-            self.exchange.create_order("BTC/BRL", OrderType.LIMIT, "buy", 0.1)
+            self.exchange.create_order(
+                "BTC/BRL", OrderType.LIMIT, "buy", 0.1, "client-123"
+            )
         self.assertIn("Price is required for limit orders", str(cm.exception))
 
     @patch("requests.request")
@@ -348,7 +352,9 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_request.return_value = mock_response
 
         with self.assertRaises(BadRequestError) as cm:
-            self.exchange.create_order("BTC/BRL", OrderType.MARKET, "buy", 0.1)
+            self.exchange.create_order(
+                "BTC/BRL", OrderType.MARKET, "buy", 0.1, "client-123"
+            )
         self.assertIn("MercadoBitcoin API Error: 400", str(cm.exception))
 
     @patch("requests.request")
@@ -374,7 +380,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
 
     @patch("requests.request")
     def test_create_stop_order_market_simulation(self, mock_request):
-        """Verify stop-market simulation with 40% slippage and rounding."""
+        """Verify stop-market simulation with slippage and rounding."""
         self.exchange._account_id = "acc_123"
         self.exchange._token = "mock_token"
         self.exchange._token_expiry = 9999999999
@@ -384,12 +390,12 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_response.json.return_value = {
             "orderId": "stop_123",
             "status": "created",
-            "clientOrderId": "c_123",
         }
         mock_request.return_value = mock_response
 
-        # Stop price 100,000. Sell order -> limit = 100,000 * 0.6 = 60,000
-        order = self.exchange.create_stop_order("BTC/BRL", "sell", 0.1, 100000.0)
+        order = self.exchange.create_stop_order(
+            "BTC/BRL", "sell", 0.1, "client-123", 100000.0
+        )
 
         args, kwargs = mock_request.call_args
         payload = kwargs["json"]
@@ -398,7 +404,6 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
             payload["limitPrice"], 100000.0 * (1.0 - self.exchange.STOP_MARKET_SLIPPAGE)
         )
         self.assertEqual(order["price"], 100000.0)
-        self.assertEqual(order["clientOrderId"], "c_123")
 
     @patch("requests.request")
     def test_create_stop_order_limit(self, mock_request):
@@ -413,7 +418,7 @@ class TestMercadoBitcoinExchange(unittest.TestCase):
         mock_request.return_value = mock_response
 
         self.exchange.create_stop_order(
-            "BTC/BRL", "buy", 0.1, 100000.0, limit_price=101000.0
+            "BTC/BRL", "buy", 0.1, "client-123", 100000.0, limit_price=101000.0
         )
 
         kwargs = mock_request.call_args.kwargs

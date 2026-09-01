@@ -728,6 +728,7 @@ func TestOrchestrator_Integration_StateHydration(t *testing.T) {
 		Side:             repository.OrderSideBuy,
 		OrderType:        repository.OrderTypeMarket,
 		Amount:           1.0,
+		ClientOrderID:    "hydra-client-order-1",
 		Status:           repository.OrderStatusClosed,
 	})
 	require.NoError(t, err)
