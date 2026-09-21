@@ -2,9 +2,9 @@
 
 This repository contains a suite of tools for automated trading.
 
-> **Status:** Active development.
+> **Status:** Development temporarily paused to focus on the ML Engine.
 
-The overall system architecture is documented in `robot/ARCHITECTURE.md`.
+The overall system architecture is documented in [robot/ARCHITECTURE.md](robot/ARCHITECTURE.md).
 
 ## Project Structure
 
@@ -21,13 +21,13 @@ The repository is structured around a central trading system supported by specia
 
 Each project contains its own documentation and setup instructions.
 
-- `robot/README.md`
-- `robot/ARCHITECTURE.md`
-- `robot/go-bot/README.md`
-- `robot/python-gateway/README.md`
-- `robot/strategy-core/README.md`
-- `ml-engine/README.md`
-- `simulator/README.md`
+- [robot/README.md](robot/README.md)
+- [robot/ARCHITECTURE.md](robot/ARCHITECTURE.md)
+- [robot/go-bot/README.md](robot/go-bot/README.md)
+- [robot/python-gateway/README.md](robot/python-gateway/README.md)
+- [robot/strategy-core/README.md](robot/strategy-core/README.md)
+- [ml-engine/README.md](ml-engine/README.md)
+- [simulator/README.md](simulator/README.md)
 
 ## Code Quality
 
